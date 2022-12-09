@@ -570,6 +570,8 @@ type t = {
 
   timeout: float;
 
+  num_thread: int;
+
   sem_max_connections: Sem_.t;
   (* semaphore to restrict the number of active concurrent connections *)
 
@@ -723,6 +725,7 @@ let add_route_server_sent_handler ?accept self route f =
 let create
     ?(masksigpipe=true)
     ?(max_connections=32)
+    ?(num_thread=Domain.recommended_domain_count () - 1)
     ?(timeout=0.0)
     ?(buf_size=16 * 1_024)
     ?(get_time_s=Unix.gettimeofday)
@@ -735,7 +738,7 @@ let create
   let self = {
     new_thread; addr; port; sock; masksigpipe; handler; buf_size;
     running= true; sem_max_connections=Sem_.create max_connections;
-    path_handlers=[]; timeout; get_time_s;
+    path_handlers=[]; timeout; get_time_s; num_thread;
     middlewares=[]; middlewares_sorted=lazy [];
   } in
   List.iter (fun (stage,m) -> add_middleware self ~stage m) middlewares;
@@ -867,26 +870,29 @@ let run (self:t) : (unit,_) result =
       Unix.bind sock (Unix.ADDR_INET (inet_addr, self.port));
       Unix.listen sock (2 * self.sem_max_connections.Sem_.n)
     end;
-    while self.running do
-      (* limit concurrency *)
-      Sem_.acquire 1 self.sem_max_connections;
+    let handler client_sock =
       try
+        handle_client_ self client_sock;
+        Sem_.release 1 self.sem_max_connections;
+        raise Exit
+      with e ->
+        (try Unix.close client_sock with _ -> ());
+        Sem_.release 1 self.sem_max_connections;
+        raise e
+    in
+    let _ =
+      Tiny_httpd_domains.run self.num_thread handler
+    in
+    while self.running do
+      try (* limit concurrency *)
+        Sem_.acquire 1 self.sem_max_connections;
         let client_sock, _ = Unix.accept sock in
-        self.new_thread
-          (fun () ->
-            try
-              handle_client_ self client_sock;
-              Sem_.release 1 self.sem_max_connections;
-            with e ->
-              (try Unix.close client_sock with _ -> ());
-              Sem_.release 1 self.sem_max_connections;
-              raise e
-          );
+        Tiny_httpd_domains.send client_sock
       with e ->
         Sem_.release 1 self.sem_max_connections;
         _debug (fun k -> k
-                  "Unix.accept or Thread.create raised an exception: %s"
-                  (Printexc.to_string e))
+                           "Unix.accept raised an exception: %s"
+                           (Printexc.to_string e))
     done;
     Ok ()
   with e -> Error e

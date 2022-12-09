@@ -71,7 +71,7 @@ let of_fd_ ?(buf_size=16 * 1024) ~close ic : t =
     ~fill:(fun self ->
         if self.off >= self.len then (
           self.off <- 0;
-          self.len <- Unix.read ic self.bs 0 (Bytes.length self.bs);
+          self.len <- Tiny_httpd_domains.read ic self.bs 0 (Bytes.length self.bs);
         )
       )
     ()
@@ -318,7 +318,7 @@ module Out_buf = struct
     let len = String.length str in
     let n = ref 0 in
     while !n < len do
-      let w = Unix.write_substring oc str !n (len - !n) in
+      let w = Tiny_httpd_domains.write oc str !n (len - !n) in
       n := !n + w
     done
 
@@ -331,7 +331,7 @@ module Out_buf = struct
 
   let partial_write_str oc str =
     let len = String.length str in
-    let w = Unix.write_substring oc str 0 len in
+    let w = Tiny_httpd_domains.write oc str 0 len in
     String.sub str w (len - w)
 
   let partial_write_buf oc buf =

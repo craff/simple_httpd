@@ -354,6 +354,7 @@ type t
 val create :
   ?masksigpipe:bool ->
   ?max_connections:int ->
+  ?num_thread:int ->
   ?timeout:float ->
   ?buf_size:int ->
   ?get_time_s:(unit -> float) ->
@@ -382,6 +383,7 @@ val create :
     @param middlewares see {!add_middleware} for more details.
 
     @param max_connections maximum number of simultaneous connections.
+    @param num_thread number of thread to treat client.
     @param timeout connection is closed if the socket does not do read or
       write for the amount of second. Default: 0.0 which means no timeout.
       timeout is not recommended when using proxy.
