@@ -312,19 +312,90 @@ let read_chunked ?(buf=Buf.create()) ~fail (bs:t) : t=
       )
     ()
 
+
+module Out_buf = struct
+  let write_str oc str =
+    let len = String.length str in
+    let n = ref 0 in
+    while !n < len do
+      let w = Unix.write_substring oc str !n (len - !n) in
+      n := !n + w
+    done
+
+  let write_buf oc buf =
+    if Buffer.length buf > 0 then
+      begin
+        write_str oc (Buffer.contents buf);
+        Buffer.clear buf
+      end
+
+  let partial_write_str oc str =
+    let len = String.length str in
+    let w = Unix.write_substring oc str 0 len in
+    String.sub str w (len - w)
+
+  let partial_write_buf oc buf =
+    let remain = partial_write_str oc (Buffer.contents buf) in
+    Buffer.clear buf;
+    Buffer.add_string buf remain
+
+  type t = { fd : Unix.file_descr; b: Buffer.t; s : int }
+
+  let create ?(buf_size=16* 1_024) fd =
+    {fd; s=buf_size; b=Buffer.create (2*buf_size)}
+
+  let flush oc = write_buf oc.fd oc.b
+
+  let push oc =
+    while Buffer.length oc.b > oc.s do
+      partial_write_buf oc.fd oc.b
+    done
+
+  let close oc =
+    flush oc; Unix.close oc.fd
+
+  let printf oc format =
+    let cont _ = push oc in
+    Printf.kbprintf cont oc.b format
+
+  let add_string oc str =
+    Buffer.add_string oc.b str; push oc
+
+  let add_substring oc str off len =
+    Buffer.add_substring oc.b str off len; push oc
+
+  let add_bytes oc str =
+    Buffer.add_bytes oc.b str; push oc
+
+  let add_subbytes oc str off len =
+    Buffer.add_subbytes oc.b str off len; push oc
+
+  let add_char oc c =
+    Buffer.add_char oc.b c; push oc
+
+  let output_str oc str =
+    assert (Buffer.length oc.b = 0);
+    write_str oc.fd str
+end
+
 (* print a stream as a series of chunks *)
-let output_chunked (oc:out_channel) (self:t) : unit =
+let output_chunked (oc:Out_buf.t) (self:t) : unit =
+  let open Out_buf in
   let continue = ref true in
+  (* TODO: add a preallocated buffer in self ? one for each domains ? *)
   while !continue do
     (* next chunk *)
     self.fill_buf();
     let n = self.len in
-    Printf.fprintf oc "%x\r\n" n;
-    output oc self.bs self.off n;
+    printf oc "%x\r\n" n;
+    add_subbytes oc self.bs self.off n;
+    add_string oc "\r\n";
+    flush oc;
     self.consume n;
     if n = 0 then (
       continue := false;
     );
-    output_string oc "\r\n";
   done;
   ()
+
+let output_str = Out_buf.output_str

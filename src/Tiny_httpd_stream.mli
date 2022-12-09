@@ -123,5 +123,21 @@ val read_exactly :
     @param too_short is called if [bs] closes with still [n] bytes remaining
 *)
 
-val output_chunked : out_channel -> t -> unit
+module Out_buf : sig
+  type t
+  val create : ?buf_size:int -> Unix.file_descr -> t
+  val flush : t -> unit
+  val close : t -> unit
+  val add_char : t -> char -> unit
+  val add_string : t -> string -> unit
+  val add_substring : t -> string -> int -> int -> unit
+  val add_bytes : t -> bytes -> unit
+  val add_subbytes : t -> bytes -> int -> int -> unit
+  val printf : t -> ('a, Buffer.t, unit) format -> 'a
+end
+
+val output_chunked : Out_buf.t -> t -> unit
 (** Write the stream into the channel, using the chunked encoding. *)
+
+val output_str : Out_buf.t -> string -> unit
+(** Write the content of a string to a fd *)

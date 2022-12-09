@@ -1,6 +1,7 @@
 
 type buf = Tiny_httpd_buf.t
 type byte_stream = Tiny_httpd_stream.t
+module Out = Tiny_httpd_stream.Out_buf
 
 let _debug_on = ref (
   match String.trim @@ Sys.getenv "HTTP_DBG" with
@@ -258,7 +259,7 @@ module Request = struct
       } in
       Ok (Some req)
     with
-    | End_of_file | Sys_error _ -> Ok None
+    | End_of_file | Sys_error _ | Unix.Unix_error _ -> Ok None
     | Bad_req (c,s) -> Error (c,s)
     | e ->
       Error (400, Printexc.to_string e)
@@ -381,8 +382,9 @@ module Response = struct
     Format.fprintf out "{@[code=%d;@ headers=[@[%a@]];@ body=%a@]}"
       self.code Headers.pp self.headers pp_body self.body
 
-  let output_ (oc:out_channel) (self:t) : unit =
-    Printf.fprintf oc "HTTP/1.1 %d %s\r\n" self.code (Response_code.descr self.code);
+  let output_ (oc:Out.t) (self:t) : unit =
+    Out.printf oc "HTTP/1.1 %d %s\r\n" self.code
+      (Response_code.descr self.code);
     let body, is_chunked = match self.body with
       | `String s when String.length s > 1024 * 500 ->
         (* chunk-encode large bodies *)
@@ -401,14 +403,13 @@ module Response = struct
     let self = {self with headers; body} in
     _debug (fun k->k "output response: %s"
                (Format.asprintf "%a" pp {self with body=`String "<…>"}));
-    List.iter (fun (k,v) -> Printf.fprintf oc "%s: %s\r\n" k v) headers;
-    output_string oc "\r\n";
+    List.iter (fun (k,v) -> Out.printf oc "%s: %s\r\n" k v) headers;
+    Out.add_string oc "\r\n";
     begin match body with
-      | `String "" | `Void -> ()
-      | `String s -> output_string oc s;
-      | `Stream str -> Byte_stream.output_chunked oc str;
+      | `String "" | `Void -> Out.flush oc;
+      | `String s -> Out.add_string oc s; Out.flush oc;
+      | `Stream str -> Byte_stream.output_chunked oc str; Out.flush oc
     end;
-    flush oc
 end
 
 (* semaphore, for limiting concurrency. *)
@@ -546,9 +547,7 @@ module Middleware = struct
 end
 
 (* a request handler. handles a single request. *)
-type cb_path_handler =
-  out_channel ->
-  Middleware.handler
+type cb_path_handler = Out.t -> Middleware.handler
 
 module type SERVER_SENT_GENERATOR = sig
   val set_headers : Headers.t -> unit
@@ -699,13 +698,13 @@ let add_route_server_sent_handler ?accept self route f =
 
     let send_event ?event ?id ?retry ~data () : unit =
       send_response_idempotent_();
-      _opt_iter event ~f:(fun e -> Printf.fprintf oc "event: %s\n" e);
-      _opt_iter id ~f:(fun e -> Printf.fprintf oc "id: %s\n" e);
-      _opt_iter retry ~f:(fun e -> Printf.fprintf oc "retry: %s\n" e);
+      _opt_iter event ~f:(fun e -> Out.printf oc "event: %s\n" e);
+      _opt_iter id ~f:(fun e -> Out.printf oc "id: %s\n" e);
+      _opt_iter retry ~f:(fun e -> Out.printf oc "retry: %s\n" e);
       let l = String.split_on_char '\n' data in
-      List.iter (fun s -> Printf.fprintf oc "data: %s\n" s) l;
-      output_string oc "\n"; (* finish group *)
-      flush oc
+      List.iter (fun s -> Out.printf oc "data: %s\n" s) l;
+      Out.add_char oc '\n'; (* finish group *)
+      Out.flush oc;
     in
     let module SSG = struct
       let set_headers h =
@@ -717,7 +716,7 @@ let add_route_server_sent_handler ?accept self route f =
       let close () = raise Exit
     end in
     try f req (module SSG : SERVER_SENT_GENERATOR);
-    with Exit -> close_out oc
+    with Exit -> Out.close oc
   in
   add_route_handler_ self ?accept ~meth:`GET route ~tr_req f
 
@@ -756,8 +755,8 @@ let find_map f l =
 let handle_client_ (self:t) (client_sock:Unix.file_descr) : unit =
   Unix.(setsockopt_float client_sock SO_RCVTIMEO self.timeout);
   Unix.(setsockopt_float client_sock SO_SNDTIMEO self.timeout);
-  let oc = Unix.out_channel_of_descr client_sock in
   let buf = Buf.create ~size:self.buf_size () in
+  let oc  = Out.create ~buf_size:self.buf_size client_sock in
   let is = Byte_stream.of_fd ~buf_size:self.buf_size client_sock in
   let continue = ref true in
   while !continue && self.running do
@@ -771,7 +770,7 @@ let handle_client_ (self:t) (client_sock:Unix.file_descr) : unit =
       let res = Response.make_raw ~code:c s in
       begin
         try Response.output_ oc res
-        with Sys_error _ -> ()
+        with Sys_error _ | Unix.Unix_error _ -> ()
       end;
       continue := false
 
@@ -819,23 +818,24 @@ let handle_client_ (self:t) (client_sock:Unix.file_descr) : unit =
             if Headers.get "connection" r.Response.headers = Some"close" then
               continue := false;
             Response.output_ oc r
-          with Sys_error _ -> continue := false
+          with Sys_error _ | Unix.Unix_error _ -> continue := false
         in
 
         (* call handler *)
         begin
           try handler oc req ~resp
-          with Sys_error _ -> continue := false
+          with Sys_error _ | Unix.Unix_error _ -> continue := false
         end
       with
-      | Sys_error _ ->
+      | Sys_error _ | Unix.Unix_error _ ->
         continue := false; (* connection broken somehow *)
       | Bad_req (code,s) ->
         continue := false;
         Response.output_ oc @@ Response.make_raw ~code s
       | e ->
         continue := false;
-        Response.output_ oc @@ Response.fail ~code:500 "server error: %s" (Printexc.to_string e)
+        Response.output_ oc @@
+          Response.fail ~code:500 "server error: %s" (Printexc.to_string e)
   done;
   _debug (fun k->k "done with client, exiting");
   (try Unix.close client_sock
