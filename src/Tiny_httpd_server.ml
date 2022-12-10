@@ -412,38 +412,6 @@ module Response = struct
     end;
 end
 
-(* semaphore, for limiting concurrency. *)
-module Sem_ = struct
-  type t = {
-    mutable n : int;
-    max : int;
-    mutex : Mutex.t;
-    cond : Condition.t;
-  }
-
-  let create n =
-    if n <= 0 then invalid_arg "Semaphore.create";
-    { n; max=n; mutex=Mutex.create(); cond=Condition.create(); }
-
-  let acquire m t =
-    Mutex.lock t.mutex;
-    while t.n < m do
-      Condition.wait t.cond t.mutex;
-    done;
-    assert (t.n >= m);
-    t.n <- t.n - m;
-    Condition.broadcast t.cond;
-    Mutex.unlock t.mutex
-
-  let release m t =
-    Mutex.lock t.mutex;
-    t.n <- t.n + m;
-    Condition.broadcast t.cond;
-    Mutex.unlock t.mutex
-
-  let num_acquired t = t.max - t.n
-end
-
 module Route = struct
   type path = string list (* split on '/' *)
 
@@ -572,7 +540,7 @@ type t = {
 
   num_thread: int;
 
-  sem_max_connections: Sem_.t;
+  max_connections: int;
   (* semaphore to restrict the number of active concurrent connections *)
 
   new_thread: (unit -> unit) -> unit;
@@ -604,7 +572,7 @@ type t = {
 let addr self = self.addr
 let port self = self.port
 
-let active_connections self = Sem_.num_acquired self.sem_max_connections - 1
+let active_connections _self = failwith "unimplemented"
 
 let add_middleware ~stage self m =
   let stage = match stage with
@@ -737,7 +705,7 @@ let create
   let max_connections = max 4 max_connections in
   let self = {
     new_thread; addr; port; sock; masksigpipe; handler; buf_size;
-    running= true; sem_max_connections=Sem_.create max_connections;
+    running= true; max_connections;
     path_handlers=[]; timeout; get_time_s; num_thread;
     middlewares=[]; middlewares_sorted=lazy [];
   } in
@@ -755,12 +723,12 @@ let find_map f l =
         | None -> aux f l'
   in aux f l
 
-let handle_client_ (self:t) (client_sock:Unix.file_descr) : unit =
-  Unix.(setsockopt_float client_sock SO_RCVTIMEO self.timeout);
-  Unix.(setsockopt_float client_sock SO_SNDTIMEO self.timeout);
+let handle_client_ (self:t) (client:Tiny_httpd_domains.client) : unit =
+  Unix.(setsockopt_float client.sock SO_RCVTIMEO self.timeout);
+  Unix.(setsockopt_float client.sock SO_SNDTIMEO self.timeout);
   let buf = Buf.create ~size:self.buf_size () in
-  let oc  = Out.create ~buf_size:self.buf_size client_sock in
-  let is = Byte_stream.of_fd ~buf_size:self.buf_size client_sock in
+  let oc  = Out.create ~buf_size:self.buf_size client in
+  let is = Byte_stream.of_client ~buf_size:self.buf_size client in
   let continue = ref true in
   while !continue && self.running do
     _debug (fun k->k "read next request");
@@ -841,14 +809,17 @@ let handle_client_ (self:t) (client_sock:Unix.file_descr) : unit =
           Response.fail ~code:500 "server error: %s" (Printexc.to_string e)
   done;
   _debug (fun k->k "done with client, exiting");
-  (try Unix.close client_sock
+  (try Unix.close client.sock
    with e -> _debug (fun k->k "error when closing sock: %s" (Printexc.to_string e)));
   ()
 
 let run (self:t) : (unit,_) result =
   try
     let handler client_sock = handle_client_ self client_sock in
-    let a = Tiny_httpd_domains.run self.num_thread self.addr self.port 10 handler in
+    let maxc = self.max_connections / self.num_thread + 2 in
+    let a = Tiny_httpd_domains.run self.num_thread self.addr self.port
+              maxc 5 handler
+    in
     Array.iter (fun d -> Domain.join d) a;
     Ok ()
   with e -> Error e

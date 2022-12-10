@@ -2,12 +2,29 @@ open Effect
 open Effect.Deep
 open Domain
 
-type _ Effect.t +=
-   | Read  : Unix.file_descr * Bytes.t * int * int -> int Effect.t
-   | Write : Unix.file_descr * string  * int * int -> int Effect.t
+type client = {
+    mutable counter : int;
+    mutable granularity : int;
+    sock : Unix.file_descr
+  }
 
-let read  c s o l = perform (Read (c,s,o,l))
-let write c s o l = perform (Write(c,s,o,l))
+type _ Effect.t +=
+   | Read  : client * Bytes.t * int * int -> int Effect.t
+   | Write : client * string  * int * int -> int Effect.t
+
+let read  c s o l =
+  c.counter <- c.counter + 1;
+  if c.counter mod c.granularity = 0 then
+    perform (Read (c,s,o,l))
+  else
+    Unix.read c.sock s o l
+
+let write c s o l =
+  c.counter <- c.counter + 1;
+  if c.counter mod c.granularity = 0 then
+    perform (Write(c,s,o,l))
+  else
+    Unix.single_write_substring c.sock s o l
 
 let is_ipv6 addr = String.contains addr ':'
 
@@ -28,7 +45,7 @@ let connect addr port maxc =
   Unix.listen sock maxc;
   sock
 
-let loop _id addr port maxc handler () =
+let loop _id addr port maxc granularity handler () =
   let listen_sock = connect addr port maxc in
   let reads = Hashtbl.create 32 in
   let writes = Hashtbl.create 32 in
@@ -61,8 +78,9 @@ let loop _id addr port maxc handler () =
        let last_sock = ref Unix.stdin in
        (try if List.mem listen_sock rds then begin
            Printf.eprintf "accept connection\n%!";
-           let client_sock, _ = Unix.accept listen_sock in
-           handler client_sock; last_sock:=client_sock
+           let sock, _ = Unix.accept listen_sock in
+           let client = { sock; counter = 0; granularity } in
+           handler client; last_sock:=sock
        end else begin
          match rds, wrs with
          | (rd::rds), _ ->
@@ -88,13 +106,13 @@ let loop _id addr port maxc handler () =
         | Read (rd,b,o,l) ->
            Some (fun (k : (c,_) continuation) ->
                incr n;
-               Hashtbl.add reads  rd (b,o,l,!n,k); do_job ())
+               Hashtbl.add reads  rd.sock (b,o,l,!n,k); do_job ())
         | Write(wr,b,o,l) ->
            Some (fun (k : (c,_) continuation) ->
                incr n;
-               Hashtbl.add writes wr (b,o,l,!n,k); do_job ())
+               Hashtbl.add writes wr.sock (b,o,l,!n,k); do_job ())
         | _ -> None
     )}
 
-let run nb addr port maxc handler =
-  Array.init nb (fun id -> spawn (loop id addr port maxc handler))
+let run nb addr port maxc granularity handler =
+  Array.init nb (fun id -> spawn (loop id addr port maxc granularity handler))

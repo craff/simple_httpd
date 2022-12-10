@@ -56,6 +56,12 @@ val of_fd : ?buf_size:int -> Unix.file_descr -> t
 val of_fd_close_noerr : ?buf_size:int -> Unix.file_descr -> t
 (** Same as {!of_fd} but the [close] method will never fail. *)
 
+val of_client : ?buf_size:int -> Tiny_httpd_domains.client -> t
+(** Make a buffered stream from the given file descriptor. *)
+
+val of_client_close_noerr : ?buf_size:int -> Tiny_httpd_domains.client -> t
+(** Same as {!of_fd} but the [close] method will never fail. *)
+
 val of_bytes : ?i:int -> ?len:int -> bytes -> t
 (** A stream that just returns the slice of bytes starting from [i]
     and of length [len]. *)
@@ -125,7 +131,7 @@ val read_exactly :
 
 module Out_buf : sig
   type t
-  val create : ?buf_size:int -> Unix.file_descr -> t
+  val create : ?buf_size:int -> Tiny_httpd_domains.client -> t
   val flush : t -> unit
   val close : t -> unit
   val add_char : t -> char -> unit

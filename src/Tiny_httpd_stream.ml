@@ -71,13 +71,30 @@ let of_fd_ ?(buf_size=16 * 1024) ~close ic : t =
     ~fill:(fun self ->
         if self.off >= self.len then (
           self.off <- 0;
-          self.len <- Tiny_httpd_domains.read ic self.bs 0 (Bytes.length self.bs);
+          self.len <- Unix.read ic self.bs 0 (Bytes.length self.bs));
+        )
+    ()
+
+let of_fd = of_fd_ ~close:Unix.close
+let of_fd_close_noerr = of_fd_ ~close:(fun c -> try Unix.close c with _ -> ())
+
+let of_client_ ?(buf_size=16 * 1024) ~close ic : t =
+  make
+    ~bs:(Bytes.create buf_size)
+    ~close:(fun _ -> close ic)
+    ~consume:(fun self n ->
+        self.off <- self.off + n;
+        self.len <- self.len - n)
+    ~fill:(fun self ->
+        if self.off >= self.len then (
+          self.off <- 0;
+          self.len <- Tiny_httpd_domains.(read ic self.bs 0 (Bytes.length self.bs));
         )
       )
     ()
 
-let of_fd = of_fd_ ~close:Unix.close
-let of_fd_close_noerr = of_fd_ ~close:(fun f -> try Unix.close f with _ -> ())
+let of_client = of_client_ ~close:(fun c -> Unix.close c.sock)
+let of_client_close_noerr = of_client_ ~close:(fun c -> try Unix.close c.sock with _ -> ())
 
 let rec iter f (self:t) : unit =
   self.fill_buf();
@@ -339,7 +356,7 @@ module Out_buf = struct
     Buffer.clear buf;
     Buffer.add_string buf remain
 
-  type t = { fd : Unix.file_descr; b: Buffer.t; s : int }
+  type t = { fd : Tiny_httpd_domains.client; b: Buffer.t; s : int }
 
   let create ?(buf_size=16* 1_024) fd =
     {fd; s=buf_size; b=Buffer.create (2*buf_size)}
@@ -352,7 +369,7 @@ module Out_buf = struct
     done
 
   let close oc =
-    flush oc; Unix.close oc.fd
+    flush oc; Unix.close oc.fd.sock
 
   let printf oc format =
     let cont _ = push oc in
