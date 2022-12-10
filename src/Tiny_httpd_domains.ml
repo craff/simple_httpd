@@ -2,21 +2,6 @@ open Effect
 open Effect.Deep
 open Domain
 
-(* Queue to receive socket of accepter connection *)
-let mtq = Mutex.create ()
-let q   : Unix.file_descr Queue.t = Queue.create ()
-
-let send socket =
-  Mutex.lock mtq;
-  Queue.add socket q;
-  Mutex.unlock mtq
-
-let receive () =
-  Mutex.lock mtq;
-  let r = Queue.take_opt q in
-  Mutex.unlock mtq;
-  r
-
 type _ Effect.t +=
    | Read  : Unix.file_descr * Bytes.t * int * int -> int Effect.t
    | Write : Unix.file_descr * string  * int * int -> int Effect.t
@@ -24,7 +9,27 @@ type _ Effect.t +=
 let read  c s o l = perform (Read (c,s,o,l))
 let write c s o l = perform (Write(c,s,o,l))
 
-let loop _id handler () =
+let is_ipv6 addr = String.contains addr ':'
+
+let connect addr port maxc =
+  ignore (Unix.sigprocmask Unix.SIG_BLOCK [Sys.sigpipe] : _ list);
+  let sock =
+    Unix.socket
+      (if is_ipv6 addr then Unix.PF_INET6 else Unix.PF_INET)
+      Unix.SOCK_STREAM
+      0
+  in
+  Unix.set_nonblock sock;
+  Unix.setsockopt_optint sock Unix.SO_LINGER None;
+  Unix.setsockopt sock Unix.SO_REUSEADDR true;
+  Unix.setsockopt sock Unix.SO_REUSEPORT true;
+  let inet_addr = Unix.inet_addr_of_string addr in
+  Unix.bind sock (Unix.ADDR_INET (inet_addr, port));
+  Unix.listen sock maxc;
+  sock
+
+let loop _id addr port maxc handler () =
+  let listen_sock = connect addr port maxc in
   let reads = Hashtbl.create 32 in
   let writes = Hashtbl.create 32 in
   let n = ref 0 in
@@ -34,27 +39,48 @@ let loop _id handler () =
         let (_, (_,_,_,n',_) as t') = find tbl s' in
         if n < n' then t else t') t0 l
   in
+  let check tbl s =
+    try ignore (Unix.fstat s); true with
+    | Unix.Unix_error(err,_,_) ->
+       Printf.eprintf "close %s\n%!" (Unix.error_message err);
+       Hashtbl.remove tbl s; false
+  in
+  let rec select rds wrs timeout =
+    try
+      Unix.select rds wrs [] timeout
+    with Unix.Unix_error (err,_,_) ->
+      Printf.eprintf "error %s\n%!" (Unix.error_message err);
+      let rds = List.filter (check reads) rds in
+      let wrs = List.filter (check writes) wrs in
+      select rds wrs timeout
+  in
   let rec do_job () =
-    match receive () with
-    | Some s -> handler s
-    | None ->
-       let rds = Hashtbl.fold (fun s _ acc -> s :: acc) reads  [] in
+       let rds = listen_sock :: Hashtbl.fold (fun s _ acc -> s :: acc) reads  [] in
        let wrs = Hashtbl.fold (fun s _ acc -> s :: acc) writes [] in
-       let (rds,wrs,_) = Unix.select rds wrs [] 0.0 in
-       match rds, wrs with
-       | (rd::rds), _ ->
-          let (rd,(b,o,l,_,k)) = get_oldest reads (find reads rd) rds in
-          Hashtbl.remove reads rd;
-          (match Unix.read rd b o l with
-           | n -> continue k n
-           | exception Unix.Unix_error _ -> Unix.close rd; do_job ())
-       | _, (wr::wrs) ->
-          let (wr,(b,o,l,_,k)) = get_oldest writes (find writes wr) wrs in
-          Hashtbl.remove writes wr;
-          (match Unix.single_write_substring wr b o l with
-           | n -> continue k n
-           | exception Unix.Unix_error _ -> Unix.close wr; do_job ())
-       | [], [] -> do_job ()
+       let (rds,wrs,_) = select rds wrs 300.0 in
+       let last_sock = ref Unix.stdin in
+       (try if List.mem listen_sock rds then begin
+           Printf.eprintf "accept connection\n%!";
+           let client_sock, _ = Unix.accept listen_sock in
+           handler client_sock; last_sock:=client_sock
+       end else begin
+         match rds, wrs with
+         | (rd::rds), _ ->
+            let (rd,(b,o,l,_,k)) = get_oldest reads (find reads rd) rds in
+            Hashtbl.remove reads rd;
+            let n = Unix.read rd b o l in
+            continue k n; last_sock := rd
+         | _, (wr::wrs) ->
+            let (wr,(b,o,l,_,k)) = get_oldest writes (find writes wr) wrs in
+            Hashtbl.remove writes wr;
+            let n = Unix.single_write_substring wr b o l in
+            continue k n; last_sock := wr
+         | [], [] -> ()
+         end
+        with e ->
+          Printf.eprintf "exn: %s\n%!" (Printexc.to_string e));
+       (try Unix.close !last_sock with _ -> ());
+       do_job ();
   in
   try_with do_job ()
     { effc = (fun (type c) (eff: c Effect.t) ->
@@ -70,5 +96,5 @@ let loop _id handler () =
         | _ -> None
     )}
 
-let run nb handler =
-  Array.init nb (fun id -> spawn (loop id handler))
+let run nb addr port maxc handler =
+  Array.init nb (fun id -> spawn (loop id addr port maxc handler))

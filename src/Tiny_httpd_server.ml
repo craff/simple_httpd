@@ -845,54 +845,10 @@ let handle_client_ (self:t) (client_sock:Unix.file_descr) : unit =
    with e -> _debug (fun k->k "error when closing sock: %s" (Printexc.to_string e)));
   ()
 
-let is_ipv6 self = String.contains self.addr ':'
-
 let run (self:t) : (unit,_) result =
   try
-    if self.masksigpipe then (
-      ignore (Unix.sigprocmask Unix.SIG_BLOCK [Sys.sigpipe] : _ list);
-    );
-    let sock, should_bind = match self.sock with
-      | Some s ->
-        s, false (* Because we're getting a socket from the caller (e.g. systemd) *)
-      | None ->
-        Unix.socket
-          (if is_ipv6 self then Unix.PF_INET6 else Unix.PF_INET)
-          Unix.SOCK_STREAM
-          0,
-        true (* Because we're creating the socket ourselves *)
-    in
-    Unix.clear_nonblock sock;
-    Unix.setsockopt_optint sock Unix.SO_LINGER None;
-    begin if should_bind then
-      let inet_addr = Unix.inet_addr_of_string self.addr in
-      Unix.setsockopt sock Unix.SO_REUSEADDR true;
-      Unix.bind sock (Unix.ADDR_INET (inet_addr, self.port));
-      Unix.listen sock (2 * self.sem_max_connections.Sem_.n)
-    end;
-    let handler client_sock =
-      try
-        handle_client_ self client_sock;
-        Sem_.release 1 self.sem_max_connections;
-        raise Exit
-      with e ->
-        (try Unix.close client_sock with _ -> ());
-        Sem_.release 1 self.sem_max_connections;
-        raise e
-    in
-    let _ =
-      Tiny_httpd_domains.run self.num_thread handler
-    in
-    while self.running do
-      try (* limit concurrency *)
-        Sem_.acquire 1 self.sem_max_connections;
-        let client_sock, _ = Unix.accept sock in
-        Tiny_httpd_domains.send client_sock
-      with e ->
-        Sem_.release 1 self.sem_max_connections;
-        _debug (fun k -> k
-                           "Unix.accept raised an exception: %s"
-                           (Printexc.to_string e))
-    done;
+    let handler client_sock = handle_client_ self client_sock in
+    let a = Tiny_httpd_domains.run self.num_thread self.addr self.port 10 handler in
+    Array.iter (fun d -> Domain.join d) a;
     Ok ()
   with e -> Error e

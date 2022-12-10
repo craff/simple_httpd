@@ -401,10 +401,6 @@ val create :
 val addr : t -> string
 (** Address on which the server listens. *)
 
-val is_ipv6 : t -> bool
-(** [is_ipv6 server] returns [true] iff the address of the server is an IPv6 address.
-    @since 0.3 *)
-
 val port : t -> int
 (** Port on which the server listens. *)
 

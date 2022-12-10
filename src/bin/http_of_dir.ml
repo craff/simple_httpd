@@ -5,8 +5,8 @@ module Pf = Printf
 
 let serve ~config (dir:string) addr port j : _ result =
   let server = S.create ~max_connections:j ~addr ~port () in
-  Printf.printf "serve directory %s on http://%(%s%):%d\n%!"
-    dir (if S.is_ipv6 server then "[%s]" else "%s") addr port;
+  Printf.printf "serve directory %s on http://%s:%d\n%!"
+    dir addr port;
 
   D.add_dir_path ~config ~dir ~prefix:"" server;
   S.run server
