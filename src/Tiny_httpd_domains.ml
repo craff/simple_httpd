@@ -7,11 +7,19 @@ type status = {
     nb_connections : int Atomic.t array
   }
 
+let print_status ch st =
+  Printf.fprintf ch "avail: %d [" (Atomic.get st.nb_availables);
+  Array.iteri (fun i a -> Printf.fprintf ch "%s%d"
+                           (if i = 0 then "" else ", ")
+                           (Atomic.get a)) st.nb_connections;
+  Printf.fprintf ch "]"
+
 type client = {
     mutable counter : int;
     mutable granularity : int;
     sock : Unix.file_descr;
     status : status;
+    id : int;
   }
 
 type _ Effect.t +=
@@ -23,33 +31,42 @@ type pending =
   {client:client; action:action; buf:Bytes.t; offset:int; len: int;
    cont : (int,unit) continuation; mutable count:int}
 
-exception Closed
+exception Closed of bool
+
+let close exn c =
+  Atomic.decr c.status.nb_connections.(c.id);
+  (try Unix.close c.sock with _ -> ());
+  raise exn
 
 let read  c s o l =
+  assert(l<>0);
   c.counter <- c.counter + 1;
-  if c.counter mod c.granularity = 0 &&
-       (Atomic.get c.status.nb_connections.((Domain.self () :> int)) > 1 ||
-          Atomic.get c.status.nb_availables <= 0) then
+  if c.counter mod c.granularity = 0 (* &&
+       (Atomic.get c.status.nb_connections.(c.id) > 1 ||
+          Atomic.get c.status.nb_availables <= 0)*) then
     perform (Read (c,s,o,l))
   else
     try
       let n = Unix.read c.sock s o l in
-      if n = 0 then raise Closed; n
+      if n = 0 then close (Closed true) c; n
     with Unix.(Unix_error((EAGAIN|EWOULDBLOCK),_,_)) ->
-      perform (Read (c,s,o,l))
+          perform (Read (c,s,o,l))
+       | exn -> close exn c
 
 let write c s o l =
+  assert(l<>0);
   c.counter <- c.counter + 1;
-  if c.counter mod c.granularity = 0 &&
-       (Atomic.get c.status.nb_connections.((Domain.self () :> int)) > 1 ||
-          Atomic.get c.status.nb_availables <= 0) then
+  if c.counter mod c.granularity = 0(* &&
+       (Atomic.get c.status.nb_connections.(c.id) > 1 ||
+          Atomic.get c.status.nb_availables <= 0)*) then
      perform (Write(c,s,o,l))
   else
     try
       let n = Unix.single_write c.sock s o l in
-      if n = 0 then raise Closed; n
+      if n = 0 then close (Closed false) c; n
     with Unix.(Unix_error((EAGAIN|EWOULDBLOCK),_,_)) ->
-      perform (Write (c,s,o,l))
+          perform (Write (c,s,o,l))
+       | exn -> close exn c
 
 let is_ipv6 addr = String.contains addr ':'
 
@@ -83,7 +100,6 @@ let loop id st addr port maxc granularity handler () =
   let n = ref 0 in
   let find s = try Hashtbl.find pendings s with _ -> assert false in
   let poll timeout =
-    let _ = Poll.(set events listen_sock Event.read) in
     let do_decr =
       if Hashtbl.length pendings = 0 then (Atomic.incr st.nb_availables; true)
       else false
@@ -91,13 +107,12 @@ let loop id st addr port maxc granularity handler () =
     match Poll.wait events timeout with
     | `Timeout ->
        if do_decr then Atomic.decr st.nb_availables;
-       Poll.clear events;
        Timeout
     | `Ok ->
        if do_decr then Atomic.decr st.nb_availables;
        let best = ref None in
        let f sock _evt =
-         if sock == listen_sock then raise Exit;
+         if sock = listen_sock then raise Exit;
          let {count = n';_} as p = find sock in
          match !best with
          | None -> best := Some p
@@ -105,49 +120,36 @@ let loop id st addr port maxc granularity handler () =
        in
        try
          Poll.iter_ready events ~f;
-         Poll.clear events;
          match !best with
          | None -> assert false
          | Some p -> Action p
        with
-       | Exit -> Poll.clear events; Accept
+       | Exit -> Accept
   in
   let rec do_job () =
-    let last_sock = ref None in
-    (*Printf.eprintf "poll %d %d\n%!" id (Hashtbl.length pendings);*)
     (try
+       (*      Printf.eprintf "%d polling %d %a\n%!" id (Hashtbl.length pendings) print_status st;*)
       match poll (Poll.Timeout.After 10_000_000L) with
       | Timeout -> Domain.cpu_relax (); ()
       | Accept ->
-         Printf.eprintf "accept connection from %d\n%!" id;
+         Printf.eprintf "accept connection from %d %a\n%!" id print_status st;
          Atomic.incr st.nb_connections.(id);
          let sock, _ = Unix.accept listen_sock in
          Unix.set_nonblock sock;
-         let client = { sock; counter = 0; granularity; status = st } in
-         last_sock:=Some sock;
+         let client = { sock; counter = 0; granularity; status = st; id } in
          handler client
       | Action { action; client; buf; offset; len; cont; _ } ->
          Poll.(set events client.sock Event.none);
          Hashtbl.remove pendings client.sock;
          let n =
-           try
-             match action with
-             | Read  -> Unix.read client.sock buf offset len
-             | Write -> Unix.single_write client.sock buf offset len
-           with Unix.(Unix_error((EAGAIN|EWOULDBLOCK),_,_)) -> assert false
+           match action with (* can not raise EAGAIN/EWOULDBLOCK *)
+           | Read  -> Unix.read client.sock buf offset len
+           | Write -> Unix.single_write client.sock buf offset len
          in
-         if n = 0 then raise Closed;
-         last_sock := Some client.sock;
+         if n = 0 then close (Closed (action=Read)) client;
          continue cont n;
     with e ->
       Printf.eprintf "exn: %s\n%!" (Printexc.to_string e));
-    begin
-      match !last_sock with
-      | None -> ()
-      | Some s ->
-         Atomic.incr st.nb_connections.(id);
-         try Unix.close s with _ -> ()
-    end;
     do_job ()
   and loop () =
     try_with do_job ()

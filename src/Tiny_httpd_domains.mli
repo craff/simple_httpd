@@ -8,6 +8,7 @@ type client = {
     mutable granularity : int;
     sock : Unix.file_descr;
     status : status;
+    id : int;
   }
 
 val read  : client -> Bytes.t -> int -> int -> int

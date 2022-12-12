@@ -37,6 +37,15 @@
                           (run ./upload_chunked.sh %{bin}))))
 
 (rule
+  (targets stress.out)
+  (deps (:bin ../src/bin/http_of_dir.exe) foo_50)
+  (locks /port)
+  (package tiny_httpd_domain)
+  (enabled_if (= %{system} "linux"))
+  (action (with-stdout-to %{targets}
+                          (run ./stress.sh %{bin} 10))))
+
+(rule
   (alias runtest)
   (package tiny_httpd_domain)
   (enabled_if (= %{system} "linux"))
