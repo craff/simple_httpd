@@ -19,13 +19,13 @@
   (targets test_output.txt)
   (deps (:script ./run_test.sh) ./sse_client.exe ./sse_server.exe)
   (enabled_if (= %{system} "linux"))
-  (package tiny_httpd)
+  (package tiny_httpd_domain)
   (action
     (with-stdout-to %{targets} (run %{script}))))
 
 (rule
   (alias runtest)
-  (package tiny_httpd)
+  (package tiny_httpd_domain)
   (enabled_if (= %{system} "linux"))
   (deps test_output.txt)
   (action

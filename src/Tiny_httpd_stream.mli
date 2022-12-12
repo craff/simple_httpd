@@ -145,5 +145,6 @@ end
 val output_chunked : Out_buf.t -> t -> unit
 (** Write the stream into the channel, using the chunked encoding. *)
 
-val output_str : Out_buf.t -> string -> unit
-(** Write the content of a string to a fd *)
+val output_str   : Out_buf.t -> string -> unit
+val output_bytes : Out_buf.t -> bytes  -> unit
+(** Write the content of a string/bytes to a fd *)

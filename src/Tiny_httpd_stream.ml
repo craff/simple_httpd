@@ -332,7 +332,7 @@ let read_chunked ?(buf=Buf.create()) ~fail (bs:t) : t=
 
 module Out_buf = struct
   let write_str oc str =
-    let len = String.length str in
+    let len = Bytes.length str in
     let n = ref 0 in
     while !n < len do
       let w = Tiny_httpd_domains.write oc str !n (len - !n) in
@@ -342,19 +342,19 @@ module Out_buf = struct
   let write_buf oc buf =
     if Buffer.length buf > 0 then
       begin
-        write_str oc (Buffer.contents buf);
+        write_str oc (Buffer.to_bytes buf);
         Buffer.clear buf
       end
 
   let partial_write_str oc str =
-    let len = String.length str in
+    let len = Bytes.length str in
     let w = Tiny_httpd_domains.write oc str 0 len in
-    String.sub str w (len - w)
+    Bytes.sub str w (len - w)
 
   let partial_write_buf oc buf =
-    let remain = partial_write_str oc (Buffer.contents buf) in
+    let remain = partial_write_str oc (Buffer.to_bytes buf) in
     Buffer.clear buf;
-    Buffer.add_string buf remain
+    Buffer.add_bytes buf remain
 
   type t = { fd : Tiny_httpd_domains.client; b: Buffer.t; s : int }
 
@@ -390,8 +390,13 @@ module Out_buf = struct
   let add_char oc c =
     Buffer.add_char oc.b c; push oc
 
+  let output_bytes oc str =
+    assert (Buffer.length oc.b = 0);
+    write_str oc.fd str
+
   let output_str oc str =
     assert (Buffer.length oc.b = 0);
+    let str = Bytes.unsafe_of_string str in
     write_str oc.fd str
 end
 
@@ -416,3 +421,4 @@ let output_chunked (oc:Out_buf.t) (self:t) : unit =
   ()
 
 let output_str = Out_buf.output_str
+let output_bytes = Out_buf.output_bytes

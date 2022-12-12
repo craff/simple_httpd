@@ -1,8 +1,8 @@
 
 (library
-  (name tiny_httpd)
-  (public_name tiny_httpd)
-  (libraries threads seq)
+  (name tiny_httpd_domain)
+  (public_name tiny_httpd_domain)
+  (libraries unix poll seq)
   (flags :standard -safe-string -warn-error -a+8)
   (wrapped false))
 

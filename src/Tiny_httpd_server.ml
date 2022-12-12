@@ -11,7 +11,7 @@ let _enable_debug b = _debug_on := b
 let _debug k =
   if !_debug_on then (
     k (fun fmt->
-       Printf.fprintf stdout "[http.thread %d]: " Thread.(id @@ self());
+       (*Printf.fprintf stdout "[http.thread %d]: " Thread.(id @@ self());*)
        Printf.kfprintf (fun oc -> Printf.fprintf oc "\n%!") stdout fmt)
   )
 
@@ -543,9 +543,6 @@ type t = {
   max_connections: int;
   (* semaphore to restrict the number of active concurrent connections *)
 
-  new_thread: (unit -> unit) -> unit;
-  (* a function to run the given callback in a separate thread (or thread pool) *)
-
   masksigpipe: bool;
 
   buf_size: int;
@@ -697,14 +694,13 @@ let create
     ?(timeout=0.0)
     ?(buf_size=16 * 1_024)
     ?(get_time_s=Unix.gettimeofday)
-    ?(new_thread=(fun f -> ignore (Thread.create f () : Thread.t)))
     ?(addr="127.0.0.1") ?(port=8080) ?sock
     ?(middlewares=[])
     () : t =
   let handler _req = Response.fail ~code:404 "no top handler" in
   let max_connections = max 4 max_connections in
   let self = {
-    new_thread; addr; port; sock; masksigpipe; handler; buf_size;
+    addr; port; sock; masksigpipe; handler; buf_size;
     running= true; max_connections;
     path_handlers=[]; timeout; get_time_s; num_thread;
     middlewares=[]; middlewares_sorted=lazy [];

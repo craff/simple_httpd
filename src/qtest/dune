@@ -4,7 +4,7 @@
   (modes native)
   (flags :standard -warn-error -a+8 -w -33)
   (libraries qcheck-core qcheck ounit2
-             threads threads.posix tiny_httpd))
+             poll tiny_httpd_domain))
 
 (rule
  (deps (glob_files ../*.ml{,i}))
@@ -13,6 +13,5 @@
 
 (rule
   (alias runtest)
-  (package tiny_httpd)
+  (package tiny_httpd_domain)
   (action (run ./qtest.exe)))
-

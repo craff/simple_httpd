@@ -4,8 +4,6 @@
     This module implements a very simple, basic HTTP/1.1 server using blocking
     IOs and threads.
 
-    It is possible to use a thread pool, see {!create}'s argument [new_thread].
-
     @since NEXT_RELEASE
 *)
 
@@ -358,7 +356,6 @@ val create :
   ?timeout:float ->
   ?buf_size:int ->
   ?get_time_s:(unit -> float) ->
-  ?new_thread:((unit -> unit) -> unit) ->
   ?addr:string ->
   ?port:int ->
   ?sock:Unix.file_descr ->
@@ -375,10 +372,6 @@ val create :
     tends to kill client threads when they try to write on broken sockets. Default: [true].
 
     @param buf_size size for buffers (since 0.11)
-
-    @param new_thread a function used to spawn a new thread to handle a
-    new client connection. By default it is {!Thread.create} but one
-    could use a thread pool instead.
 
     @param middlewares see {!add_middleware} for more details.
 

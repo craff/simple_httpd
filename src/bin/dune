@@ -2,7 +2,7 @@
 (executable
   (name http_of_dir)
   (public_name http_of_dir)
-  (package tiny_httpd)
+  (package tiny_httpd_domain)
   (modules http_of_dir)
   (flags :standard -warn-error -3)
   (libraries tiny_httpd))
@@ -10,7 +10,7 @@
 (executable
   (name vfs_pack)
   (public_name tiny-httpd-vfs-pack)
-  (package tiny_httpd)
+  (package tiny_httpd_domain)
   (modules vfs_pack curly http)
   (libraries result unix)
   (flags :standard -warn-error -3))
