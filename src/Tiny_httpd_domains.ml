@@ -2,10 +2,16 @@ open Effect
 open Effect.Deep
 open Domain
 
+type status = {
+    nb_availables : int Atomic.t;
+    nb_connections : int Atomic.t array
+  }
+
 type client = {
     mutable counter : int;
     mutable granularity : int;
-    sock : Unix.file_descr
+    sock : Unix.file_descr;
+    status : status;
   }
 
 type _ Effect.t +=
@@ -21,7 +27,9 @@ exception Closed
 
 let read  c s o l =
   c.counter <- c.counter + 1;
-  if c.counter mod c.granularity = 0 then
+  if c.counter mod c.granularity = 0 &&
+       (Atomic.get c.status.nb_connections.((Domain.self () :> int)) > 1 ||
+          Atomic.get c.status.nb_availables <= 0) then
     perform (Read (c,s,o,l))
   else
     try
@@ -32,7 +40,9 @@ let read  c s o l =
 
 let write c s o l =
   c.counter <- c.counter + 1;
-  if c.counter mod c.granularity = 0 then
+  if c.counter mod c.granularity = 0 &&
+       (Atomic.get c.status.nb_connections.((Domain.self () :> int)) > 1 ||
+          Atomic.get c.status.nb_availables <= 0) then
      perform (Write(c,s,o,l))
   else
     try
@@ -65,7 +75,7 @@ type pollResult =
   | Accept
   | Action of pending
 
-let loop _id addr port maxc granularity handler () =
+let loop id st addr port maxc granularity handler () =
   let listen_sock = connect addr port maxc in
   let pendings = Hashtbl.create 32 in
   let events = Poll.create () in
@@ -74,9 +84,17 @@ let loop _id addr port maxc granularity handler () =
   let find s = try Hashtbl.find pendings s with _ -> assert false in
   let poll timeout =
     let _ = Poll.(set events listen_sock Event.read) in
+    let do_decr =
+      if Hashtbl.length pendings = 0 then (Atomic.incr st.nb_availables; true)
+      else false
+    in
     match Poll.wait events timeout with
-    | `Timeout -> Poll.clear events; Timeout
+    | `Timeout ->
+       if do_decr then Atomic.decr st.nb_availables;
+       Poll.clear events;
+       Timeout
     | `Ok ->
+       if do_decr then Atomic.decr st.nb_availables;
        let best = ref None in
        let f sock _evt =
          if sock == listen_sock then raise Exit;
@@ -92,19 +110,20 @@ let loop _id addr port maxc granularity handler () =
          | None -> assert false
          | Some p -> Action p
        with
-         | Exit -> Poll.clear events; Accept
+       | Exit -> Poll.clear events; Accept
   in
   let rec do_job () =
     let last_sock = ref None in
-    (*Printf.eprintf "poll %d %d\n%!" _id (Hashtbl.length pendings);*)
+    (*Printf.eprintf "poll %d %d\n%!" id (Hashtbl.length pendings);*)
     (try
       match poll (Poll.Timeout.After 10_000_000L) with
       | Timeout -> Domain.cpu_relax (); ()
       | Accept ->
-         Printf.eprintf "accept connection from %d\n%!" _id;
+         Printf.eprintf "accept connection from %d\n%!" id;
+         Atomic.incr st.nb_connections.(id);
          let sock, _ = Unix.accept listen_sock in
          Unix.set_nonblock sock;
-         let client = { sock; counter = 0; granularity } in
+         let client = { sock; counter = 0; granularity; status = st } in
          last_sock:=Some sock;
          handler client
       | Action { action; client; buf; offset; len; cont; _ } ->
@@ -122,7 +141,13 @@ let loop _id addr port maxc granularity handler () =
          continue cont n;
     with e ->
       Printf.eprintf "exn: %s\n%!" (Printexc.to_string e));
-    (match !last_sock with None -> () |  Some s -> try Unix.close s with _ -> ());
+    begin
+      match !last_sock with
+      | None -> ()
+      | Some s ->
+         Atomic.incr st.nb_connections.(id);
+         try Unix.close s with _ -> ()
+    end;
     do_job ()
   and loop () =
     try_with do_job ()
@@ -148,7 +173,12 @@ let loop _id addr port maxc granularity handler () =
   in loop ()
 
 let run nb addr port maxc granularity handler =
-  let fn id = spawn (loop id addr port maxc granularity handler) in
+  let status = {
+      nb_availables = Atomic.make 0;
+      nb_connections = Array.init nb (fun _ -> Atomic.make 0)
+    }
+  in
+  let fn id = spawn (loop id status addr port maxc granularity handler) in
   let r = Array.init (nb-1) fn in
   let _ = fn (nb-1) in
   r

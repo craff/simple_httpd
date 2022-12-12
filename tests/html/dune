@@ -1,6 +1,6 @@
 
 (executable
-  (libraries tiny_httpd)
+  (libraries tiny_httpd_domain)
   (name makehtml))
 
 (rule

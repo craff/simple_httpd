@@ -5,7 +5,7 @@
   (package tiny_httpd_domain)
   (modules http_of_dir)
   (flags :standard -warn-error -3)
-  (libraries tiny_httpd))
+  (libraries tiny_httpd_domain))
 
 (executable
   (name vfs_pack)
