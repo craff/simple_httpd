@@ -95,8 +95,6 @@ type pollResult =
 let loop id st addr port maxc granularity handler () =
   let listen_sock = connect addr port maxc in
   let pendings = Hashtbl.create 32 in
-  let events = Poll.create () in
-  let _ = Poll.(set events listen_sock Event.read) in
   let n = ref 0 in
   let find s = try Hashtbl.find pendings s with _ -> assert false in
   let poll timeout =
@@ -104,32 +102,34 @@ let loop id st addr port maxc granularity handler () =
       if Hashtbl.length pendings = 0 then (Atomic.incr st.nb_availables; true)
       else false
     in
-    match Poll.wait events timeout with
-    | `Timeout ->
-       if do_decr then Atomic.decr st.nb_availables;
-       Timeout
-    | `Ok ->
-       if do_decr then Atomic.decr st.nb_availables;
-       let best = ref None in
-       let f sock _evt =
-         if sock = listen_sock then raise Exit;
-         let {count = n';_} as p = find sock in
-         match !best with
-         | None -> best := Some p
-         | Some{count = n;_} -> if n' < n then best:=Some p
-       in
-       try
-         Poll.iter_ready events ~f;
-         match !best with
-         | None -> assert false
-         | Some p -> Action p
-       with
-       | Exit -> Accept
+    let (rds,wrs) = Hashtbl.fold (fun s c (rds,wrs) ->
+                        match c.action with
+                        | Read  -> (s::rds,wrs)
+                        | Write -> (rds,s::wrs)) pendings ([listen_sock],[])
+    in
+    let (rds,wrs,_) = Unix.select rds wrs [] timeout in
+    if do_decr then Atomic.decr st.nb_availables;
+    let best = ref None in
+    let fn sock =
+      if sock = listen_sock then raise Exit;
+      let {count = n';_} as p = find sock in
+      match !best with
+      | None -> best := Some p
+      | Some{count = n;_} -> if n' < n then best:=Some p
+    in
+    try
+      List.iter fn rds;
+      List.iter fn wrs;
+      match !best with
+      | None -> Timeout
+      | Some p -> Action p
+    with
+    | Exit -> Accept
   in
   let rec do_job () =
     (try
        (*      Printf.eprintf "%d polling %d %a\n%!" id (Hashtbl.length pendings) print_status st;*)
-      match poll (Poll.Timeout.After 10_000_000L) with
+      match poll 1.0 with
       | Timeout -> Domain.cpu_relax (); ()
       | Accept ->
          Printf.eprintf "accept connection from %d %a\n%!" id print_status st;
@@ -139,7 +139,6 @@ let loop id st addr port maxc granularity handler () =
          let client = { sock; counter = 0; granularity; status = st; id } in
          handler client
       | Action { action; client; buf; offset; len; cont; _ } ->
-         Poll.(set events client.sock Event.none);
          Hashtbl.remove pendings client.sock;
          let n =
            match action with (* can not raise EAGAIN/EWOULDBLOCK *)
@@ -158,7 +157,6 @@ let loop id st addr port maxc granularity handler () =
         | Read (client,buf,offset,len) ->
            Some (fun (cont : (c,_) continuation) ->
                incr n;
-               Poll.(set events client.sock Event.read);
                Hashtbl.add pendings client.sock
                  {client;action=Read;buf;offset;len;cont;count = !n};
                loop ())
@@ -166,7 +164,6 @@ let loop id st addr port maxc granularity handler () =
            Some (fun (cont : (c,_) continuation) ->
                incr n;
                (* TODO: does not seem to work if we wait only for write ????*)
-               Poll.(set events client.sock Event.read_write);
                Hashtbl.add pendings client.sock
                  {client;action=Write;buf;offset;len;cont;count = !n};
                loop ())
