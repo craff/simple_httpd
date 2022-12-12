@@ -216,7 +216,7 @@ let add_vfs_ ~on_fs ~top ~config ~vfs:((module VFS:VFS) as vfs) ~prefix server :
          let req = S.Request.limit_body_size ~max_size:config.max_upload_size req in
          Tiny_httpd_stream.iter write req.S.Request.body;
          close ();
-         S._debug (fun k->k "done uploading");
+         U.debug (fun k->k "done uploading");
          S.Response.make_raw ~code:201 "upload successful"
       )
   ) else (
@@ -227,7 +227,7 @@ let add_vfs_ ~on_fs ~top ~config ~vfs:((module VFS:VFS) as vfs) ~prefix server :
   if config.download then (
     S.add_route_handler server ~meth:`GET (route())
       (fun path req ->
-         S._debug (fun k->k "path=%S" path);
+         U.debug (fun k->k "path=%S" path);
          let mtime = lazy (
            match VFS.file_mtime path with
            | None -> S.Response.fail_raise ~code:403 "Cannot access file"
@@ -238,17 +238,17 @@ let add_vfs_ ~on_fs ~top ~config ~vfs:((module VFS:VFS) as vfs) ~prefix server :
          ) else if not (VFS.contains path) then (
            S.Response.fail ~code:404 "File not found";
          ) else if S.Request.get_header req "If-None-Match" = Some (Lazy.force mtime) then (
-           S._debug (fun k->k "cached object %S (etag: %S)" path (Lazy.force mtime));
+           U.debug (fun k->k "cached object %S (etag: %S)" path (Lazy.force mtime));
            S.Response.make_raw ~code:304 ""
          ) else if VFS.is_directory path then (
-           S._debug (fun k->k "list dir %S (topdir %S)" path VFS.descr);
+           U.debug (fun k->k "list dir %S (topdir %S)" path VFS.descr);
            let parent = Filename.(dirname path) in
            let parent = if Filename.basename path <> "." then Some parent else None in
            match config.dir_behavior with
            | Index | Index_or_lists when VFS.contains (path // "index.html") ->
              (* redirect using path, not full path *)
              let new_path = "/" // prefix // path // "index.html" in
-             S._debug (fun k->k "redirect to `%s`" new_path);
+             U.debug (fun k->k "redirect to `%s`" new_path);
              S.Response.make_raw ~code:301 ""
                ~headers:S.Headers.(empty |> set "location" new_path)
            | Lists | Index_or_lists ->
@@ -375,7 +375,7 @@ module Embedded_fs = struct
         | Some (File {content;_}) -> Some (String.length content)
         | _ -> None
 
-      let contains p = S._debug (fun k->k "contains %S" p); match find_ self p with
+      let contains p = U.debug (fun k->k "contains %S" p); match find_ self p with
         | Some _ -> true
         | None -> false
 
@@ -387,7 +387,7 @@ module Embedded_fs = struct
         | Some (File {content;_}) -> Tiny_httpd_stream.of_string content
         | _ -> failwith (Printf.sprintf "no such file: %S" p)
 
-      let list_dir p = S._debug (fun k->k "list dir %S" p); match find_ self p with
+      let list_dir p = U.debug (fun k->k "list dir %S" p); match find_ self p with
         | Some (Dir sub) ->
           Str_map.fold (fun sub _ acc -> sub::acc) sub.entries [] |> Array.of_list
         | _ -> failwith (Printf.sprintf "no such directory: %S" p)

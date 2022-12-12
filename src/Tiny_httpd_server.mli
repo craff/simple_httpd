@@ -554,7 +554,7 @@ val run : t -> (unit, exn) result
 
 (**/**)
 
-val _debug : ((('a, out_channel, unit, unit, unit, unit) format6 -> 'a) -> unit) -> unit
-val _enable_debug: bool -> unit
+val debug : ((('a, out_channel, unit, unit) format4 -> 'a) -> unit) -> unit
+val set_debug: bool -> unit
 
 (**/**)

@@ -3,6 +3,9 @@
     @since 0.2
 *)
 
+val set_debug : bool -> unit
+val debug : ((('a, out_channel, unit, unit) format4 -> 'a) -> unit) -> unit
+
 val percent_encode : ?skip:(char -> bool) -> string -> string
 (** Encode the string into a valid path following
     https://tools.ietf.org/html/rfc3986#section-2.1

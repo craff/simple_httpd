@@ -1,4 +1,16 @@
 
+let debug_on = ref (
+  match String.trim @@ Sys.getenv "HTTP_DBG" with
+  | "" -> false | _ -> true | exception _ -> false
+)
+let set_debug b = debug_on := b
+let debug k =
+  if !debug_on then (
+    k (fun fmt->
+       Printf.fprintf stdout "[domain %d]: " Domain.((self() :> int));
+       Printf.kfprintf (fun oc -> Printf.fprintf oc "\n%!") stdout fmt)
+  )
+
 (* test utils *)
 (*$inject
   let pp_res f = function Ok x -> f x | Error e -> e

@@ -3,21 +3,12 @@ type buf = Tiny_httpd_buf.t
 type byte_stream = Tiny_httpd_stream.t
 module Out = Tiny_httpd_stream.Out_buf
 
-let _debug_on = ref (
-  match String.trim @@ Sys.getenv "HTTP_DBG" with
-  | "" -> false | _ -> true | exception _ -> false
-)
-let _enable_debug b = _debug_on := b
-let _debug k =
-  if !_debug_on then (
-    k (fun fmt->
-       (*Printf.fprintf stdout "[http.thread %d]: " Thread.(id @@ self());*)
-       Printf.kfprintf (fun oc -> Printf.fprintf oc "\n%!") stdout fmt)
-  )
-
 module Buf = Tiny_httpd_buf
 
 module Byte_stream = Tiny_httpd_stream
+
+let debug = Tiny_httpd_util.debug
+let set_debug = Tiny_httpd_util.set_debug
 
 exception Bad_req of int * string
 let bad_reqf c fmt = Printf.ksprintf (fun s ->raise (Bad_req (c,s))) fmt
@@ -122,7 +113,7 @@ module Headers = struct
   let parse_ ~buf (bs:byte_stream) : t =
     let rec loop acc =
       let line = Byte_stream.read_line ~buf bs in
-      _debug (fun k->k  "parsed header line %S" line);
+      debug (fun k->k  "parsed header line %S" line);
       if line = "\r" then (
         acc
       ) else (
@@ -198,13 +189,13 @@ module Request = struct
 
   (* decode a "chunked" stream into a normal stream *)
   let read_stream_chunked_ ?buf (bs:byte_stream) : byte_stream =
-    _debug (fun k->k "body: start reading chunked stream...");
+    debug (fun k->k "body: start reading chunked stream...");
     Byte_stream.read_chunked ?buf
       ~fail:(fun s -> Bad_req (400, s))
       bs
 
   let limit_body_size_ ~max_size (bs:byte_stream) : byte_stream =
-    _debug (fun k->k "limit size of body to max-size=%d" max_size);
+    debug (fun k->k "limit size of body to max-size=%d" max_size);
     Byte_stream.limit_size_to ~max_size ~close_rec:false bs
       ~too_big:(fun size ->
           (* read too much *)
@@ -218,7 +209,7 @@ module Request = struct
 
   (* read exactly [size] bytes from the stream *)
   let read_exactly ~size (bs:byte_stream) : byte_stream =
-    _debug (fun k->k "body: must read exactly %d bytes" size);
+    debug (fun k->k "body: must read exactly %d bytes" size);
     Byte_stream.read_exactly bs ~close_rec:false
       ~size ~too_short:(fun size ->
           bad_reqf 400 "body is too short by %d bytes" size
@@ -235,11 +226,11 @@ module Request = struct
           if version != 0 && version != 1 then raise Exit;
           meth, path, version
         with _ ->
-          _debug (fun k->k "invalid request line: `%s`" line);
+          debug (fun k->k "invalid request line: `%s`" line);
           raise (Bad_req (400, "Invalid request line"))
       in
       let meth = Meth.of_string meth in
-      _debug (fun k->k "got meth: %s, path %S" (Meth.to_string meth) path);
+      debug (fun k->k "got meth: %s, path %S" (Meth.to_string meth) path);
       let headers = Headers.parse_ ~buf bs in
       let host =
         match Headers.get "Host" headers with
@@ -401,7 +392,7 @@ module Response = struct
       ) else self.headers
     in
     let self = {self with headers; body} in
-    _debug (fun k->k "output response: %s"
+    debug (fun k->k "output response: %s"
                (Format.asprintf "%a" pp {self with body=`String "<…>"}));
     List.iter (fun (k,v) -> Out.printf oc "%s: %s\r\n" k v) headers;
     Out.add_string oc "\r\n";
@@ -727,7 +718,7 @@ let handle_client_ (self:t) (client:Tiny_httpd_domains.client) : unit =
   let is = Byte_stream.of_client ~buf_size:self.buf_size client in
   let continue = ref true in
   while !continue && self.running do
-    _debug (fun k->k "read next request");
+    debug (fun k->k "read next request");
     match Request.parse_req_start ~get_time_s:self.get_time_s ~buf is with
     | Ok None ->
       continue := false (* client is done *)
@@ -742,7 +733,7 @@ let handle_client_ (self:t) (client:Tiny_httpd_domains.client) : unit =
       continue := false
 
     | Ok (Some req) ->
-      _debug (fun k->k "req: %s" (Format.asprintf "@[%a@]" Request.pp_ req));
+      debug (fun k->k "req: %s" (Format.asprintf "@[%a@]" Request.pp_ req));
 
       if Request.close_after_req req then continue := false;
 
@@ -760,7 +751,7 @@ let handle_client_ (self:t) (client:Tiny_httpd_domains.client) : unit =
         (* handle expect/continue *)
         begin match Request.get_header ~f:String.trim req "Expect" with
           | Some "100-continue" ->
-            _debug (fun k->k "send back: 100 CONTINUE");
+            debug (fun k->k "send back: 100 CONTINUE");
             Response.output_ oc (Response.make_raw ~code:100 "");
           | Some s -> bad_reqf 417 "unknown expectation %s" s
           | None -> ()
@@ -804,9 +795,9 @@ let handle_client_ (self:t) (client:Tiny_httpd_domains.client) : unit =
         Response.output_ oc @@
           Response.fail ~code:500 "server error: %s" (Printexc.to_string e)
   done;
-  _debug (fun k->k "done with client, exiting");
+  debug (fun k->k "done with client, exiting");
   (try Unix.close client.sock
-   with e -> _debug (fun k->k "error when closing sock: %s" (Printexc.to_string e)));
+   with e -> debug (fun k->k "error when closing sock: %s" (Printexc.to_string e)));
   ()
 
 let run (self:t) : (unit,_) result =

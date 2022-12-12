@@ -2,6 +2,8 @@ open Effect
 open Effect.Deep
 open Domain
 
+module U = Tiny_httpd_util
+
 type status = {
     nb_availables : int Atomic.t;
     nb_connections : int Atomic.t array
@@ -44,12 +46,15 @@ let read  c s o l =
   if c.counter mod c.granularity = 0 (* &&
        (Atomic.get c.status.nb_connections.(c.id) > 1 ||
           Atomic.get c.status.nb_availables <= 0)*) then
-    perform (Read (c,s,o,l))
+    (U.debug (fun k -> k "normal schedule read %d" l);
+     perform (Read (c,s,o,l)))
   else
     try
       let n = Unix.read c.sock s o l in
+      U.debug (fun k -> k "read(1) %d/%d" n l);
       if n = 0 then close (Closed true) c; n
     with Unix.(Unix_error((EAGAIN|EWOULDBLOCK),_,_)) ->
+          U.debug (fun k -> k "exn schedule read %d" l);
           perform (Read (c,s,o,l))
        | exn -> close exn c
 
@@ -59,12 +64,15 @@ let write c s o l =
   if c.counter mod c.granularity = 0(* &&
        (Atomic.get c.status.nb_connections.(c.id) > 1 ||
           Atomic.get c.status.nb_availables <= 0)*) then
-     perform (Write(c,s,o,l))
+    (U.debug (fun k -> k "normal schedule write %d" l);
+     perform (Write(c,s,o,l)))
   else
     try
       let n = Unix.single_write c.sock s o l in
+      U.debug (fun k -> k "write(1) %d/%d" n l);
       if n = 0 then close (Closed false) c; n
     with Unix.(Unix_error((EAGAIN|EWOULDBLOCK),_,_)) ->
+          U.debug (fun k -> k "exn schedule write %d" l);
           perform (Write (c,s,o,l))
        | exn -> close exn c
 
@@ -128,11 +136,10 @@ let loop id st addr port maxc granularity handler () =
   in
   let rec do_job () =
     (try
-       (*      Printf.eprintf "%d polling %d %a\n%!" id (Hashtbl.length pendings) print_status st;*)
       match poll 1.0 with
       | Timeout -> Domain.cpu_relax (); ()
       | Accept ->
-         Printf.eprintf "accept connection from %d %a\n%!" id print_status st;
+         U.debug (fun k -> k "accept connection from %d %a" id print_status st);
          Atomic.incr st.nb_connections.(id);
          let sock, _ = Unix.accept listen_sock in
          Unix.set_nonblock sock;
@@ -145,10 +152,12 @@ let loop id st addr port maxc granularity handler () =
            | Read  -> Unix.read client.sock buf offset len
            | Write -> Unix.single_write client.sock buf offset len
          in
+         U.debug (fun k -> k "%s(2) %d/%d"
+           (if action = Read then "read" else "write") n len);
          if n = 0 then close (Closed (action=Read)) client;
          continue cont n;
     with e ->
-      Printf.eprintf "exn: %s\n%!" (Printexc.to_string e));
+      U.debug (fun k -> k "exn: %s" (Printexc.to_string e)));
     do_job ()
   and loop () =
     try_with do_job ()

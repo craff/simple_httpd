@@ -33,7 +33,7 @@ let main () =
       "--port", Set_int port, " port to listen on";
       "-p", Set_int port, " alias to --port";
       "--dir", Set_string dir_, " directory to serve (default: \".\")";
-      "--debug", Unit (fun () -> S._enable_debug true), " debug mode";
+      "--debug", Unit (fun () -> U.set_debug true), " debug mode";
       "--upload", Unit (fun () -> config.upload <- true), " enable file uploading";
       "--no-upload", Unit (fun () -> config.upload <- false), " disable file uploading";
       "--download", Unit (fun () -> config.download <- true), " enable file downloading";
