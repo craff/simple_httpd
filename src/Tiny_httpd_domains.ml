@@ -156,7 +156,7 @@ let loop id st addr port maxc granularity handler () =
   in
   let rec do_job () =
     (try
-      match poll 1.0 with
+      match poll 1e-3 with
       | Timeout -> Domain.cpu_relax (); ()
       | Accept ->
          U.debug (fun k -> k "accept connection from %d %a" id print_status st);
