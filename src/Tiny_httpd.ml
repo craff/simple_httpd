@@ -15,6 +15,12 @@ include Tiny_httpd_server
 
 let yield = Tiny_httpd_domains.yield
 
+let sleep x =
+  let t0 = Unix.gettimeofday () +. x in
+  while (Unix.gettimeofday () < t0) do
+    yield ()
+  done
+
 module Util = Tiny_httpd_util
 
 module Dir = Tiny_httpd_dir

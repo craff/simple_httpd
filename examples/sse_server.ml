@@ -4,13 +4,14 @@
 module S = Tiny_httpd
 
 let port = ref 8080
-
+let t    = ref 1
 let () =
   Arg.parse (Arg.align [
       "-p", Arg.Set_int port, " port to listen on";
+      "-r", Arg.Set_int t, " number of thread (1)";
       "--debug", Arg.Int S.set_debug, " toggle debug";
     ]) (fun _ -> ()) "sse_clock [opt*]";
-  let server = S.create ~port:!port () in
+  let server = S.create ~num_thread:!t ~port:!port () in
 
   let extra_headers = [
     "Access-Control-Allow-Origin", "*";
@@ -29,8 +30,7 @@ let () =
          EV.send_event ~event:(if !tick then "tick" else "tock")
            ~data:(Ptime.to_rfc3339 now) ();
          tick := not !tick;
-
-         Unix.sleepf 1.0;
+         S.sleep 1.0;
        done;
     );
 
@@ -41,16 +41,27 @@ let () =
        while true do
          EV.send_event ~data:(string_of_int !n) ();
          incr n;
-         Unix.sleepf 0.1;
+         S.sleep 0.1;
        done;
     );
   S.add_route_server_sent_handler server S.Route.(exact "count" @/ int @/ return)
     (fun n _req (module EV : S.SERVER_SENT_GENERATOR)  ->
        for i=0 to n do
          EV.send_event ~data:(string_of_int i) ();
-         Unix.sleepf 0.1;
+         S.sleep 0.1;
        done;
        EV.close();
+    );
+  S.add_route_handler server S.Route.(exact "fib" @/ int @/ return)
+    (fun n _req ->
+      let rec fib n =
+        if n <= 1 then 1 else
+          begin
+	    if n > 10 then S.yield ();
+            fib (n-1) + fib (n-2)
+          end
+      in
+      S.Response.make_string (Ok ("fib: " ^ string_of_int (fib n)^"\n"))
     );
 
   Printf.printf "listening on http://localhost:%d/\n%!" (S.port server);

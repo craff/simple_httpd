@@ -115,3 +115,5 @@ val yield : unit -> unit
     when read or write is blocked or when the input of output buffer are full.
     A request that requires more time should call yield to be cooperative.
 *)
+
+val sleep : float -> unit

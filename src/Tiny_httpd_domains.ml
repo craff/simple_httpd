@@ -179,6 +179,7 @@ let loop id st addr port maxc granularity handler () =
          continue cont n;
       | Yield(cont,_) ->
          U.debug ~lvl:5 (fun k -> k "yield(2)");
+         ignore (Queue.pop yields);
          continue cont ();
     with e ->
       U.debug (fun k -> k "exn: %s" (Printexc.to_string e)));
