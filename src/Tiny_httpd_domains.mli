@@ -13,6 +13,7 @@ type client = {
 
 val read  : client -> Bytes.t -> int -> int -> int
 val write : client -> Bytes.t -> int -> int -> int
+val yield : unit -> unit
 
 val run : int -> string -> int -> int -> int -> (client -> unit) ->
             unit Domain.t array

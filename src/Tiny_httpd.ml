@@ -13,6 +13,8 @@ module Byte_stream = Tiny_httpd_stream
 
 include Tiny_httpd_server
 
+let yield = Tiny_httpd_domains.yield
+
 module Util = Tiny_httpd_util
 
 module Dir = Tiny_httpd_dir

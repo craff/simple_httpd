@@ -106,3 +106,12 @@ module Dir = Tiny_httpd_dir
 module Html = Tiny_httpd_html
 (** Alias to {!Tiny_httpd_html}
     @since NEXT_RELEASE *)
+
+(** {2 cooperative threading *)
+
+val yield : unit -> unit
+(** let other thread run. Should be called for request that take more time
+    before sending results or reading data. Normally constext switching occurs
+    when read or write is blocked or when the input of output buffer are full.
+    A request that requires more time should call yield to be cooperative.
+*)

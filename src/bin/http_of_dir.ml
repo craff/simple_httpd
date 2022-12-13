@@ -3,8 +3,8 @@ module U = Tiny_httpd_util
 module D = Tiny_httpd_dir
 module Pf = Printf
 
-let serve ~config (dir:string) addr port j : _ result =
-  let server = S.create ~max_connections:j ~addr ~port () in
+let serve ~config (dir:string) addr port j t : _ result =
+  let server = S.create ~max_connections:j ~num_thread:t ~addr ~port () in
   Printf.printf "serve directory %s on http://%s:%d\n%!"
     dir addr port;
 
@@ -27,6 +27,7 @@ let main () =
   let addr = ref "127.0.0.1" in
   let port = ref 8080 in
   let j    = ref 32 in
+  let t    = ref (Domain.recommended_domain_count ()) in
   Arg.parse (Arg.align [
       "--addr", Set_string addr, " address to listen on";
       "-a", Set_string addr, " alias to --listen";
@@ -47,8 +48,9 @@ let main () =
       "--delete", Unit (fun () -> config.delete <- true), " enable `delete` on files";
       "--no-delete", Unit (fun () -> config.delete <- false), " disable `delete` on files";
       "-j", Set_int j, " maximum number of simultaneous connections";
+      "-t", Set_int t, " maximum number of threads";
     ]) (fun s -> dir_ := s) "http_of_dir [options] [dir]";
-  match serve ~config !dir_ !addr !port !j with
+  match serve ~config !dir_ !addr !port !j !t with
   | Ok () -> ()
   | Error e ->
     raise e

@@ -685,7 +685,7 @@ let create
     ?(granularity=3)
     ?(num_thread=Domain.recommended_domain_count () - 1)
     ?(timeout=0.0)
-    ?(buf_size=16 * 2_048)
+    ?(buf_size=16 * 2048)
     ?(get_time_s=Unix.gettimeofday)
     ?(addr="127.0.0.1") ?(port=8080) ?sock
     ?(middlewares=[])
@@ -803,7 +803,7 @@ let handle_client_ (self:t) (client:Tiny_httpd_domains.client) : unit =
 let run (self:t) : (unit,_) result =
   try
     let handler client_sock = handle_client_ self client_sock in
-    let maxc = self.max_connections / self.num_thread + 2 in
+    let maxc = (self.max_connections + self.num_thread - 1) / self.num_thread in
     let a = Tiny_httpd_domains.run self.num_thread self.addr self.port
               maxc self.granularity handler
     in

@@ -27,6 +27,7 @@ type client = {
 type _ Effect.t +=
    | Read  : client * Bytes.t * int * int -> int Effect.t
    | Write : client * Bytes.t * int * int -> int Effect.t
+   | Yield : unit Effect.t
 
 type action = Read|Write
 type pending =
@@ -39,6 +40,10 @@ let close exn c =
   Atomic.decr c.status.nb_connections.(c.id);
   (try Unix.close c.sock with _ -> ());
   raise exn
+
+let yield () =
+  U.debug ~lvl:5 (fun k -> k "yield(1)");
+  perform Yield
 
 let read  c s o l =
   assert(l<>0);
@@ -99,10 +104,12 @@ type pollResult =
   | Timeout
   | Accept
   | Action of pending
+  | Yield of ((unit,unit) continuation * int)
 
 let loop id st addr port maxc granularity handler () =
   let listen_sock = connect addr port maxc in
   let pendings = Hashtbl.create 32 in
+  let yields = Queue.create () in
   let n = ref 0 in
   let find s = try Hashtbl.find pendings s with _ -> assert false in
   let check rds wrs =
@@ -163,6 +170,9 @@ let loop id st addr port maxc granularity handler () =
            (if action = Read then "read" else "write") n len);
          if n = 0 then close (Closed (action=Read)) client;
          continue cont n;
+      | Yield(cont,_) ->
+         U.debug ~lvl:5 (fun k -> k "yield(2)");
+         continue cont ();
     with e ->
       U.debug (fun k -> k "exn: %s" (Printexc.to_string e)));
     do_job ()
@@ -170,6 +180,11 @@ let loop id st addr port maxc granularity handler () =
     try_with do_job ()
     { effc = (fun (type c) (eff: c Effect.t) ->
         match eff with
+        | Yield ->
+           Some (fun (cont : (c,_) continuation) ->
+               incr n;
+               Queue.add (cont, !n) yields;
+               loop ())
         | Read (client,buf,offset,len) ->
            Some (fun (cont : (c,_) continuation) ->
                incr n;
@@ -188,6 +203,8 @@ let loop id st addr port maxc granularity handler () =
   in loop ()
 
 let run nb addr port maxc granularity handler =
+  if nb <= 0 || maxc < nb then
+    invalid_arg "bad number of threads or max connections";
   let status = {
       nb_availables = Atomic.make 0;
       nb_connections = Array.init nb (fun _ -> Atomic.make 0)
@@ -195,5 +212,5 @@ let run nb addr port maxc granularity handler =
   in
   let fn id = spawn (loop id status addr port maxc granularity handler) in
   let r = Array.init (nb-1) fn in
-  let _ = fn (nb-1) in
+  let _ = loop (nb-1) status addr port maxc granularity handler () in
   r
