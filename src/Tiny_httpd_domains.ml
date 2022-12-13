@@ -132,6 +132,7 @@ let loop id st addr port maxc granularity handler () =
                         | Read  -> (s::rds,wrs)
                         | Write -> (rds,s::wrs)) pendings (rds,[])
     in
+    let timeout = if Queue.is_empty yields then timeout else 0.0 in
     try
       let (rds,wrs,_) = Unix.select rds wrs [] timeout in
       if do_decr then Atomic.decr st.nb_availables;
