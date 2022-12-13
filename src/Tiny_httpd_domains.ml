@@ -124,29 +124,35 @@ let loop id st addr port maxc granularity handler () =
       if Hashtbl.length pendings = 0 then (Atomic.incr st.nb_availables; true)
       else false
     in
+    let rds =
+      if Atomic.get st.nb_connections.(id) < maxc then [listen_sock] else []
+    in
     let (rds,wrs) = Hashtbl.fold (fun s c (rds,wrs) ->
                         match c.action with
                         | Read  -> (s::rds,wrs)
-                        | Write -> (rds,s::wrs)) pendings ([listen_sock],[])
+                        | Write -> (rds,s::wrs)) pendings (rds,[])
     in
     try
       let (rds,wrs,_) = Unix.select rds wrs [] timeout in
       if do_decr then Atomic.decr st.nb_availables;
-      let best = ref None in
+      let best = ref (match Queue.peek_opt yields with
+                      | None -> Timeout
+                      | Some c -> Yield c) in
       let fn sock =
         if sock = listen_sock then raise Exit;
         let {count = n';_} as p = find sock in
         match !best with
-        | None -> best := Some p
-        | Some{count = n;_} -> if n' < n then best:=Some p
+        | Timeout -> best := Action p
+        | Yield(_,n) ->  if n' < n then best:=Action p
+        | Action{count = n;_} -> if n' < n then best:=Action p
+        | Accept -> assert false
       in
       List.iter fn rds;
       List.iter fn wrs;
-      match !best with
-      | None -> Timeout
-      | Some p -> Action p
+      !best
     with
     | Exit -> Accept
+    | Unix.(Unix_error(EBADF,_,_)) -> check rds wrs; poll timeout
   in
   let rec do_job () =
     (try
