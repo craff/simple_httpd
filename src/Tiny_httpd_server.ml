@@ -532,7 +532,8 @@ type t = {
   num_thread: int;
 
   max_connections: int;
-  (* semaphore to restrict the number of active concurrent connections *)
+
+  granularity: int;
 
   masksigpipe: bool;
 
@@ -681,6 +682,7 @@ let add_route_server_sent_handler ?accept self route f =
 let create
     ?(masksigpipe=true)
     ?(max_connections=32)
+    ?(granularity=3)
     ?(num_thread=Domain.recommended_domain_count () - 1)
     ?(timeout=0.0)
     ?(buf_size=16 * 1_024)
@@ -692,7 +694,7 @@ let create
   let max_connections = max 4 max_connections in
   let self = {
     addr; port; sock; masksigpipe; handler; buf_size;
-    running= true; max_connections;
+    running= true; max_connections; granularity;
     path_handlers=[]; timeout; get_time_s; num_thread;
     middlewares=[]; middlewares_sorted=lazy [];
   } in
@@ -805,7 +807,7 @@ let run (self:t) : (unit,_) result =
     let handler client_sock = handle_client_ self client_sock in
     let maxc = self.max_connections / self.num_thread + 2 in
     let a = Tiny_httpd_domains.run self.num_thread self.addr self.port
-              maxc 5 handler
+              maxc self.granularity handler
     in
     Array.iter (fun d -> Domain.join d) a;
     Ok ()
