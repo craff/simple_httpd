@@ -17,7 +17,7 @@ for (( c=1; c<=$nb; c++ )); do
   sleep $sleep_time
 done
 
-echo ${PIDS[@]}
+#echo ${PIDS[@]}
 wait ${PIDS[@]}
 
 kill $PID
