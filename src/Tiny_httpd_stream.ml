@@ -358,7 +358,7 @@ module Out_buf = struct
 
   type t = { fd : Tiny_httpd_domains.client; b: Buffer.t; s : int }
 
-  let create ?(buf_size=16* 1_024) fd =
+  let create ?(buf_size=16* 4_096) fd =
     {fd; s=buf_size; b=Buffer.create (2*buf_size)}
 
   let flush oc = write_buf oc.fd oc.b
@@ -390,14 +390,6 @@ module Out_buf = struct
   let add_char oc c =
     Buffer.add_char oc.b c; push oc
 
-  let output_bytes oc str =
-    assert (Buffer.length oc.b = 0);
-    write_str oc.fd str
-
-  let output_str oc str =
-    assert (Buffer.length oc.b = 0);
-    let str = Bytes.unsafe_of_string str in
-    write_str oc.fd str
 end
 
 (* print a stream as a series of chunks *)
@@ -420,5 +412,5 @@ let output_chunked (oc:Out_buf.t) (self:t) : unit =
   done;
   ()
 
-let output_str = Out_buf.output_str
-let output_bytes = Out_buf.output_bytes
+let output_str = Out_buf.add_string
+let output_bytes = Out_buf.add_bytes
