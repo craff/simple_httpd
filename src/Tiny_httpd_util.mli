@@ -3,8 +3,8 @@
     @since 0.2
 *)
 
-val set_debug : bool -> unit
-val debug : ((('a, out_channel, unit, unit) format4 -> 'a) -> unit) -> unit
+val set_debug : int -> unit
+val debug : ?lvl:int -> ((('a, out_channel, unit, unit) format4 -> 'a) -> unit) -> unit
 
 val percent_encode : ?skip:(char -> bool) -> string -> string
 (** Encode the string into a valid path following

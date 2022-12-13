@@ -113,7 +113,7 @@ module Headers = struct
   let parse_ ~buf (bs:byte_stream) : t =
     let rec loop acc =
       let line = Byte_stream.read_line ~buf bs in
-      debug (fun k->k  "parsed header line %S" line);
+      debug ~lvl:3 (fun k->k  "parsed header line %S" line);
       if line = "\r" then (
         acc
       ) else (
@@ -189,13 +189,13 @@ module Request = struct
 
   (* decode a "chunked" stream into a normal stream *)
   let read_stream_chunked_ ?buf (bs:byte_stream) : byte_stream =
-    debug (fun k->k "body: start reading chunked stream...");
+    debug ~lvl:3 (fun k->k "body: start reading chunked stream...");
     Byte_stream.read_chunked ?buf
       ~fail:(fun s -> Bad_req (400, s))
       bs
 
   let limit_body_size_ ~max_size (bs:byte_stream) : byte_stream =
-    debug (fun k->k "limit size of body to max-size=%d" max_size);
+    debug ~lvl:3 (fun k->k "limit size of body to max-size=%d" max_size);
     Byte_stream.limit_size_to ~max_size ~close_rec:false bs
       ~too_big:(fun size ->
           (* read too much *)
@@ -209,7 +209,7 @@ module Request = struct
 
   (* read exactly [size] bytes from the stream *)
   let read_exactly ~size (bs:byte_stream) : byte_stream =
-    debug (fun k->k "body: must read exactly %d bytes" size);
+    debug ~lvl:3 (fun k->k "body: must read exactly %d bytes" size);
     Byte_stream.read_exactly bs ~close_rec:false
       ~size ~too_short:(fun size ->
           bad_reqf 400 "body is too short by %d bytes" size
@@ -226,11 +226,11 @@ module Request = struct
           if version != 0 && version != 1 then raise Exit;
           meth, path, version
         with _ ->
-          debug (fun k->k "invalid request line: `%s`" line);
+          debug ~lvl:3 (fun k->k "invalid request line: `%s`" line);
           raise (Bad_req (400, "Invalid request line"))
       in
       let meth = Meth.of_string meth in
-      debug (fun k->k "got meth: %s, path %S" (Meth.to_string meth) path);
+      debug ~lvl:3 (fun k->k "got meth: %s, path %S" (Meth.to_string meth) path);
       let headers = Headers.parse_ ~buf bs in
       let host =
         match Headers.get "Host" headers with
@@ -392,7 +392,7 @@ module Response = struct
       ) else self.headers
     in
     let self = {self with headers; body} in
-    debug (fun k->k "output response: %s"
+    debug ~lvl:3 (fun k->k "output response: %s"
                (Format.asprintf "%a" pp {self with body=`String "<…>"}));
     List.iter (fun (k,v) -> Out.printf oc "%s: %s\r\n" k v) headers;
     Out.add_string oc "\r\n";
@@ -718,7 +718,7 @@ let handle_client_ (self:t) (client:Tiny_httpd_domains.client) : unit =
   let is = Byte_stream.of_client ~buf_size:self.buf_size client in
   let continue = ref true in
   while !continue && self.running do
-    debug (fun k->k "read next request");
+    debug ~lvl:3 (fun k->k "read next request");
     match Request.parse_req_start ~get_time_s:self.get_time_s ~buf is with
     | Ok None ->
       continue := false (* client is done *)
@@ -733,7 +733,7 @@ let handle_client_ (self:t) (client:Tiny_httpd_domains.client) : unit =
       continue := false
 
     | Ok (Some req) ->
-      debug (fun k->k "req: %s" (Format.asprintf "@[%a@]" Request.pp_ req));
+      debug ~lvl:3 (fun k->k "req: %s" (Format.asprintf "@[%a@]" Request.pp_ req));
 
       if Request.close_after_req req then continue := false;
 
@@ -751,7 +751,7 @@ let handle_client_ (self:t) (client:Tiny_httpd_domains.client) : unit =
         (* handle expect/continue *)
         begin match Request.get_header ~f:String.trim req "Expect" with
           | Some "100-continue" ->
-            debug (fun k->k "send back: 100 CONTINUE");
+            debug ~lvl:3 (fun k->k "send back: 100 CONTINUE");
             Response.output_ oc (Response.make_raw ~code:100 "");
           | Some s -> bad_reqf 417 "unknown expectation %s" s
           | None -> ()
@@ -795,7 +795,7 @@ let handle_client_ (self:t) (client:Tiny_httpd_domains.client) : unit =
         Response.output_ oc @@
           Response.fail ~code:500 "server error: %s" (Printexc.to_string e)
   done;
-  debug (fun k->k "done with client, exiting");
+  debug ~lvl:3 (fun k->k "done with client, exiting");
   (try Unix.close client.sock
    with e -> debug (fun k->k "error when closing sock: %s" (Printexc.to_string e)));
   ()

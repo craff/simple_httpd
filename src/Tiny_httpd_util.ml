@@ -1,11 +1,11 @@
 
-let debug_on = ref (
-  match String.trim @@ Sys.getenv "HTTP_DBG" with
-  | "" -> false | _ -> true | exception _ -> false
+let debug_lvl = ref (
+  match int_of_string (Sys.getenv "HTTP_DBG") with
+  | n -> n | exception _ -> 0
 )
-let set_debug b = debug_on := b
-let debug k =
-  if !debug_on then (
+let set_debug n = debug_lvl := n
+let debug ?(lvl=1) k =
+  if !debug_lvl >= lvl then (
     k (fun fmt->
        Printf.fprintf stdout "[domain %d]: " Domain.((self() :> int));
        Printf.kfprintf (fun oc -> Printf.fprintf oc "\n%!") stdout fmt)

@@ -8,7 +8,7 @@ let port = ref 8080
 let () =
   Arg.parse (Arg.align [
       "-p", Arg.Set_int port, " port to listen on";
-      "--debug", Arg.Bool S.set_debug, " toggle debug";
+      "--debug", Arg.Int S.set_debug, " toggle debug";
     ]) (fun _ -> ()) "sse_clock [opt*]";
   let server = S.create ~port:!port () in
 
