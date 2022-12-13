@@ -67,6 +67,21 @@
   (action (diff dl-out.expect dl-out)))
 
 (rule
+  (targets dl-stress)
+  (deps (:bin ../src/bin/http_of_dir.exe) foo_50)
+  (locks /port)
+  (package tiny_httpd_domain)
+  (enabled_if (= %{system} "linux"))
+  (action (with-stdout-to %{targets}
+                          (run ./stress.sh %{bin} 15))))
+
+(rule
+  (alias runtest)
+  (package tiny_httpd_domain)
+  (enabled_if (= %{system} "linux"))
+  (action (diff dl-stress.expect dl-stress)))
+
+(rule
   (targets foo_50)
   (enabled_if (= %{system} "linux"))
   (action
