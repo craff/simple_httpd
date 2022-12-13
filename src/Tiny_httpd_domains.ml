@@ -105,7 +105,14 @@ let loop id st addr port maxc granularity handler () =
   let pendings = Hashtbl.create 32 in
   let n = ref 0 in
   let find s = try Hashtbl.find pendings s with _ -> assert false in
-  let poll timeout =
+  let check rds wrs =
+    let fn s =
+      try ignore (Unix.fstat s) with _ -> Hashtbl.remove pendings s
+    in
+    List.iter fn rds;
+    List.iter fn wrs
+  in
+  let rec poll timeout =
     let do_decr =
       if Hashtbl.length pendings = 0 then (Atomic.incr st.nb_availables; true)
       else false
@@ -115,17 +122,17 @@ let loop id st addr port maxc granularity handler () =
                         | Read  -> (s::rds,wrs)
                         | Write -> (rds,s::wrs)) pendings ([listen_sock],[])
     in
-    let (rds,wrs,_) = Unix.select rds wrs [] timeout in
-    if do_decr then Atomic.decr st.nb_availables;
-    let best = ref None in
-    let fn sock =
-      if sock = listen_sock then raise Exit;
-      let {count = n';_} as p = find sock in
-      match !best with
-      | None -> best := Some p
-      | Some{count = n;_} -> if n' < n then best:=Some p
-    in
     try
+      let (rds,wrs,_) = Unix.select rds wrs [] timeout in
+      if do_decr then Atomic.decr st.nb_availables;
+      let best = ref None in
+      let fn sock =
+        if sock = listen_sock then raise Exit;
+        let {count = n';_} as p = find sock in
+        match !best with
+        | None -> best := Some p
+        | Some{count = n;_} -> if n' < n then best:=Some p
+      in
       List.iter fn rds;
       List.iter fn wrs;
       match !best with
