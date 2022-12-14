@@ -1,7 +1,7 @@
 # Tiny_httpd_domains [![build](https://github.com/c-cube/tiny_httpd/workflows/build/badge.svg)](https://github.com/c-cube/tiny_httpd/actions)
 
 Minimal HTTP server, fork of
-![tiny_httpd](https://github.com/c-cube/tiny_httpd] using OCaml 5 domain and effect,
+[![tiny_httpd](https://github.com/c-cube/tiny_httpd)] using OCaml 5 domain and effect,
 simple routing, URL encoding/decoding, static asset serving,
 and optional compression with camlzip.
 It also supports [server-sent events](https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events/Using_server-sent_events)
