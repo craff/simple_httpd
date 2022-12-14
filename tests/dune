@@ -4,12 +4,12 @@
   (deps (:bin ../examples/echo.exe))
   (locks /port)
   (enabled_if (= %{system} "linux"))
-  (package tiny_httpd_camlzip)
+  (package tiny_httpd_domain_camlzip)
   (action (with-stdout-to %{targets} (run ./echo1.sh %{bin}))))
 
 (rule
   (alias runtest)
-  (package tiny_httpd_camlzip)
+  (package tiny_httpd_domain_camlzip)
   (enabled_if (= %{system} "linux"))
   (action (diff echo1.expect echo1.out)))
 

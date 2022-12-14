@@ -13,7 +13,7 @@
   (name echo)
   (flags :standard -warn-error -a+8)
   (modules echo vfs)
-  (libraries tiny_httpd_domain tiny_httpd_camlzip))
+  (libraries tiny_httpd_domain tiny_httpd_domain_camlzip))
 
 (executable
   (name minimal)

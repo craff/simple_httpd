@@ -46,7 +46,7 @@ let () =
     ]) (fun _ -> raise (Arg.Bad "")) "echo [option]*";
 
   let server = S.create ~port:!port_ ~max_connections:!j () in
-  Tiny_httpd_camlzip.setup ~compress_above:1024 ~buf_size:(16*1024) server;
+  Tiny_httpd_domain_camlzip.setup ~compress_above:1024 ~buf_size:(16*1024) server;
 
   let m_stats, get_stats = middleware_stat () in
   S.add_middleware server ~stage:(`Stage 1) m_stats;
