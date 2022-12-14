@@ -22,9 +22,9 @@ depends: [
   "ounit2" {with-test}
   "ptime" {with-test}
 ]
-tags: [ "http" "domain" "server" "tiny_httpd" "http_of_dir" "simplehttpserver" ]
-homepage: "https://github.com/craff/tiny_httpd_domains/"
-doc: "https://c-cube.github.io/tiny_httpd_domains/"
-bug-reports: "https://github.com/c-cube/tiny_httpd_domains/issues"
-dev-repo: "git+https://github.com/c-cube/tiny_httpd_domains.git"
+tags: [ "http" "domain" "server" "tiny_httpd_domain" "http_of_dir" "simplehttpserver" ]
+homepage: "https://github.com/craff/tiny_httpd_domain/"
+doc: "https://craff.github.io/tiny_httpd_domain/"
+bug-reports: "https://github.com/craff/tiny_httpd_domain/issues"
+dev-repo: "git+https://github.com/craff/tiny_httpd_domain.git"
 post-messages: "tiny http server, with non blocking IOs and domain. Also ships with a `http_of_dir` program."

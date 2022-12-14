@@ -1,4 +1,4 @@
-name: github pages
+name: github pages for tiny_httpd_domains
 
 on:
   push:
@@ -12,10 +12,10 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
 
-      - name: Use OCaml 4.14.x
+      - name: Use OCaml 5.0.0
         uses: ocaml/setup-ocaml@v2
         with:
-          ocaml-compiler: 4.14.x
+          ocaml-compiler: ocaml-base-compiler.5.0.0~rc1
           dune-cache: true
 
       - name: Deploy odoc to GitHub Pages
