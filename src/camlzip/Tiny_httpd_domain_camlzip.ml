@@ -1,9 +1,10 @@
 
+module U = Tiny_httpd_util
 module S = Tiny_httpd_server
 module BS = Tiny_httpd_stream
 
 let decode_deflate_stream_ ~buf_size (is:S.byte_stream) : S.byte_stream =
-  S._debug (fun k->k "wrap stream with deflate.decode");
+  S.debug (fun k->k "wrap stream with deflate.decode");
   let zlib_str = Zlib.inflate_init false in
   let is_done = ref false in
   BS.make
@@ -36,25 +37,25 @@ let decode_deflate_stream_ ~buf_size (is:S.byte_stream) : S.byte_stream =
               self.off <- 0;
               self.len <- used_out;
               if finished then is_done := true;
-              S._debug (fun k->k "decode %d bytes as %d bytes from inflate (finished: %b)"
+              U.debug (fun k->k "decode %d bytes as %d bytes from inflate (finished: %b)"
                            used_in used_out finished);
             with Zlib.Error (e1,e2) ->
               S.Response.fail_raise ~code:400
                 "inflate: error during decompression:\n%s %s" e1 e2
           end;
-          S._debug (fun k->k "inflate: refill %d bytes into internal buf" self.len);
+          U.debug (fun k->k "inflate: refill %d bytes into internal buf" self.len);
         );
       )
     ()
 
 let encode_deflate_stream_ ~buf_size (is:S.byte_stream) : S.byte_stream =
-  S._debug (fun k->k "wrap stream with deflate.encode");
+  U.debug (fun k->k "wrap stream with deflate.encode");
   let refill = ref true in
   let zlib_str = Zlib.deflate_init 4 false in
   BS.make
     ~bs:(Bytes.create buf_size)
     ~close:(fun _self ->
-        S._debug (fun k->k "deflate: close");
+        U.debug (fun k->k "deflate: close");
         Zlib.deflate_end zlib_str;
         BS.close is
       )
@@ -64,7 +65,7 @@ let encode_deflate_stream_ ~buf_size (is:S.byte_stream) : S.byte_stream =
       )
     ~fill:(fun self ->
         let rec loop() =
-          S._debug (fun k->k "deflate.fill.iter out_off=%d out_len=%d"
+          U.debug (fun k->k "deflate.fill.iter out_off=%d out_len=%d"
                        self.off self.len);
           if self.len > 0 then (
             () (* still the same slice, not consumed entirely by output *)
@@ -84,11 +85,11 @@ let encode_deflate_stream_ ~buf_size (is:S.byte_stream) : S.byte_stream =
               self.off <- 0;
               self.len <- used_out;
               is.consume used_in;
-              S._debug
+              U.debug
                 (fun k->k "encode %d bytes as %d bytes using deflate (finished: %b)"
                     used_in used_out _finished);
               if _finished then (
-                S._debug (fun k->k "deflate: finished");
+                U.debug (fun k->k "deflate: finished");
                 refill := false;
               );
               loop()
@@ -177,7 +178,7 @@ let compress_resp_stream_
     match resp.body with
     | `String s when String.length s > compress_above ->
       (* big string, we compress *)
-      S._debug
+      U.debug
         (fun k->k "encode str response with deflate (size %d, threshold %d)"
              (String.length s) compress_above);
       let body =
@@ -188,7 +189,7 @@ let compress_resp_stream_
       |> S.Response.set_body (`Stream body)
 
     | `Stream str ->
-      S._debug (fun k->k "encode stream response with deflate");
+      U.debug (fun k->k "encode stream response with deflate");
       resp
       |> S.Response.update_headers update_headers
       |> S.Response.set_body (`Stream (encode_deflate_stream_ ~buf_size str))
@@ -210,6 +211,5 @@ let middleware
 let setup
     ?compress_above ?buf_size server =
   let m = middleware ?compress_above ?buf_size () in
-  S._debug (fun k->k "setup gzip support");
+  U.debug (fun k->k "setup gzip support");
   S.add_middleware ~stage:`Encoding server m
-
