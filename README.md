@@ -1,48 +1,58 @@
-# Tiny_httpd [![build](https://github.com/c-cube/tiny_httpd/workflows/build/badge.svg)](https://github.com/c-cube/tiny_httpd/actions)
+# Tiny_httpd_domains [![build](https://github.com/c-cube/tiny_httpd/workflows/build/badge.svg)](https://github.com/c-cube/tiny_httpd/actions)
 
-Minimal HTTP server using good old threads, with stream abstractions,
+Minimal HTTP server, fork of
+![tiny_httpd](https://github.com/c-cube/tiny_httpd] using OCaml 5 domain and effect,
 simple routing, URL encoding/decoding, static asset serving,
 and optional compression with camlzip.
 It also supports [server-sent events](https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events/Using_server-sent_events)
 ([w3c](https://html.spec.whatwg.org/multipage/server-sent-events.html#event-stream-interpretation))
 
-Free from all forms of `ppx`, async monads, etc. 🙃
+Still free from all forms of `ppx`, async monads, etc. 🙃
 
 **Note**: it can be useful to add the `jemalloc` opam package for long running
 server, as it does a good job at controlling memory usage.
 
-The basic echo server from `src/examples/echo.ml`:
+The basic echo server from `src/examples/minimal.ml`:
 
 ```ocaml
 
 module S = Tiny_httpd
 
 let () =
-  let server = S.create () in
-  (* say hello *)
-  S.add_route_handler ~meth:`GET server
-    S.Route.(exact "hello" @/ string @/ return)
-    (fun name _req -> S.Response.make_string (Ok ("hello " ^name ^"!\n")));
+  let port_ = ref 8080 in
+  let j = ref 32 in
+  let t = ref (Domain.recommended_domain_count ())
+  Arg.parse (Arg.align [
+      "--port", Arg.Set_int port_, " set port";
+      "-p", Arg.Set_int port_, " set port";
+      "--debug", Arg.Unit (fun () -> S._enable_debug true), " enable debug";
+      "-j", Arg.Set_int j, " maximum number of connections";
+      "-t", Arg.Set_int t, " number of threads/domains used";
+    ]) (fun _ -> raise (Arg.Bad "")) "echo [option]*";
+
+  let server = S.create ~num_thread:!t ~port:!port_ ~max_connections:!j () in
+
   (* echo request *)
   S.add_route_handler server
     S.Route.(exact "echo" @/ return)
-    (fun req -> S.Response.make_string (Ok (Format.asprintf "echo:@ %a@." S.Request.pp req)));
+    (fun req ->
+        let q =
+          S.Request.query req |> List.map (fun (k,v) -> Printf.sprintf "%S = %S" k v)
+          |> String.concat ";"
+        in
+        S.Response.make_string
+          (Ok (Format.asprintf "echo:@ %a@ (query: %s)@." S.Request.pp req q)));
+
   Printf.printf "listening on http://%s:%d\n%!" (S.addr server) (S.port server);
   match S.run server with
   | Ok () -> ()
   | Error e -> raise e
-```
-
 ```sh
-$ dune exec src/examples/echo.exe &
+$ dune exec src/examples/minimal.exe &
 listening on http://127.0.0.1:8080
 
-# the path "hello/name" greets you.
-$ curl -X GET http://localhost:8080/hello/quadrarotaphile
-hello quadrarotaphile!
-
 # the path "echo" just prints the request.
-$ curl -X GET http://localhost:8080/echo --data "howdy y'all" 
+$ curl -X GET http://localhost:8080/echo --data "howdy y'all"
 echo:
 {meth=GET;
  headers=Host: localhost:8080
@@ -105,51 +115,14 @@ it allows downloading the files, and listing directories.
 If a directory contains `index.html` then this will be served
 instead of listing the content.
 
-## Socket activation
-
-Since version 0.10, socket activation is supported indirectly, by allowing a
-socket to be explicitly passed in to the `create` function:
-
-```ocaml
-module S = Tiny_httpd
-
-let not_found _ _ = S.Response.fail ~code:404 "Not Found\n"
-
-let () =
-  (* Module [Daemon] is from the [ocaml-systemd] package *)
-  let server = match Daemon.listen_fds () with
-    (* If no socket passed in, assume server was started explicitly i.e. without
-       socket activation *)
-    | [] -> S.create ()
-
-    (* If a socket passed in e.g. by systemd, listen on that *)
-    | sock :: _ -> S.create ~sock ()
-  in
-  S.add_route_handler server S.Route.rest_of_path not_found;
-  Printf.printf "Listening on http://%s:%d\n%!" (S.addr server) (S.port server);
-  match S.run server with
-  | Ok () -> ()
-  | Error e -> raise e
-```
-
-On Linux, this requires the
-[ocaml-systemd](https://github.com/juergenhoetzel/ocaml-systemd) package:
-
-```
-opam install ocaml-systemd
-```
-
-Tip: in the `dune` file, the package name should be `systemd`.
-
-In case you're not familiar with socket activation, Lennart Poettering's
-[blog post](http://0pointer.de/blog/projects/socket-activation.html) explains it
-well.
-
 ## Why?
 
 Why not? If you just want a super basic local server (perhaps for exposing
 data from a local demon, like Cups or Syncthing do), no need for a ton of
 dependencies or high scalability libraries.
+
+This is a fork of the original tiny_httpd by Simon Cruanes to experiment with
+OCaml 5 domain and effect. It remains tiny and seems to work very well.
 
 Use cases might include:
 
@@ -158,10 +131,11 @@ Use cases might include:
 - implement a basic monitoring page for a service;
 - provide a simple json API for a service, on top of http;
 - use `http_of_dir` to serve odoc-generated docs or some assets directory.
+- experimenting with domain and effect
 
 ## Documentation
 
-See https://c-cube.github.io/tiny_httpd
+See https://c-cube.github.io/tiny_httpd_domains
 
 ## License
 
