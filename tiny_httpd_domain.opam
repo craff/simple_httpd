@@ -1,7 +1,7 @@
 opam-version: "2.0"
 version: "0.12"
 authors: ["Simon Cruanes" "Christophe Rallalli"]
-maintainer: ["simon.cruanes.2007@m4x.org" "christophe@raffalli.eu"]
+maintainer: "christophe@raffalli.eu"
 license: "MIT"
 synopsis: "Minimal HTTP server using ocaml 5 domains"
 build: [
@@ -11,6 +11,7 @@ build: [
 ]
 depends: [
   "dune" { >= "2.0" }
+  "poll"
   "result"
   "seq"
   "ocaml" { >= "5.00.0" }
@@ -22,8 +23,8 @@ depends: [
   "ptime" {with-test}
 ]
 tags: [ "http" "domain" "server" "tiny_httpd" "http_of_dir" "simplehttpserver" ]
-homepage: "https://github.com/c-cube/tiny_httpd/"
-doc: "https://c-cube.github.io/tiny_httpd/"
-bug-reports: "https://github.com/c-cube/tiny_httpd/issues"
-dev-repo: "git+https://github.com/c-cube/tiny_httpd.git"
+homepage: "https://github.com/craff/tiny_httpd_domains/"
+doc: "https://c-cube.github.io/tiny_httpd_domains/"
+bug-reports: "https://github.com/c-cube/tiny_httpd_domains/issues"
+dev-repo: "git+https://github.com/c-cube/tiny_httpd_domains.git"
 post-messages: "tiny http server, with non blocking IOs and domain. Also ships with a `http_of_dir` program."
