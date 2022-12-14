@@ -1,5 +1,6 @@
 
 module S = Tiny_httpd
+module U = Tiny_httpd_util
 
 let now_ = Unix.gettimeofday
 
@@ -40,7 +41,7 @@ let () =
   Arg.parse (Arg.align [
       "--port", Arg.Set_int port_, " set port";
       "-p", Arg.Set_int port_, " set port";
-      "--debug", Arg.Unit (fun () -> S._enable_debug true), " enable debug";
+      "--debug", Arg.Int (fun n -> U.set_debug n), " set debug lvl";
       "-j", Arg.Set_int j, " maximum number of connections";
     ]) (fun _ -> raise (Arg.Bad "")) "echo [option]*";
 
@@ -89,7 +90,7 @@ let () =
   S.add_route_handler_stream ~meth:`PUT server
     S.Route.(exact "upload" @/ string @/ return)
     (fun path req ->
-        S._debug (fun k->k "start upload %S, headers:\n%s\n\n%!" path
+        U.debug (fun k->k "start upload %S, headers:\n%s\n\n%!" path
                      (Format.asprintf "%a" S.Headers.pp (S.Request.headers req)));
         try
           let oc = open_out @@ "/tmp/" ^ path in
