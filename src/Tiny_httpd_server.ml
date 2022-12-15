@@ -1,14 +1,17 @@
 
 type buf = Tiny_httpd_buf.t
 type byte_stream = Tiny_httpd_stream.t
+
+module U   = Tiny_httpd_util
+
 module Out = Tiny_httpd_stream.Out_buf
 
 module Buf = Tiny_httpd_buf
 
 module Byte_stream = Tiny_httpd_stream
 
-let debug = Tiny_httpd_util.debug
-let set_debug = Tiny_httpd_util.set_debug
+let debug     = U.debug
+let set_debug = U.set_debug
 
 exception Bad_req of int * string
 let bad_reqf c fmt = Printf.ksprintf (fun s ->raise (Bad_req (c,s))) fmt
@@ -75,6 +78,36 @@ module Meth = struct
     | s -> bad_reqf 400 "unknown method %S" s
 end
 
+module SetCookie = struct
+  type sameSite = Strict | Lax | None
+  type t =
+    | MaxAge of int
+    | Expires of Unix.tm
+    | Domain of string
+    | Path of string
+    | Secure
+    | HttpOnly
+    | SameSite of sameSite
+
+  let pp fmt = function
+    | MaxAge s -> Format.fprintf fmt "Max-Age=%d" s
+    | Expires d -> Format.fprintf fmt "Expires=%a" U.pp_date d
+    | Domain d -> Format.fprintf fmt "Domain=%s" d
+    | Path p -> Format.fprintf fmt "Path=%s" p
+    | Secure -> Format.fprintf fmt "Secure"
+    | HttpOnly -> Format.fprintf fmt "HttpOnly"
+    | SameSite Strict -> Format.fprintf fmt "Same=Strict"
+    | SameSite Lax -> Format.fprintf fmt "Same=Lax"
+    | SameSite None -> Format.fprintf fmt "Same=None"
+
+  let rec pps fmt = function
+    | [] -> ()
+    | prop::ls -> Format.fprintf fmt "; %a%a" pp prop pps ls
+
+  let set props key value =
+    Format.asprintf "%s=%s%a" key value pps props
+end
+
 module Headers = struct
   type t = (string * string) list
   let empty = []
@@ -110,12 +143,12 @@ module Headers = struct
     try String.iter (fun c->if not (pred c) then raise Exit) s; true
     with Exit -> false
 
-  let parse_ ~buf (bs:byte_stream) : t =
-    let rec loop acc =
+  let parse_ ~buf (bs:byte_stream) : t * t =
+    let rec loop headers cookies =
       let line = Byte_stream.read_line ~buf bs in
       debug ~lvl:3 (fun k->k  "parsed header line %S" line);
       if line = "\r" then (
-        acc
+        (headers, cookies)
       ) else (
         let k,v =
           try
@@ -127,10 +160,34 @@ module Headers = struct
             k,v
           with _ -> bad_reqf 400 "invalid header line: %S" line
         in
-        loop ((String.lowercase_ascii k,v)::acc)
+        let k = String.lowercase_ascii k in
+        let headers, cookies =
+          if k = "cookie" then
+            begin
+              let fn_eq s =
+                match String.split_on_char '=' s with
+                | k::v::_ when for_all is_tchar (String.trim k) ->
+                   Some String.(trim k,trim v)
+                | _       -> None
+              in
+              let cookies =
+                List.filter_map fn_eq (String.split_on_char ';' v) @ cookies
+              in
+              (headers, cookies)
+            end
+          else
+            ((k,v)::headers, cookies)
+        in
+        loop headers cookies
       )
     in
-    loop []
+    loop [] []
+
+  let set_cookie ?(props=[]) k v h =
+      set "Set-Cookie" (SetCookie.set props k v) h
+  let unset_cookie k v h =
+      set_cookie ~props:[MaxAge 0] k v h
+
 end
 
 module Request = struct
@@ -138,6 +195,7 @@ module Request = struct
     meth: Meth.t;
     host: string;
     headers: Headers.t;
+    cookies: Headers.t;
     http_version: int*int;
     path: string;
     path_components: string list;
@@ -147,6 +205,7 @@ module Request = struct
   }
 
   let headers self = self.headers
+  let cookies self = self.cookies
   let host self = self.host
   let meth self = self.meth
   let path self = self.path
@@ -161,6 +220,13 @@ module Request = struct
   let set_header k v self = {self with headers=Headers.set k v self.headers}
   let update_headers f self = {self with headers=f self.headers}
   let set_body b self = {self with body=b}
+
+  let get_cookie ?(f=fun x -> x) self h =
+    try Some (f (List.assoc h self.cookies))
+    with Not_found -> None
+  let get_cookie_int self h = match get_cookie self h with
+    | Some x -> (try Some (int_of_string x) with _ -> None)
+    | None -> None
 
   (** Should we close the connection after this request? *)
   let close_after_req (self:_ t) : bool =
@@ -231,7 +297,7 @@ module Request = struct
       in
       let meth = Meth.of_string meth in
       debug ~lvl:3 (fun k->k "got meth: %s, path %S" (Meth.to_string meth) path);
-      let headers = Headers.parse_ ~buf bs in
+      let (headers, cookies) = Headers.parse_ ~buf bs in
       let host =
         match Headers.get "Host" headers with
         | None -> bad_reqf 400 "No 'Host' header in request"
@@ -246,7 +312,7 @@ module Request = struct
       in
       let req = {
         meth; query; host; path; path_components;
-        headers; http_version=(1, version); body=(); start_time;
+        headers; cookies; http_version=(1, version); body=(); start_time;
       } in
       Ok (Some req)
     with
