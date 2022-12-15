@@ -29,6 +29,21 @@ module Meth : sig
   val to_string : t -> string
 end
 
+(** {2 Set Cookie}
+
+    A module to set new cookies in the header *)
+module SetCookie : sig
+  type sameSite = Strict | Lax | None
+  type t =
+    | MaxAge of int
+    | Expires of Unix.tm (** assume UTC/GMT *)
+    | Domain of string
+    | Path of string
+    | Secure
+    | HttpOnly
+    | SameSite of sameSite
+end
+
 (** {2 Headers}
 
     Headers are metadata associated with a request or response. *)
@@ -60,6 +75,15 @@ module Headers : sig
 
   val pp : Format.formatter -> t -> unit
   (** Pretty print the headers. *)
+
+  val set_cookie : ?props:SetCookie.t list -> string -> string -> t -> t
+  (** Set a cookie in the header
+      @since 0.12 *)
+
+  val unset_cookie : string -> string -> t -> t
+  (** Unset a cookie in the header (needs key and values)
+      @since 0.12 *)
+
 end
 
 (** {2 Requests}
@@ -71,6 +95,7 @@ module Request : sig
     meth: Meth.t;
     host: string;
     headers: Headers.t;
+    cookies: Headers.t;
     http_version: int*int;
     path: string;
     path_components: string list;
@@ -116,6 +141,18 @@ module Request : sig
   val set_body : 'a -> _ t -> 'a t
   (** [set_body b req] returns a new query whose body is [b].
       @since 0.11 *)
+
+  val cookies : _ t -> Headers.t
+  (** List of cookies of the request
+      @since 0.12 *)
+
+  val get_cookie : ?f:(string->string) -> _ t -> string -> string option
+  (** get a cookie
+      @since 0.12 *)
+
+  val get_cookie_int : _ t -> string -> int option
+  (** get a cookie as int
+      @since 0.12 *)
 
   val host : _ t -> string
   (** Host field of the request. It also appears in the headers. *)
