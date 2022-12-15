@@ -17,8 +17,6 @@ jobs:
           - ubuntu-latest
           - windows-latest
         ocaml-compiler:
-          - ocaml-base-compiler.5.0.0~beta1
-          - ocaml-base-compiler.5.0.0~beta2
           - ocaml-base-compiler.5.0.0~rc1
 
     runs-on: ${{ matrix.os }}
