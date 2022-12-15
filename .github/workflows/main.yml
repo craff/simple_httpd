@@ -15,7 +15,7 @@ jobs:
         os:
           - macos-latest
           - ubuntu-latest
-          - windows-latest
+          # - windows-latest not available yet ?
         ocaml-compiler:
           - ocaml-base-compiler.5.0.0~rc1
 
