@@ -94,6 +94,7 @@ module Request : sig
   type 'body t = private {
     meth: Meth.t;
     host: string;
+    client: Tiny_httpd_domains.client;
     headers: Headers.t;
     cookies: Headers.t;
     http_version: int*int;
@@ -188,7 +189,8 @@ module Request : sig
   (**/**)
   (* for testing purpose, do not use *)
   module Internal_ : sig
-    val parse_req_start : ?buf:buf -> get_time_s:(unit -> float) -> byte_stream -> unit t option
+    val parse_req_start : ?buf:buf -> client:Tiny_httpd_domains.client ->
+                          get_time_s:(unit -> float) -> byte_stream -> unit t option
     val parse_body : ?buf:buf -> unit t -> byte_stream -> byte_stream t
   end
   (**/**)
@@ -578,10 +580,6 @@ val add_route_server_sent_handler :
     @since 0.9 *)
 
 (** {2 Run the server} *)
-
-val stop : t -> unit
-(** Ask the server to stop. This might not have an immediate effect
-    as {!run} might currently be waiting on IO. *)
 
 val run : t -> (unit, exn) result
 (** Run the main loop of the server, listening on a socket

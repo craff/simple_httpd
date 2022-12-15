@@ -9,20 +9,33 @@ type status = {
     nb_connections : int Atomic.t array
   }
 
+let string_status st =
+  let b = Buffer.create 128 in
+  Printf.bprintf b "free sockets: %d\nconnections per sockets: [%t]"
+    (Atomic.get st.nb_availables)
+    (fun b ->
+      Array.iteri (fun i a -> Printf.bprintf b "%s%d"
+                                (if i = 0 then "" else ", ")
+                                (Atomic.get a)) st.nb_connections);
+  Buffer.contents b
+
 let print_status ch st =
-  Printf.fprintf ch "avail: %d [" (Atomic.get st.nb_availables);
-  Array.iteri (fun i a -> Printf.fprintf ch "%s%d"
-                           (if i = 0 then "" else ", ")
-                           (Atomic.get a)) st.nb_connections;
-  Printf.fprintf ch "]"
+  output_string ch (string_status st)
 
 type client = {
     mutable counter : int;
     mutable granularity : int;
     sock : Unix.file_descr;
     status : status;
-    id : int;
+    domain_id : int;
+    mutable connected : bool;
   }
+
+let fake_client = { counter = 0; granularity = 0; sock = Unix.stdout;
+                    status = { nb_availables = Atomic.make 0;
+                               nb_connections = [||] };
+                    domain_id = 0;
+                    connected = false }
 
 type _ Effect.t +=
    | Read  : client * Bytes.t * int * int -> int Effect.t
@@ -37,8 +50,12 @@ type pending =
 exception Closed of bool
 
 let close exn c =
-  Atomic.decr c.status.nb_connections.(c.id);
-  (try Unix.close c.sock with _ -> ());
+  if c.connected then
+    begin
+      Atomic.decr c.status.nb_connections.(c.domain_id);
+      c.connected <- false;
+      (try Unix.close c.sock; with _ -> ())
+    end;
   raise exn
 
 let yield () =
@@ -49,7 +66,7 @@ let read  c s o l =
   assert(l<>0);
   c.counter <- c.counter + 1;
   if c.counter mod c.granularity = 0  &&
-       (Atomic.get c.status.nb_connections.(c.id) > 1 ||
+       (Atomic.get c.status.nb_connections.(c.domain_id) > 1 ||
           Atomic.get c.status.nb_availables <= 0) then
     (U.debug ~lvl:5 (fun k -> k "normal schedule read %d" l);
      perform (Read (c,s,o,l)))
@@ -67,7 +84,7 @@ let write c s o l =
   assert(l<>0);
   c.counter <- c.counter + 1;
   if c.counter mod c.granularity = 0 &&
-       (Atomic.get c.status.nb_connections.(c.id) > 1 ||
+       (Atomic.get c.status.nb_connections.(c.domain_id) > 1 ||
           Atomic.get c.status.nb_availables <= 0) then
     (U.debug ~lvl:5 (fun k -> k "normal schedule write %d" l);
      perform (Write(c,s,o,l)))
@@ -108,13 +125,19 @@ type pollResult =
 
 let loop id st addr port maxc granularity handler () =
   let listen_sock = connect addr port maxc in
-  let pendings = Hashtbl.create 32 in
+  let pendings : (Unix.file_descr, pending) Hashtbl.t
+    = Hashtbl.create 32
+  in
   let yields = Queue.create () in
   let n = ref 0 in
   let find s = try Hashtbl.find pendings s with _ -> assert false in
   let check rds wrs =
     let fn s =
-      try ignore (Unix.fstat s) with _ -> Hashtbl.remove pendings s
+      try ignore (Unix.fstat s)
+      with e ->
+            let {client=c;_} = find s in
+            Hashtbl.remove pendings s;
+            (try close e c with _ -> ());
     in
     List.iter fn rds;
     List.iter fn wrs
@@ -164,7 +187,9 @@ let loop id st addr port maxc granularity handler () =
          Atomic.incr st.nb_connections.(id);
          let sock, _ = Unix.accept listen_sock in
          Unix.set_nonblock sock;
-         let client = { sock; counter = 0; granularity; status = st; id } in
+         let client = { sock; counter = 0; granularity; status = st;
+                        domain_id=id; connected = true }
+         in
          handler client
       | Action { action; client; buf; offset; len; cont; _ } ->
          Hashtbl.remove pendings client.sock;

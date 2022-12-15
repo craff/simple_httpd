@@ -3,6 +3,7 @@ type buf = Tiny_httpd_buf.t
 type byte_stream = Tiny_httpd_stream.t
 
 module U   = Tiny_httpd_util
+module D   = Tiny_httpd_domains
 
 module Out = Tiny_httpd_stream.Out_buf
 
@@ -194,6 +195,7 @@ module Request = struct
   type 'body t = {
     meth: Meth.t;
     host: string;
+    client: D.client;
     headers: Headers.t;
     cookies: Headers.t;
     http_version: int*int;
@@ -282,7 +284,8 @@ module Request = struct
         )
 
   (* parse request, but not body (yet) *)
-  let parse_req_start ~get_time_s ~buf (bs:byte_stream) : unit t option resp_result =
+  let parse_req_start ~client ~get_time_s ~buf (bs:byte_stream)
+      : unit t option resp_result =
     try
       let line = Byte_stream.read_line ~buf bs in
       let start_time = get_time_s() in
@@ -311,7 +314,7 @@ module Request = struct
         | Error e -> bad_reqf 400 "invalid query: %s" e
       in
       let req = {
-        meth; query; host; path; path_components;
+        meth; query; host; client; path; path_components;
         headers; cookies; http_version=(1, version); body=(); start_time;
       } in
       Ok (Some req)
@@ -358,8 +361,8 @@ module Request = struct
     | e -> bad_reqf 500 "failed to read body: %s" (Printexc.to_string e)
 
   module Internal_ = struct
-    let parse_req_start ?(buf=Buf.create()) ~get_time_s bs =
-      parse_req_start ~get_time_s ~buf bs |> unwrap_resp_result
+    let parse_req_start ?(buf=Buf.create()) ~client ~get_time_s bs =
+      parse_req_start ~client ~get_time_s ~buf bs |> unwrap_resp_result
 
     let parse_body ?(buf=Buf.create()) req bs : _ t =
       parse_body_ ~tr_stream:(fun s->s) ~buf {req with body=bs} |> unwrap_resp_result
@@ -369,7 +372,8 @@ end
 (*$R
   let q = "GET hello HTTP/1.1\r\nHost: coucou\r\nContent-Length: 11\r\n\r\nsalutationsSOMEJUNK" in
   let str = Tiny_httpd.Byte_stream.of_string q in
-  let r = Request.Internal_.parse_req_start ~get_time_s:(fun _ -> 0.) str in
+  let r = Request.Internal_.parse_req_start ~client:Tiny_httpd_domains.fake_client
+             ~get_time_s:(fun _ -> 0.) str in
   match r with
   | None -> assert_failure "should parse"
   | Some req ->
@@ -619,9 +623,6 @@ type t = {
   mutable path_handlers : (unit Request.t -> cb_path_handler resp_result option) list;
   (* path handlers *)
 
-  mutable running: bool;
-  (* true while the server is running. no need to protect with a mutex,
-     writes should be atomic enough. *)
 }
 
 let addr self = self.addr
@@ -760,14 +761,12 @@ let create
   let max_connections = max 4 max_connections in
   let self = {
     addr; port; sock; masksigpipe; handler; buf_size;
-    running= true; max_connections; granularity;
+    max_connections; granularity;
     path_handlers=[]; timeout; get_time_s; num_thread;
     middlewares=[]; middlewares_sorted=lazy [];
   } in
   List.iter (fun (stage,m) -> add_middleware self ~stage m) middlewares;
   self
-
-let stop s = s.running <- false
 
 let find_map f l =
   let rec aux f = function
@@ -778,16 +777,16 @@ let find_map f l =
         | None -> aux f l'
   in aux f l
 
-let handle_client_ (self:t) (client:Tiny_httpd_domains.client) : unit =
+let handle_client_ (self:t) (client:D.client) : unit =
   Unix.(setsockopt_float client.sock SO_RCVTIMEO self.timeout);
   Unix.(setsockopt_float client.sock SO_SNDTIMEO self.timeout);
   let buf = Buf.create ~size:self.buf_size () in
   let oc  = Out.create ~buf_size:self.buf_size client in
   let is = Byte_stream.of_client ~buf_size:self.buf_size client in
   let continue = ref true in
-  while !continue && self.running do
+  while !continue do
     debug ~lvl:3 (fun k->k "read next request");
-    match Request.parse_req_start ~get_time_s:self.get_time_s ~buf is with
+    match Request.parse_req_start ~client ~get_time_s:self.get_time_s ~buf is with
     | Ok None ->
       continue := false (* client is done *)
 
@@ -870,7 +869,7 @@ let run (self:t) : (unit,_) result =
   try
     let handler client_sock = handle_client_ self client_sock in
     let maxc = (self.max_connections + self.num_thread - 1) / self.num_thread in
-    let a = Tiny_httpd_domains.run self.num_thread self.addr self.port
+    let a = D.run self.num_thread self.addr self.port
               maxc self.granularity handler
     in
     Array.iter (fun d -> Domain.join d) a;
