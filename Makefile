@@ -14,6 +14,10 @@ clean:
 doc:
 	@dune build @doc
 
+install:
+	@dune build @install
+	@dune install
+
 watch:
 	@dune build @all -w
 
