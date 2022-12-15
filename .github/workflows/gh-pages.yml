@@ -15,7 +15,7 @@ jobs:
       - name: Use OCaml 5.0.0
         uses: ocaml/setup-ocaml@v2
         with:
-          ocaml-compiler: 5.0.0
+          ocaml-compiler: ocaml-base-compiler.5.0.0~rc1
           dune-cache: true
 
       - name: Deploy odoc to GitHub Pages
