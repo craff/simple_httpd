@@ -17,7 +17,7 @@ jobs:
           - ubuntu-latest
           - windows-latest
         ocaml-compiler:
-          - caml-variants.5.0.0~rc1
+          - ocaml-variants.5.0.0~rc1
 
     runs-on: ${{ matrix.os }}
 
