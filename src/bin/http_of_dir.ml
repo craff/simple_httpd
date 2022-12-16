@@ -1,6 +1,6 @@
-module S = Tiny_httpd
-module U = Tiny_httpd_util
-module D = Tiny_httpd_dir
+module S = Simple_httpd
+module U = Simple_httpd_util
+module D = Simple_httpd_dir
 module Pf = Printf
 
 let serve ~config (dir:string) addr port j t : _ result =

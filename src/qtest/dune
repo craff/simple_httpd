@@ -3,7 +3,7 @@
   (name qtest)
   (modes native)
   (flags :standard -warn-error -a+8 -w -33)
-  (libraries qcheck-core qcheck ounit2 tiny_httpd_domain))
+  (libraries qcheck-core qcheck ounit2 simple_httpd))
 
 (rule
  (deps (glob_files ../*.ml{,i}))
@@ -12,5 +12,5 @@
 
 (rule
   (alias runtest)
-  (package tiny_httpd_domain)
+  (package simple_httpd)
   (action (run ./qtest.exe)))

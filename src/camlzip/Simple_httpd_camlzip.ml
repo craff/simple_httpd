@@ -1,7 +1,7 @@
 
-module U = Tiny_httpd_util
-module S = Tiny_httpd_server
-module BS = Tiny_httpd_stream
+module U = Simple_httpd_util
+module S = Simple_httpd_server
+module BS = Simple_httpd_stream
 
 let decode_deflate_stream_ ~buf_size (is:S.byte_stream) : S.byte_stream =
   S.debug ~lvl:4 (fun k->k "wrap stream with deflate.decode");

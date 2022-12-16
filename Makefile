@@ -23,7 +23,7 @@ watch:
 
 .PHONY: benchs tests build watch
 
-VERSION=$(shell awk '/^version:/ {print $$2}' tiny_httpd.opam)
+VERSION=$(shell awk '/^version:/ {print $$2}' simple_httpd.opam)
 
 update_next_tag:
 	@echo "update version to $(VERSION)..."

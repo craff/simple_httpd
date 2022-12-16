@@ -1,5 +1,5 @@
 
-(** {1 Tiny Http Server}
+(** {1 Http Server}
 
     This library implements a very simple, basic HTTP/1.1 server using blocking
     IOs and threads. Basic routing based on {!Scanf} is provided for convenience,
@@ -11,7 +11,7 @@
     features by declaring a few endpoints, including one for uploading files:
 
     {[
-module S = Tiny_httpd
+module S = Simple_httpd
 
 let () =
   let server = S.create () in
@@ -81,30 +81,30 @@ echo:
     processing streams and parsing requests.
 *)
 
-module Buf = Tiny_httpd_buf
+module Buf = Simple_httpd_buf
 
 (** {2 Generic stream of data}
 
     Streams are used to represent a series of bytes that can arrive progressively.
     For example, an uploaded file will be sent as a series of chunks. *)
 
-module Byte_stream = Tiny_httpd_stream
+module Byte_stream = Simple_httpd_stream
 
 (** {2 Main Server Type} *)
 
 (** @inline *)
-include module type of struct include Tiny_httpd_server end
+include module type of struct include Simple_httpd_server end
 
 (** {2 Utils} *)
 
-module Util = Tiny_httpd_util
+module Util = Simple_httpd_util
 
 (** {2 Static directory serving} *)
 
-module Dir = Tiny_httpd_dir
+module Dir = Simple_httpd_dir
 
-module Html = Tiny_httpd_html
-(** Alias to {!Tiny_httpd_html}
+module Html = Simple_httpd_html
+(** Alias to {!Simple_httpd_html}
     @since NEXT_RELEASE *)
 
 (** {2 cooperative threading *)

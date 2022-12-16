@@ -8,7 +8,7 @@
 *)
 
 (** @inline *)
-include Tiny_httpd_html_
+include Simple_httpd_html_
 
 (** Convert a HTML element to a string.
     @param top if true, add DOCTYPE at the beginning. The top element should then
@@ -32,5 +32,5 @@ let to_string_top = to_string ~top:true
 
 (** Convert a HTML element to a stream. This might just convert
     it to a string first, do not assume it to be more efficient. *)
-let to_stream (self:elt) : Tiny_httpd_stream.t =
-  Tiny_httpd_stream.of_string @@ to_string self
+let to_stream (self:elt) : Simple_httpd_stream.t =
+  Simple_httpd_stream.of_string @@ to_string self

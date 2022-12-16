@@ -1,5 +1,5 @@
 
-module Buf = Tiny_httpd_buf
+module Buf = Simple_httpd_buf
 
 let spf = Printf.sprintf
 
@@ -88,7 +88,7 @@ let of_client_ ?(buf_size=16 * 1024) ~close ic : t =
     ~fill:(fun self ->
         if self.off >= self.len then (
           self.off <- 0;
-          self.len <- Tiny_httpd_domains.(read ic self.bs 0 (Bytes.length self.bs));
+          self.len <- Simple_httpd_domain.(read ic self.bs 0 (Bytes.length self.bs));
         )
       )
     ()
@@ -335,7 +335,7 @@ module Out_buf = struct
     let len = Bytes.length str in
     let n = ref 0 in
     while !n < len do
-      let w = Tiny_httpd_domains.write oc str !n (len - !n) in
+      let w = Simple_httpd_domain.write oc str !n (len - !n) in
       n := !n + w
     done
 
@@ -348,7 +348,7 @@ module Out_buf = struct
 
   let partial_write_str oc str =
     let len = Bytes.length str in
-    let w = Tiny_httpd_domains.write oc str 0 len in
+    let w = Simple_httpd_domain.write oc str 0 len in
     Bytes.sub str w (len - w)
 
   let partial_write_buf oc buf =
@@ -356,7 +356,7 @@ module Out_buf = struct
     Buffer.clear buf;
     Buffer.add_bytes buf remain
 
-  type t = { fd : Tiny_httpd_domains.client; b: Buffer.t; s : int }
+  type t = { fd : Simple_httpd_domain.client; b: Buffer.t; s : int }
 
   let create ?(buf_size=16* 4_096) fd =
     {fd; s=buf_size; b=Buffer.create (2*buf_size)}

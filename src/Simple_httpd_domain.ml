@@ -2,7 +2,7 @@ open Effect
 open Effect.Deep
 open Domain
 
-module U = Tiny_httpd_util
+module U = Simple_httpd_util
 
 type status = {
     nb_availables : int Atomic.t;

@@ -1,7 +1,7 @@
 
 (** Byte streams.
 
-    These used to live in {!Tiny_httpd} but are now in their own module.
+    These used to live in {!Simple_httpd} but are now in their own module.
     @since 0.12 *)
 
 type hidden
@@ -56,10 +56,10 @@ val of_fd : ?buf_size:int -> Unix.file_descr -> t
 val of_fd_close_noerr : ?buf_size:int -> Unix.file_descr -> t
 (** Same as {!of_fd} but the [close] method will never fail. *)
 
-val of_client : ?buf_size:int -> Tiny_httpd_domains.client -> t
+val of_client : ?buf_size:int -> Simple_httpd_domain.client -> t
 (** Make a buffered stream from the given file descriptor. *)
 
-val of_client_close_noerr : ?buf_size:int -> Tiny_httpd_domains.client -> t
+val of_client_close_noerr : ?buf_size:int -> Simple_httpd_domain.client -> t
 (** Same as {!of_fd} but the [close] method will never fail. *)
 
 val of_bytes : ?i:int -> ?len:int -> bytes -> t
@@ -92,11 +92,11 @@ val with_file : ?buf_size:int -> string -> (t -> 'a) -> 'a
 (** Open a file with given name, and obtain an input stream
     on its content. When the function returns, the stream (and file) are closed. *)
 
-val read_line : ?buf:Tiny_httpd_buf.t -> t -> string
+val read_line : ?buf:Simple_httpd_buf.t -> t -> string
 (** Read a line from the stream.
     @param buf a buffer to (re)use. Its content will be cleared. *)
 
-val read_all : ?buf:Tiny_httpd_buf.t -> t -> string
+val read_all : ?buf:Simple_httpd_buf.t -> t -> string
 (** Read the whole stream into a string.
     @param buf a buffer to (re)use. Its content will be cleared. *)
 
@@ -110,7 +110,7 @@ val limit_size_to :
    @param too_big called with read size if the max size is reached *)
 
 val read_chunked :
-  ?buf:Tiny_httpd_buf.t ->
+  ?buf:Simple_httpd_buf.t ->
   fail:(string -> exn) ->
   t -> t
 (** Convert a stream into a stream of byte chunks using
@@ -131,7 +131,7 @@ val read_exactly :
 
 module Out_buf : sig
   type t
-  val create : ?buf_size:int -> Tiny_httpd_domains.client -> t
+  val create : ?buf_size:int -> Simple_httpd_domain.client -> t
   val flush : t -> unit
   val close : t -> unit
   val add_char : t -> char -> unit

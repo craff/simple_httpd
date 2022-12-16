@@ -1,4 +1,4 @@
-open Tiny_httpd_html
+open Simple_httpd_html
 let spf = Printf.sprintf
 
 let list_init n f =

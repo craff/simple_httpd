@@ -3,7 +3,7 @@ version: "0.12"
 authors: ["Simon Cruanes" "Christophe Raffalli"]
 maintainer: "christophe@raffalli.eu"
 license: "MIT"
-synopsis: "Interface to camlzip for tiny_httpd"
+synopsis: "Interface to camlzip for simple_httpd"
 build: [
   ["dune" "build" "@install" "-p" name "-j" jobs]
   ["dune" "build" "@doc" "-p" name] {with-doc}
@@ -12,12 +12,12 @@ build: [
 depends: [
   "dune" { >= "2.0" }
   "camlzip" {>= "1.06"}
-  "tiny_httpd_domain" { = version }
+  "simple_httpd" { = version }
   "ocaml" { >= "4.04.0" }
   "odoc" {with-doc}
 ]
 tags: [ "http" "thread" "server" "gzip" "camlzip" ]
-homepage: "https://github.com/craff/tiny_httpd_domain/"
-doc: "https://craff.github.io/tiny_httpd_domain/"
-bug-reports: "https://github.com/craff/tiny_httpd_domain/issues"
-dev-repo: "git+https://github.com/craff/tiny_httpd_domain.git"
+homepage: "https://github.com/craff/simple_httpd/"
+doc: "https://craff.github.io/simple_httpd/"
+bug-reports: "https://github.com/craff/simple_httpd/issues"
+dev-repo: "git+https://github.com/craff/simple_httpd.git"

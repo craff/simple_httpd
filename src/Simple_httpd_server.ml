@@ -1,15 +1,15 @@
 
-type buf = Tiny_httpd_buf.t
-type byte_stream = Tiny_httpd_stream.t
+type buf = Simple_httpd_buf.t
+type byte_stream = Simple_httpd_stream.t
 
-module U   = Tiny_httpd_util
-module D   = Tiny_httpd_domains
+module U   = Simple_httpd_util
+module D   = Simple_httpd_domain
 
-module Out = Tiny_httpd_stream.Out_buf
+module Out = Simple_httpd_stream.Out_buf
 
-module Buf = Tiny_httpd_buf
+module Buf = Simple_httpd_buf
 
-module Byte_stream = Tiny_httpd_stream
+module Byte_stream = Simple_httpd_stream
 
 let debug     = U.debug
 let set_debug = U.set_debug
@@ -306,10 +306,10 @@ module Request = struct
         | None -> bad_reqf 400 "No 'Host' header in request"
         | Some h -> h
       in
-      let path_components, query = Tiny_httpd_util.split_query path in
-      let path_components = Tiny_httpd_util.split_on_slash path_components in
+      let path_components, query = Simple_httpd_util.split_query path in
+      let path_components = Simple_httpd_util.split_on_slash path_components in
       let query =
-        match Tiny_httpd_util.(parse_query query) with
+        match Simple_httpd_util.(parse_query query) with
         | Ok l -> l
         | Error e -> bad_reqf 400 "invalid query: %s" e
       in
@@ -371,8 +371,8 @@ end
 
 (*$R
   let q = "GET hello HTTP/1.1\r\nHost: coucou\r\nContent-Length: 11\r\n\r\nsalutationsSOMEJUNK" in
-  let str = Tiny_httpd.Byte_stream.of_string q in
-  let r = Request.Internal_.parse_req_start ~client:Tiny_httpd_domains.fake_client
+  let str = Simple_httpd.Byte_stream.of_string q in
+  let r = Request.Internal_.parse_req_start ~client:Simple_httpd_domain.fake_client
              ~get_time_s:(fun _ -> 0.) str in
   match r with
   | None -> assert_failure "should parse"
@@ -514,7 +514,7 @@ module Route = struct
         let whole_path = String.concat "/" path in
         begin match
             if url_encoded
-            then match Tiny_httpd_util.percent_decode whole_path with
+            then match Simple_httpd_util.percent_decode whole_path with
               | Some s -> s
               | None -> raise_notrace Exit
             else whole_path
@@ -533,7 +533,7 @@ module Route = struct
           | String ->
             eval path' route' (f c1)
           | String_urlencoded ->
-            begin match Tiny_httpd_util.percent_decode c1 with
+            begin match Simple_httpd_util.percent_decode c1 with
               | None -> None
               | Some s -> eval path' route' (f s)
             end

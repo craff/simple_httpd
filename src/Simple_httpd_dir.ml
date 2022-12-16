@@ -1,6 +1,6 @@
-module S = Tiny_httpd_server
-module U = Tiny_httpd_util
-module Html = Tiny_httpd_html
+module S = Simple_httpd_server
+module U = Simple_httpd_util
+module Html = Simple_httpd_html
 module Pf = Printf
 
 type dir_behavior =
@@ -67,7 +67,7 @@ module type VFS = sig
   val list_dir : string -> string array
   val delete : string -> unit
   val create : string -> (bytes -> int -> int -> unit) * (unit -> unit)
-  val read_file_content : string -> Tiny_httpd_stream.t
+  val read_file_content : string -> Simple_httpd_stream.t
   val file_size : string -> int option
   val file_mtime : string -> float option
 end
@@ -83,7 +83,7 @@ let vfs_of_dir (top:string) : vfs =
     let list_dir f = Sys.readdir (top // f)
     let read_file_content f =
       let ic = Unix.(openfile (top // f) [O_RDONLY] 0) in
-      Tiny_httpd_stream.of_fd ic
+      Simple_httpd_stream.of_fd ic
     let create f =
       let oc = open_out_bin (top // f) in
       let write = output oc in
@@ -214,7 +214,7 @@ let add_vfs_ ~on_fs ~top ~config ~vfs:((module VFS:VFS) as vfs) ~prefix server :
                path (Printexc.to_string e)
          in
          let req = S.Request.limit_body_size ~max_size:config.max_upload_size req in
-         Tiny_httpd_stream.iter write req.S.Request.body;
+         Simple_httpd_stream.iter write req.S.Request.body;
          close ();
          U.debug (fun k->k "done uploading");
          S.Response.make_raw ~code:201 "upload successful"
@@ -384,7 +384,7 @@ module Embedded_fs = struct
         | _ -> false
 
       let read_file_content p = match find_ self p with
-        | Some (File {content;_}) -> Tiny_httpd_stream.of_string content
+        | Some (File {content;_}) -> Simple_httpd_stream.of_string content
         | _ -> failwith (Printf.sprintf "no such file: %S" p)
 
       let list_dir p = U.debug (fun k->k "list dir %S" p); match find_ self p with

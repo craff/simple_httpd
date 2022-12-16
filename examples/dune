@@ -2,7 +2,7 @@
 (executable
   (name sse_server)
   (modules sse_server)
-  (libraries tiny_httpd_domain unix ptime ptime.clock.os))
+  (libraries simple_httpd unix ptime ptime.clock.os))
 
 (executable
   (name sse_client)
@@ -13,25 +13,25 @@
   (name echo)
   (flags :standard -warn-error -a+8)
   (modules echo vfs)
-  (libraries tiny_httpd_domain tiny_httpd_domain_camlzip))
+  (libraries simple_httpd simple_httpd_camlzip))
 
 (executable
   (name minimal)
   (flags :standard -warn-error -a+8)
   (modules minimal)
-  (libraries tiny_httpd_domain))
+  (libraries simple_httpd))
 
 (rule
   (targets test_output.txt)
   (deps (:script ./run_test.sh) ./sse_client.exe ./sse_server.exe)
   (enabled_if (= %{system} "linux"))
-  (package tiny_httpd_domain)
+  (package simple_httpd)
   (action
     (with-stdout-to %{targets} (run %{script}))))
 
 (rule
   (alias runtest)
-  (package tiny_httpd_domain)
+  (package simple_httpd)
   (enabled_if (= %{system} "linux"))
   (deps test_output.txt)
   (action
@@ -42,7 +42,7 @@
   (targets vfs.ml)
   (deps (source_tree files) (:out test_output.txt.expected))
   (enabled_if (= %{system} "linux"))
-  (action (run %{bin:tiny-httpd-vfs-pack} -o %{targets}
+  (action (run %{bin:simple-httpd-vfs-pack} -o %{targets}
                --mirror=files/
                --file=test_out.txt,%{out}
                ; --url=example_dot_com,http://example.com ; this breaks tests in opam sandbox 😢
@@ -55,5 +55,5 @@
     (with-stdout-to
       %{targets}
       (progn
-        (echo "let embedded_fs = Tiny_httpd_dir.Embedded_fs.create ~mtime:0. ()")
-        (echo "let vfs = Tiny_httpd_dir.Embedded_fs.to_vfs embedded_fs")))))
+        (echo "let embedded_fs = Simple_httpd_dir.Embedded_fs.create ~mtime:0. ()")
+        (echo "let vfs = Simple_httpd_dir.Embedded_fs.to_vfs embedded_fs")))))

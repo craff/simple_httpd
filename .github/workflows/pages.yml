@@ -1,4 +1,4 @@
-name: github pages for tiny_httpd_domains
+name: github pages for simple_httpd
 
 on:
   push:

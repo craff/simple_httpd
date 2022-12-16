@@ -1,6 +1,6 @@
 
-module S = Tiny_httpd
-module U = Tiny_httpd_util
+module S = Simple_httpd
+module U = Simple_httpd_util
 
 let now_ = Unix.gettimeofday
 
@@ -46,7 +46,7 @@ let () =
     ]) (fun _ -> raise (Arg.Bad "")) "echo [option]*";
 
   let server = S.create ~port:!port_ ~max_connections:!j () in
-  Tiny_httpd_domain_camlzip.setup ~compress_above:1024 ~buf_size:(16*1024) server;
+  Simple_httpd_camlzip.setup ~compress_above:1024 ~buf_size:(16*1024) server;
 
   let m_stats, get_stats = middleware_stat () in
   S.add_middleware server ~stage:(`Stage 1) m_stats;
@@ -109,15 +109,15 @@ let () =
     );
 
   (* VFS *)
-  Tiny_httpd_dir.add_vfs server
-    ~config:(Tiny_httpd_dir.config ~download:true
-               ~dir_behavior:Tiny_httpd_dir.Index_or_lists ())
+  Simple_httpd_dir.add_vfs server
+    ~config:(Simple_httpd_dir.config ~download:true
+               ~dir_behavior:Simple_httpd_dir.Index_or_lists ())
     ~vfs:Vfs.vfs ~prefix:"vfs";
 
   (* main page *)
   S.add_route_handler server S.Route.(return)
     (fun _req ->
-       let open Tiny_httpd_html in
+       let open Simple_httpd_html in
        let h = html [] [
            head[][title[][txt "index of echo"]];
            body[][

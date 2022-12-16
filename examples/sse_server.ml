@@ -1,7 +1,7 @@
 
 (* serves some streams of events *)
 
-module S = Tiny_httpd
+module S = Simple_httpd
 
 let port = ref 8080
 let t    = ref 1

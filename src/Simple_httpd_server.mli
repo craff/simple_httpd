@@ -7,8 +7,8 @@
     @since NEXT_RELEASE
 *)
 
-type buf = Tiny_httpd_buf.t
-type byte_stream = Tiny_httpd_stream.t
+type buf = Simple_httpd_buf.t
+type byte_stream = Simple_httpd_stream.t
 
 (** {2 Methods} *)
 
@@ -94,7 +94,7 @@ module Request : sig
   type 'body t = private {
     meth: Meth.t;
     host: string;
-    client: Tiny_httpd_domains.client;
+    client: Simple_httpd_domain.client;
     headers: Headers.t;
     cookies: Headers.t;
     http_version: int*int;
@@ -189,7 +189,7 @@ module Request : sig
   (**/**)
   (* for testing purpose, do not use *)
   module Internal_ : sig
-    val parse_req_start : ?buf:buf -> client:Tiny_httpd_domains.client ->
+    val parse_req_start : ?buf:buf -> client:Simple_httpd_domain.client ->
                           get_time_s:(unit -> float) -> byte_stream -> unit t option
     val parse_body : ?buf:buf -> unit t -> byte_stream -> byte_stream t
   end
@@ -217,7 +217,7 @@ end
 
 (** {2 Responses}
 
-    Responses are what a http server, such as {!Tiny_httpd}, send back to
+    Responses are what a http server, such as {!Simple_httpd}, send back to
     the client to answer a {!Request.t}*)
 
 module Response : sig
@@ -227,7 +227,7 @@ module Response : sig
 
   type t = private {
     code: Response_code.t; (** HTTP response code. See {!Response_code}. *)
-    headers: Headers.t; (** Headers of the reply. Some will be set by [Tiny_httpd] automatically. *)
+    headers: Headers.t; (** Headers of the reply. Some will be set by [Simple_httpd] automatically. *)
     body: body; (** Body of the response. Can be empty. *)
   }
   (** A response to send back to a client. *)
