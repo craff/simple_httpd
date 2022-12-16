@@ -751,7 +751,7 @@ let create
     ?(max_connections=32)
     ?(granularity=3)
     ?(num_thread=Domain.recommended_domain_count () - 1)
-    ?(timeout=0.0)
+    ?(timeout=300.0)
     ?(buf_size=16 * 2048)
     ?(get_time_s=Unix.gettimeofday)
     ?(addr="127.0.0.1") ?(port=8080) ?sock
@@ -869,8 +869,8 @@ let run (self:t) : (unit,_) result =
   try
     let handler client_sock = handle_client_ self client_sock in
     let maxc = (self.max_connections + self.num_thread - 1) / self.num_thread in
-    let a = D.run self.num_thread self.addr self.port
-              maxc self.granularity handler
+    let a = D.run ~nb_threads:self.num_thread ~addr:self.addr ~port:self.port
+              ~maxc ~granularity:self.granularity ~timeout:self.timeout handler
     in
     Array.iter (fun d -> Domain.join d) a;
     Ok ()

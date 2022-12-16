@@ -23,15 +23,16 @@ let print_status ch st =
   output_string ch (string_status st)
 
 type client = {
+    mutable connected : bool;
     mutable counter : int;
     mutable granularity : int;
     sock : Unix.file_descr;
     status : status;
     domain_id : int;
-    mutable connected : bool;
   }
 
-let fake_client = { counter = 0; granularity = 0; sock = Unix.stdout;
+let fake_client = { counter = 0;
+                    granularity = 0; sock = Unix.stdout;
                     status = { nb_availables = Atomic.make 0;
                                nb_connections = [||] };
                     domain_id = 0;
@@ -41,11 +42,15 @@ type _ Effect.t +=
    | Read  : client * Bytes.t * int * int -> int Effect.t
    | Write : client * Bytes.t * int * int -> int Effect.t
    | Yield : unit Effect.t
+   | Sleep : float -> unit Effect.t
 
 type action = Read|Write
 type pending =
   {client:client; action:action; buf:Bytes.t; offset:int; len: int;
-   cont : (int,unit) continuation; mutable count:int}
+   cont : (int,unit) continuation;
+   mutable arrival_time : float; (* time it started to be pending *)
+   mutable seen_time : float;    (* last time is was returned by select *)
+  }
 
 exception Closed of bool
 
@@ -61,6 +66,13 @@ let close exn c =
 let yield () =
   U.debug ~lvl:5 (fun k -> k "yield(1)");
   perform Yield
+
+let now = Unix.gettimeofday
+
+let sleep : float -> unit = fun t ->
+  U.debug ~lvl:5 (fun k -> k "sleep(1,%e)" t);
+  let t = now () +. t in
+  perform (Sleep t)
 
 let read  c s o l =
   assert(l<>0);
@@ -121,15 +133,33 @@ type pollResult =
   | Timeout
   | Accept
   | Action of pending
-  | Yield of ((unit,unit) continuation * int)
+  | Yield of ((unit,unit) continuation * float)
 
-let loop id st addr port maxc granularity handler () =
+exception TimeOut
+
+let loop id st addr port maxc granularity timeout handler () =
   let listen_sock = connect addr port maxc in
   let pendings : (Unix.file_descr, pending) Hashtbl.t
     = Hashtbl.create 32
   in
   let yields = Queue.create () in
-  let n = ref 0 in
+  let sleeps = ref [] in
+  let add_sleep t cont =
+    let rec fn acc = function
+      | [] -> List.rev_append acc [(t,cont)]
+      | (t',_)::_ as l when t < t' -> List.rev_append acc ((t,cont)::l)
+      | c::l -> fn (c::acc) l
+    in
+    sleeps := fn [] !sleeps
+  in
+  let get_sleep now =
+    let rec fn l =
+      match l with
+      | (t,cont)::l when t <= now -> Queue.add (cont,now) yields; fn l
+      | l -> l
+    in
+    sleeps := fn !sleeps
+  in
   let find s = try Hashtbl.find pendings s with _ -> assert false in
   let check rds wrs =
     let fn s =
@@ -150,12 +180,25 @@ let loop id st addr port maxc granularity handler () =
     let rds =
       if Atomic.get st.nb_connections.(id) < maxc then [listen_sock] else []
     in
+    let now = now () in
     let (rds,wrs) = Hashtbl.fold (fun s c (rds,wrs) ->
-                        match c.action with
-                        | Read  -> (s::rds,wrs)
-                        | Write -> (rds,s::wrs)) pendings (rds,[])
+                        if now -. c.seen_time > timeout then
+                          begin
+                            Hashtbl.remove pendings s;
+                            close TimeOut c.client
+                          end
+                        else
+                          match c.action with
+                          | Read  -> (s::rds,wrs)
+                          | Write -> (rds,s::wrs)) pendings (rds,[])
     in
-    let timeout = if Queue.is_empty yields then timeout else 0.0 in
+    get_sleep now;
+    let timeout =
+      match Queue.is_empty yields, !sleeps with
+      | false, _ -> 0.0
+      | _, (t,_)::_ -> min timeout (t -. now)
+      | _ -> timeout
+    in
     try
       let (rds,wrs,_) = Unix.select rds wrs [] timeout in
       if do_decr then Atomic.decr st.nb_availables;
@@ -164,11 +207,12 @@ let loop id st addr port maxc granularity handler () =
                       | Some c -> Yield c) in
       let fn sock =
         if sock = listen_sock then raise Exit;
-        let {count = n';_} as p = find sock in
+        let {arrival_time = t';_} as p = find sock in
+        p.seen_time <- now;
         match !best with
         | Timeout -> best := Action p
-        | Yield(_,n) ->  if n' < n then best:=Action p
-        | Action{count = n;_} -> if n' < n then best:=Action p
+        | Yield(_,t) -> if t' < t then best:=Action p
+        | Action{arrival_time=t;_} -> if t' < t then best:=Action p
         | Accept -> assert false
       in
       List.iter fn rds;
@@ -180,7 +224,7 @@ let loop id st addr port maxc granularity handler () =
   in
   let rec do_job () =
     (try
-      match poll 1e-3 with
+      match poll timeout with
       | Timeout -> Domain.cpu_relax (); ()
       | Accept ->
          U.debug (fun k -> k "accept connection from %d %a" id print_status st);
@@ -215,35 +259,41 @@ let loop id st addr port maxc granularity handler () =
         match eff with
         | Yield ->
            Some (fun (cont : (c,_) continuation) ->
-               incr n;
-               Queue.add (cont, !n) yields;
+               Queue.add (cont, now ()) yields;
+               loop ())
+        | Sleep(t) ->
+           Some (fun (cont : (c,_) continuation) ->
+               add_sleep t cont;
                loop ())
         | Read (client,buf,offset,len) ->
            Some (fun (cont : (c,_) continuation) ->
-               incr n;
+               let now = now () in
                Hashtbl.add pendings client.sock
-                 {client;action=Read;buf;offset;len;cont;count = !n};
+                 {client;action=Read;buf;offset;len;cont;
+                  arrival_time = now; seen_time = now};
                loop ())
         | Write(client,buf,offset,len) ->
            Some (fun (cont : (c,_) continuation) ->
-               incr n;
-               (* TODO: does not seem to work if we wait only for write ????*)
+               let now = now () in
                Hashtbl.add pendings client.sock
-                 {client;action=Write;buf;offset;len;cont;count = !n};
+                 {client;action=Write;buf;offset;len;cont;
+                  arrival_time = now; seen_time = now};
                loop ())
         | _ -> None
     )}
   in loop ()
 
-let run nb addr port maxc granularity handler =
-  if nb <= 0 || maxc < nb then
+let run ~nb_threads ~addr ~port ~maxc ~granularity ~timeout handler =
+  if nb_threads <= 0 || maxc < nb_threads then
     invalid_arg "bad number of threads or max connections";
   let status = {
       nb_availables = Atomic.make 0;
-      nb_connections = Array.init nb (fun _ -> Atomic.make 0)
+      nb_connections = Array.init nb_threads (fun _ -> Atomic.make 0)
     }
   in
-  let fn id = spawn (loop id status addr port maxc granularity handler) in
-  let r = Array.init (nb-1) fn in
-  let _ = loop (nb-1) status addr port maxc granularity handler () in
+  let fn id = spawn (loop id status addr port maxc granularity timeout handler) in
+  let r = Array.init (nb_threads - 1) fn in
+  let _ = loop (nb_threads -1 )
+            status addr port maxc granularity timeout handler ()
+  in
   r

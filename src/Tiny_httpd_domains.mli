@@ -6,12 +6,12 @@ type status = {
 val string_status : status -> string
 
 type client = {
+    mutable connected : bool;
     mutable counter : int;
     mutable granularity : int;
     sock : Unix.file_descr;
     status : status;
     domain_id : int;
-    mutable connected : bool;
   }
 
 val fake_client : client
@@ -20,6 +20,8 @@ val fake_client : client
 val read  : client -> Bytes.t -> int -> int -> int
 val write : client -> Bytes.t -> int -> int -> int
 val yield : unit -> unit
+val sleep : float -> unit
 
-val run : int -> string -> int -> int -> int -> (client -> unit) ->
+val run : nb_threads:int -> addr:string -> port:int -> maxc:int ->
+          granularity:int -> timeout:float -> (client -> unit) ->
             unit Domain.t array
