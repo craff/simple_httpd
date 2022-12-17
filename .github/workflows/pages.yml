@@ -20,6 +20,6 @@ jobs:
 
       - name: Deploy odoc to GitHub Pages
         uses: ocaml/setup-ocaml/deploy-doc@v2
-	with:
+        with:
           destination-dir: dev
           enable-jekyll: true
