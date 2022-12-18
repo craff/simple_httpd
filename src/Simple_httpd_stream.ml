@@ -93,8 +93,9 @@ let of_client_ ?(buf_size=16 * 1024) ~close ic : t =
       )
     ()
 
-let of_client = of_client_ ~close:(fun c -> Unix.close c.sock)
-let of_client_close_noerr = of_client_ ~close:(fun c -> try Unix.close c.sock with _ -> ())
+let of_client = of_client_ ~close:(fun c -> Simple_httpd_domain.close c)
+let of_client_close_noerr = of_client_
+  ~close:(fun c -> try Simple_httpd_domain.close c with _ -> ())
 
 let rec iter f (self:t) : unit =
   self.fill_buf();
@@ -361,7 +362,7 @@ module Out_buf = struct
   let create ?(buf_size=16* 4_096) fd =
     {fd; s=buf_size; b=Buffer.create (2*buf_size)}
 
-  let flush oc = write_buf oc.fd oc.b
+  let flush oc = write_buf oc.fd oc.b; Simple_httpd_domain.flush oc.fd
 
   let push oc =
     while Buffer.length oc.b > oc.s do
@@ -369,7 +370,7 @@ module Out_buf = struct
     done
 
   let close oc =
-    flush oc; Unix.close oc.fd.sock
+    flush oc; Simple_httpd_domain.close oc.fd
 
   let printf oc format =
     let cont _ = push oc in

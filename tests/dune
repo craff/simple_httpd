@@ -1,3 +1,4 @@
+;echo
 
 (rule
   (targets echo1.out)
@@ -13,6 +14,8 @@
   (enabled_if (= %{system} "linux"))
   (action (diff echo1.expect echo1.out)))
 
+;sse
+
 (rule
   (targets sse_count.out)
   (deps (:bin ../examples/sse_server.exe))
@@ -27,45 +30,41 @@
   (enabled_if (= %{system} "linux"))
   (action (diff sse_count.expect sse_count.out)))
 
-(rule
-  (targets upload-out)
-  (deps (:bin ../src/bin/http_of_dir.exe) foo_50)
-  (locks /port)
-  (package simple_httpd)
-  (enabled_if (= %{system} "linux"))
-  (action (with-stdout-to %{targets}
-                          (run ./upload_chunked.sh %{bin}))))
+;chunked
 
 (rule
-  (targets stress.out)
+  (targets chunked-out)
   (deps (:bin ../src/bin/http_of_dir.exe) foo_50)
   (locks /port)
   (package simple_httpd)
   (enabled_if (= %{system} "linux"))
   (action (with-stdout-to %{targets}
-                          (run ./stress.sh %{bin} 10))))
+                          (run ./chunked.sh %{bin}))))
 
 (rule
   (alias runtest)
   (package simple_httpd)
   (enabled_if (= %{system} "linux"))
-  (action (diff upload-out.expect upload-out)))
+  (action (diff chunked-out.expect chunked-out)))
+
+;chunked-ssl
 
 (rule
-  (targets dl-out)
-  (deps (:bin ../src/bin/http_of_dir.exe) foo_50)
+  (targets chunked-ssl-out)
+  (deps (:bin ../src/bin/http_of_dir.exe) foo_50 domain.crt domain.key)
   (locks /port)
   (package simple_httpd)
   (enabled_if (= %{system} "linux"))
   (action (with-stdout-to %{targets}
-                          (run ./download_chunked.sh %{bin}))))
+                          (run ./chunked_ssl.sh %{bin}))))
 
 (rule
   (alias runtest)
   (package simple_httpd)
   (enabled_if (= %{system} "linux"))
-  (action (diff dl-out.expect dl-out)))
+  (action (diff chunked-ssl-out.expect chunked-ssl-out)))
 
+;stress
 (rule
   (targets dl-stress)
   (deps (:bin ../src/bin/http_of_dir.exe) foo_50)
@@ -81,8 +80,30 @@
   (enabled_if (= %{system} "linux"))
   (action (diff dl-stress.expect dl-stress)))
 
+;ssl stress
+(rule
+  (targets dl-stress-ssl)
+  (deps (:bin ../src/bin/http_of_dir.exe) foo_50 domain.crt domain.key)
+  (locks /port)
+  (package simple_httpd)
+  (enabled_if (= %{system} "linux"))
+  (action (with-stdout-to %{targets}
+                          (run ./stress-ssl.sh %{bin} 15))))
+
+(rule
+  (alias runtest)
+  (package simple_httpd)
+  (enabled_if (= %{system} "linux"))
+  (action (diff dl-stress-ssl.expect dl-stress-ssl)))
+
 (rule
   (targets foo_50)
   (enabled_if (= %{system} "linux"))
   (action
     (bash "dd if=/dev/zero of=%{targets} bs=1M count=50")))
+
+(rule
+  (targets domain.crt domain.key)
+  (enabled_if (= %{system} "linux"))
+  (action
+    (bash "openssl req -newkey rsa:2048 -keyout domain.key -x509 -days 365 -out domain.crt -nodes -subj '/C=/ST=/L=/O=/CN=localhost' 2> /dev/null")))

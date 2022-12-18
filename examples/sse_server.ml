@@ -3,15 +3,19 @@
 
 module S = Simple_httpd
 
+let addr = ref "127.0.0.1"
 let port = ref 8080
 let t    = ref 1
 let () =
-  Arg.parse (Arg.align [
+Arg.parse (Arg.align [
+      "-a", Arg.Set_string addr, " address to listen on";
       "-p", Arg.Set_int port, " port to listen on";
       "-r", Arg.Set_int t, " number of thread (1)";
       "--debug", Arg.Int S.set_debug, " toggle debug";
-    ]) (fun _ -> ()) "sse_clock [opt*]";
-  let server = S.create ~num_thread:!t ~port:!port () in
+      ]) (fun _ -> ()) "sse_clock [opt*]";
+
+  let listens = S.[{addr= !addr;port= !port;ssl=None}] in
+  let server = S.create ~num_thread:!t ~listens () in
 
   let extra_headers = [
     "Access-Control-Allow-Origin", "*";
@@ -64,7 +68,9 @@ let () =
       S.Response.make_string (Ok ("fib: " ^ string_of_int (fib n)^"\n"))
     );
 
-  Printf.printf "listening on http://localhost:%d/\n%!" (S.port server);
+  List.iter S.(fun l ->
+    Printf.printf "listening on http://%s:%d\n%!" l.addr l.port) (S.listens server);
+
   match S.run server with
   | Ok () -> ()
   | Error e ->

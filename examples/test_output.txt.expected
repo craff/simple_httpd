@@ -1,4 +1,4 @@
-listening on http://localhost:8082/
+listening on http://127.0.0.1:8082
 connect to 127.0.0.1:8082
 HTTP/1.1 200 OK
 content-type: text/event-stream

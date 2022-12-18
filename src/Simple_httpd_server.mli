@@ -396,9 +396,7 @@ val create :
   ?timeout:float ->
   ?buf_size:int ->
   ?get_time_s:(unit -> float) ->
-  ?addr:string ->
-  ?port:int ->
-  ?sock:Unix.file_descr ->
+  ?listens:Simple_httpd_domain.listenning list ->
   ?middlewares:([`Encoding | `Stage of int] * Middleware.t) list ->
   unit ->
   t
@@ -432,11 +430,8 @@ val create :
       This parameter exists since 0.11.
 *)
 
-val addr : t -> string
-(** Address on which the server listens. *)
-
-val port : t -> int
-(** Port on which the server listens. *)
+val listens : t -> Simple_httpd_domain.listenning list
+(** Addresses and ports on which the server listens. *)
 
 val active_connections : t -> int
 (** Number of active connections *)

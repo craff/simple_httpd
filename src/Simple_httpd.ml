@@ -15,6 +15,13 @@ module Buf = Simple_httpd_buf
 
 module Byte_stream = Simple_httpd_stream
 
+type listenning = Simple_httpd_domain.listenning =
+  {
+    addr : string;
+    port : int;
+    ssl  : Ssl.context option ;
+  }
+
 include Simple_httpd_server
 
 let yield = Simple_httpd_domain.yield

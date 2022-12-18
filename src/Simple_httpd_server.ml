@@ -591,11 +591,7 @@ end
 type server_sent_generator = (module SERVER_SENT_GENERATOR)
 
 type t = {
-  addr: string;
-
-  port: int;
-
-  sock: Unix.file_descr option;
+  listens : D.listenning list;
 
   timeout: float;
 
@@ -625,8 +621,7 @@ type t = {
 
 }
 
-let addr self = self.addr
-let port self = self.port
+let listens self = self.listens
 
 let active_connections _self = failwith "unimplemented"
 
@@ -754,13 +749,13 @@ let create
     ?(timeout=300.0)
     ?(buf_size=16 * 2048)
     ?(get_time_s=Unix.gettimeofday)
-    ?(addr="127.0.0.1") ?(port=8080) ?sock
+    ?(listens = D.[{addr = "127.0.0.1"; port=8080; ssl = None}])
     ?(middlewares=[])
     () : t =
   let handler _req = Response.fail ~code:404 "no top handler" in
   let max_connections = max 4 max_connections in
   let self = {
-    addr; port; sock; masksigpipe; handler; buf_size;
+    listens; masksigpipe; handler; buf_size;
     max_connections; granularity;
     path_handlers=[]; timeout; get_time_s; num_thread;
     middlewares=[]; middlewares_sorted=lazy [];
@@ -869,7 +864,7 @@ let run (self:t) : (unit,_) result =
   try
     let handler client_sock = handle_client_ self client_sock in
     let maxc = (self.max_connections + self.num_thread - 1) / self.num_thread in
-    let a = D.run ~nb_threads:self.num_thread ~addr:self.addr ~port:self.port
+    let a = D.run ~nb_threads:self.num_thread ~listens:self.listens
               ~maxc ~granularity:self.granularity ~timeout:self.timeout handler
     in
     Array.iter (fun d -> Domain.join d) a;

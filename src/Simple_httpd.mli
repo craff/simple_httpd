@@ -107,6 +107,15 @@ module Html = Simple_httpd_html
 (** Alias to {!Simple_httpd_html}
     @since NEXT_RELEASE *)
 
+type listenning = Simple_httpd_domain.listenning =
+  {
+    addr : string;
+    port : int;
+    ssl  : Ssl.context option ;
+  }
+
+(** usefull type*)
+
 (** {2 cooperative threading *)
 
 val yield : unit -> unit

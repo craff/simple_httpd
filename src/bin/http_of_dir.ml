@@ -3,10 +3,11 @@ module U = Simple_httpd_util
 module D = Simple_httpd_dir
 module Pf = Printf
 
-let serve ~config (dir:string) addr port j t : _ result =
-  let server = S.create ~max_connections:j ~num_thread:t ~addr ~port () in
-  Printf.printf "serve directory %s on http://%s:%d\n%!"
-    dir addr port;
+let serve ~config (dir:string) listens j t : _ result =
+  let server = S.create ~max_connections:j ~num_thread:t ~listens () in
+  List.iter S.(fun l ->
+      Printf.printf "serve directory %s on http://%s:%d\n%!"
+        dir l.addr l.port) (S.listens server);
 
   D.add_dir_path ~config ~dir ~prefix:"" server;
   S.run server
@@ -26,6 +27,8 @@ let main () =
   let dir_ = ref "." in
   let addr = ref "127.0.0.1" in
   let port = ref 8080 in
+  let ssl_cert = ref "" in
+  let ssl_priv = ref "" in
   let j    = ref 32 in
   let t    = ref (Domain.recommended_domain_count ()) in
   Arg.parse (Arg.align [
@@ -33,6 +36,7 @@ let main () =
       "-a", Set_string addr, " alias to --listen";
       "--port", Set_int port, " port to listen on";
       "-p", Set_int port, " alias to --port";
+      "--ssl", Tuple[Set_string ssl_cert; Set_string ssl_priv], " give ssl certificate and private key";
       "--dir", Set_string dir_, " directory to serve (default: \".\")";
       "--debug", Int U.set_debug, " debug mode";
       "--upload", Unit (fun () -> config.upload <- true), " enable file uploading";
@@ -50,7 +54,20 @@ let main () =
       "-j", Set_int j, " maximum number of simultaneous connections";
       "-t", Set_int t, " maximum number of threads";
     ]) (fun s -> dir_ := s) "http_of_dir [options] [dir]";
-  match serve ~config !dir_ !addr !port !j !t with
+
+  let ssl =
+    if !ssl_cert <> "" then
+      begin
+        Ssl_threads.init (); Ssl.init ();
+        let ctx = Ssl.create_context Ssl.SSLv23 Ssl.Server_context in
+        Ssl.use_certificate ctx !ssl_cert !ssl_priv;
+        Some ctx
+      end
+    else None
+  in
+  let listens = S.[{addr = !addr;port = !port;ssl}] in
+
+  match serve ~config !dir_ listens !j !t with
   | Ok () -> ()
   | Error e ->
     raise e
