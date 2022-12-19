@@ -87,7 +87,7 @@ let sleep : float -> unit = fun t ->
 
 let fread c s o l =
   try
-    let n = apply c Unix.read Ssl.read s o l in
+    let n = apply c Unix.read Ssl.read_blocking s o l in
     U.debug ~lvl:5 (fun k -> k "read(1) %d/%d" n l);
     if n = 0 then raise (Closed true); n
   with Unix.(Unix_error((EAGAIN|EWOULDBLOCK),_,_))
@@ -110,7 +110,7 @@ let read c s o l =
 
 let fwrite c s o l =
   try
-    let n = apply c Unix.single_write Ssl.write s o l in
+    let n = apply c Unix.single_write Ssl.write_blocking s o l in
     U.debug ~lvl:5 (fun k -> k "write(1) %d/%d" n l);
     if n = 0 then raise (Closed false); n
   with Unix.(Unix_error((EAGAIN|EWOULDBLOCK),_,_))
