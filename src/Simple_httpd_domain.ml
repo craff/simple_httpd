@@ -63,7 +63,7 @@ let apply c f1 f2 =
 
 let close exn c =
   U.debug ~lvl:3 (fun k -> k "closing because exception: %s. connected: %b"
-                  (Printexc.to_string exn) c.connected);
+                             (Printexc.to_string exn) c.connected);
   if c.connected then
     begin
       Atomic.decr c.status.nb_connections.(c.domain_id);
@@ -85,6 +85,19 @@ let sleep : float -> unit = fun t ->
   let t = now () +. t in
   perform (Sleep t)
 
+let fread c s o l =
+  try
+    let n = apply c Unix.read Ssl.read s o l in
+    U.debug ~lvl:5 (fun k -> k "read(1) %d/%d" n l);
+    if n = 0 then raise (Closed true); n
+  with Unix.(Unix_error((EAGAIN|EWOULDBLOCK),_,_))
+     | Ssl.(Read_error(Error_want_write|Error_want_read|Error_none
+                       |Error_want_x509_lookup|Error_want_accept
+                       |Error_want_connect)) ->
+        U.debug ~lvl:5 (fun k -> k "exn schedule write %d" l);
+        perform (Read (c,s,o,l))
+     | exn -> close exn c
+
 let read c s o l =
   assert(l<>0);
   c.counter <- c.counter + 1;
@@ -93,12 +106,20 @@ let read c s o l =
           Atomic.get c.status.nb_availables <= 0) then
     (U.debug ~lvl:5 (fun k -> k "normal schedule read %d" l);
      perform (Read (c,s,o,l)))
-  else
-    try
-      let n = apply c Unix.read Ssl.read s o l in
-      U.debug ~lvl:5 (fun k -> k "read(1) %d/%d" n l);
-      if n = 0 && c.ssl = None then close (Closed true) c; n
-    with exn -> close exn c
+  else fread c s o l
+
+let fwrite c s o l =
+  try
+    let n = apply c Unix.single_write Ssl.write s o l in
+    U.debug ~lvl:5 (fun k -> k "write(1) %d/%d" n l);
+    if n = 0 then raise (Closed false); n
+  with Unix.(Unix_error((EAGAIN|EWOULDBLOCK),_,_))
+     | Ssl.(Write_error(Error_want_write|Error_want_read|Error_none
+                        |Error_want_x509_lookup|Error_want_accept
+                        |Error_want_connect)) ->
+        U.debug ~lvl:5 (fun k -> k "exn schedule write %d" l);
+        perform (Write (c,s,o,l))
+     | exn -> close exn c
 
 let write c s o l =
   assert(l<>0);
@@ -108,12 +129,7 @@ let write c s o l =
           Atomic.get c.status.nb_availables <= 0) then
     (U.debug ~lvl:5 (fun k -> k "normal schedule write %d" l);
      perform (Write(c,s,o,l)))
-  else
-    try
-      let n = apply c Unix.single_write Ssl.write s o l in
-      U.debug ~lvl:5 (fun k -> k "write(1) %d/%d" n l);
-      if n = 0 then close (Closed false) c; n
-    with exn -> close exn c
+  else fwrite c s o l
 
 let is_ipv6 addr = String.contains addr ':'
 
@@ -261,15 +277,19 @@ let loop id st listens maxc granularity timeout handler () =
            | None ->
               None
          in
+         Unix.set_nonblock sock; (* need to be done after Ssl_accept *)
          let client = { sock; counter = 0; granularity; status = st; ssl;
            domain_id=id; connected = true } in
          handler client
       | Action { action; client; buf; offset; len; cont; _ } ->
          Hashtbl.remove pendings client.sock;
          let n =
-           match action with (* can not raise EAGAIN/EWOULDBLOCK *)
-           | Read  -> apply client Unix.read Ssl.read buf offset len
-           | Write -> apply client Unix.single_write Ssl.write buf offset len
+           (* NOTE: if using SSL, read/write can still return "want read/write"
+              without SSL, we could safely call Unix.read/single_write without
+              handling no data *)
+           match action with
+           | Read  -> fread client buf offset len
+           | Write -> fwrite client buf offset len
          in
          U.debug ~lvl:5 (fun k -> k "%s(2) %d/%d"
            (if action = Read then "read" else "write") n len);
@@ -280,7 +300,7 @@ let loop id st listens maxc granularity timeout handler () =
          ignore (Queue.pop yields);
          continue cont ();
     with e ->
-      U.debug (fun k -> k "exn: %s" (Printexc.to_string e)));
+      U.debug (fun k -> k "exn: %s %a" (Printexc.to_string e) print_status st));
     do_job ()
   and loop () =
     try_with do_job ()
