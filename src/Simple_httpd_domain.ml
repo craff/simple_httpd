@@ -333,8 +333,6 @@ let loop id st listens maxc granularity timeout handler () =
   in loop ()
 
 let run ~nb_threads ~listens ~maxc ~granularity ~timeout handler =
-  if nb_threads <= 0 || maxc < nb_threads then
-    invalid_arg "bad number of threads or max connections";
   let status = {
       nb_availables = Atomic.make 0;
       nb_connections = Array.init nb_threads (fun _ -> Atomic.make 0)
