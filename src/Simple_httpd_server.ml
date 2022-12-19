@@ -754,6 +754,8 @@ let create
     () : t =
   let handler _req = Response.fail ~code:404 "no top handler" in
   let max_connections = max 4 max_connections in
+  if num_thread <= 0 || max_connections < num_thread then
+    invalid_arg "bad number of threads or max connections";
   let self = {
     listens; masksigpipe; handler; buf_size;
     max_connections; granularity;
