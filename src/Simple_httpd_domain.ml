@@ -277,7 +277,10 @@ let loop id st listens maxc granularity timeout handler () =
            | None ->
               None
          in
-         Unix.set_nonblock sock; (* need to be done after Ssl_accept *)
+         (* TODO: we could set nonblock before accept, but in this case,
+            we should deal with "retry" exceptions and schedule the retry
+            of accept *)
+         Unix.set_nonblock sock;
          let client = { sock; counter = 0; granularity; status = st; ssl;
            domain_id=id; connected = true } in
          handler client
@@ -345,6 +348,18 @@ let run ~nb_threads ~listens ~maxc ~granularity ~timeout handler =
   in
   r
 
-let close c = close Exit c
+let rec ssl_flush s =
+  try Ssl.flush s
+  with Ssl.Flush_error(true) ->
+    U.debug ~lvl:0 (fun k -> k "Retry in flush");
+    (* TODO: this is bad busy waiting. Should schedule like blocked read/write.
+       We could not observe this exception during tests *)
+    ssl_flush s
 
-let flush c = apply c (fun _ -> ()) Ssl.flush
+let flush c = apply c (fun _ -> ()) ssl_flush
+
+(* All close above where because of error or socket closed on client side.
+   close in Simple_httpd_server may be because there is no keep alive and
+   the server close, so we flush before closing to handle the (very rare)
+   ssl_flush exception above *)
+let close c = flush c; close Exit c
