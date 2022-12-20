@@ -775,8 +775,6 @@ let find_map f l =
   in aux f l
 
 let handle_client_ (self:t) (client:D.client) : unit =
-  Unix.(setsockopt_float client.sock SO_RCVTIMEO self.timeout);
-  Unix.(setsockopt_float client.sock SO_SNDTIMEO self.timeout);
   let buf = Buf.create ~size:self.buf_size () in
   let oc  = Out.create ~buf_size:self.buf_size client in
   let is = Byte_stream.of_client ~buf_size:self.buf_size client in
