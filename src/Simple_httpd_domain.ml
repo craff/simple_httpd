@@ -69,7 +69,7 @@ let close exn c =
       Atomic.decr c.status.nb_connections.(c.domain_id);
       c.connected <- false;
       begin
-        try apply c Unix.close Ssl.shutdown with _ -> ()
+        try apply c Unix.close Ssl.shutdown_blocking with _ -> ()
       end
     end;
   raise exn
@@ -349,7 +349,7 @@ let run ~nb_threads ~listens ~maxc ~granularity ~timeout handler =
   r
 
 let rec ssl_flush s =
-  try Ssl.flush s
+  try Ssl.flush_blocking s
   with Ssl.Flush_error(true) ->
     U.debug ~lvl:0 (fun k -> k "Retry in flush");
     (* TODO: this is bad busy waiting. Should schedule like blocked read/write.
