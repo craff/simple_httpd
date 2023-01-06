@@ -148,6 +148,66 @@ and write c s o l =
   else
     fwrite c s o l
 
+module Io = struct
+  let rec fread c sock s o l =
+  try
+    let n = Unix.read sock  s o l in
+    U.debug ~lvl:5 (fun k -> k "read(1) %d/%d" n l);
+    if n = 0 then raise (Closed true); n
+  with Unix.(Unix_error((EAGAIN|EWOULDBLOCK),_,_))
+     | Ssl.(Read_error(Error_want_write|Error_want_read|Error_none
+                       |Error_want_x509_lookup|Error_want_accept
+                       |Error_want_connect)) ->
+        U.debug ~lvl:5 (fun k -> k "exn schedule write %d" l);
+        perform_read c sock s o l
+     | exn -> close c exn
+
+  and perform_read c sock s o l =
+    perform (Read {sock; fn = (fun () -> read c sock s o l); cl =  close c})
+
+  and read c sock s o l =
+    assert(l<>0);
+    c.counter <- c.counter + 1;
+    if c.counter mod c.granularity = 0  &&
+         (Atomic.get c.status.nb_connections.(c.domain_id) > 1 ||
+            Atomic.get c.status.nb_availables <= 0) then
+      begin
+        U.debug ~lvl:5 (fun k -> k "normal schedule read %d" l);
+        perform_read c sock s o l
+      end
+    else
+      fread c sock s o l
+
+  let rec fwrite c sock s o l =
+  try
+    let n = Unix.single_write sock s o l in
+    U.debug ~lvl:5 (fun k -> k "write(1) %d/%d" n l);
+    if n = 0 then raise (Closed false); n
+  with Unix.(Unix_error((EAGAIN|EWOULDBLOCK),_,_))
+     | Ssl.(Write_error(Error_want_write|Error_want_read|Error_none
+                        |Error_want_x509_lookup|Error_want_accept
+                        |Error_want_connect)) ->
+        U.debug ~lvl:5 (fun k -> k "exn schedule write %d" l);
+        perform_write c sock s o l
+     | exn -> close c exn
+
+  and perform_write c sock s o l =
+    perform (Write {sock; fn = (fun () -> write c sock s o l); cl = close c})
+
+  and write c sock s o l =
+    assert(l<>0);
+    c.counter <- c.counter + 1;
+    if c.counter mod c.granularity = 0 &&
+         (Atomic.get c.status.nb_connections.(c.domain_id) > 1 ||
+            Atomic.get c.status.nb_availables <= 0) then
+      begin
+        U.debug ~lvl:5 (fun k -> k "normal schedule write %d" l);
+        perform_write c sock s o l
+      end
+    else
+      fwrite c sock s o l
+end
+
 let is_ipv6 addr = String.contains addr ':'
 
 let connect addr port maxc =

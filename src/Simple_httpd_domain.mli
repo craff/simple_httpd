@@ -31,6 +31,13 @@ type listenning = {
     ssl  : Ssl.context option ;
   }
 
+(** Module with function similar to Unix.read and Unix.single_write
+    but that will perform scheduling *)
+module Io : sig
+  val read : client -> Unix.file_descr -> Bytes.t -> int -> int -> int
+  val write : client -> Unix.file_descr -> Bytes.t -> int -> int -> int
+end
+
 val run : nb_threads:int -> listens:listenning list -> maxc:int ->
           granularity:int -> timeout:float -> (client -> unit) ->
             unit Domain.t array
