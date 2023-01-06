@@ -43,3 +43,12 @@ val pp_date : Format.formatter -> Unix.tm -> unit
     for expiration date of cookies.
     @since 0.12
 *)
+
+module LinkedList : sig
+  type 'a t
+  val create : unit -> 'a t
+  val add_first : 'a -> 'a t -> unit
+  val add_last : 'a -> 'a t -> unit
+  val search_and_remove_first : ('a -> bool) -> 'a t -> 'a option
+  val search_and_remove_last : ('a -> bool) -> 'a t -> 'a option
+end

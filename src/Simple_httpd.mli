@@ -118,11 +118,63 @@ type listenning = Simple_httpd_domain.listenning =
 
 (** {2 cooperative threading *)
 
+(** The following functions deals with cooperative multi-tasking on each
+    domain.  First, recall that the OS will choose via [select] on which
+    domain you serve your client, and after that, it is impossible for a job
+    to change domain. This is a current limitation of domain with OCaml 5.0.
+
+    Then, on each domain, priority is based on arrival time: first arrived,
+    first to run. With one exception: Mutexes have the highest priority,
+    and among mutexes, the highest priority is again, first arrived, first
+    to run.
+
+    If you want to have mutex with lower priority, you may do:
+    [ yield (); lock m ] or
+    [ if not (Mutex.try_lock m) then (yield (); lock m)]
+
+    This should more or less give a priority for mutexes comparable to other
+    scheduled jobs... With more risk of deadlock ?
+
+    Normally context switching occurs when read or write is blocked in the
+    socket serving the client or regularly (based on granularity parameter)
+*)
+
 val yield : unit -> unit
-(** let other thread run. Should be called for request that take more time
-    before sending results or reading data. Normally constext switching occurs
-    when read or write is blocked or when the input of output buffer are full.
-    A request that requires more time should call yield to be cooperative.
+(** let other thread run. Should be called for treatment that take time
+    before sending results or reading data and when the other primitive
+    can not be used. This happends typically for a pure computing task.
+    Other solutions exists for instance for database request.
 *)
 
 val sleep : float -> unit
+(** Same as above, but with a minimum sleeping time in second *)
+
+(** exception used by the two functions below *)
+exception Closed of bool
+
+(** Module with function similar to Unix.read and Unix.single_write
+    but that will perform scheduling *)
+module Io : sig
+  val read : Unix.file_descr -> Bytes.t -> int -> int -> int
+  val write : Unix.file_descr -> Bytes.t -> int -> int -> int
+end
+
+(** [schedule_read sock action close] should be called when a non blocking
+    read operation would have blocked. When read become possible, [action ()]
+    will be called. If it raises an exception [exn], [close exn] will be called
+    it is up to the user to decide of closing the socket and/or reraise the exception.
+
+    The return value should be (if possible) the number of bytes read. It this is
+    meaningless, return a non zero value if some progress was made, while returning 0
+    will call [close (Closed true)].
+
+    A typical application for this is when interacting with a data base in non
+    blocking mode. For just reading a file or socket, use the Io module above.
+  *)
+val schedule_read : Unix.file_descr -> (unit -> int) -> (exn -> unit) -> int
+
+(** [schedule_read sock action close] is similar as above for a write operation.
+   If it return [action ()] return 0; [close (Closed false)] is called. *)
+val schedule_write : Unix.file_descr -> (unit -> int) -> (exn -> unit) -> int
+
+val lock : Mutex.t -> unit

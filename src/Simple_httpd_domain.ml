@@ -42,19 +42,20 @@ let fake_client =
       connected = false }
 
 type _ Effect.t +=
-   | Read  : { sock: Unix.file_descr; fn: (unit -> int); cl: 'b.exn -> 'b }
+   | Read  : { sock: Unix.file_descr; fn: (unit -> int); cl: exn -> unit }
                -> int Effect.t
-   | Write : { sock: Unix.file_descr; fn: (unit -> int); cl: 'b.exn -> 'b }
+   | Write : { sock: Unix.file_descr; fn: (unit -> int); cl: exn -> unit }
                -> int Effect.t
    | Yield : unit Effect.t
    | Sleep : float -> unit Effect.t
+   | Lock  : Mutex.t -> unit Effect.t
 
 type action = Read|Write
 type pending =
   { sock : Unix.file_descr
   ; action:action
   ; fn : unit -> int
-  ; cl : 'b. exn -> 'b
+  ; cl : exn -> unit
   ; cont : (int, unit) continuation
   ; mutable arrival_time : float (* time it started to be pending *)
   ; mutable seen_time : float    (* last time is was returned by select *)
@@ -76,8 +77,7 @@ let close c exn =
       begin
         try apply c Unix.close Ssl.shutdown_blocking with _ -> ()
       end
-    end;
-  raise exn
+    end
 
 let yield () =
   U.debug ~lvl:5 (fun k -> k "yield(1)");
@@ -90,6 +90,10 @@ let sleep : float -> unit = fun t ->
   let t = now () +. t in
   perform (Sleep t)
 
+let lock : Mutex.t -> unit = fun lk ->
+  U.debug ~lvl:5 (fun k -> k "lock(1)");
+  if not (Mutex.try_lock lk) then perform (Lock lk)
+
 let rec fread c s o l =
   try
     let n = apply c Unix.read Ssl.read_blocking s o l in
@@ -101,10 +105,10 @@ let rec fread c s o l =
                        |Error_want_connect)) ->
         U.debug ~lvl:5 (fun k -> k "exn schedule write %d" l);
         perform_read c s o l
-     | exn -> close c exn
+     | exn -> ignore (close c exn); raise exn
 
 and perform_read c s o l =
-  perform (Read {sock = c.sock; fn = (fun () -> read c s o l); cl =  close c})
+  perform (Read {sock = c.sock; fn = (fun () -> read c s o l); cl = close c})
 
 and read c s o l =
   assert(l<>0);
@@ -130,7 +134,7 @@ let rec fwrite c s o l =
                         |Error_want_connect)) ->
         U.debug ~lvl:5 (fun k -> k "exn schedule write %d" l);
         perform_write c s o l
-     | exn -> close c exn
+     | exn -> ignore (close c exn); raise exn
 
 and perform_write c s o l =
   perform (Write {sock = c.sock; fn = (fun () -> write c s o l); cl = close c})
@@ -147,6 +151,43 @@ and write c s o l =
     end
   else
     fwrite c s o l
+
+let schedule_read sock fn cl =
+  perform (Read {sock; fn; cl })
+
+let schedule_write sock fn cl =
+  perform (Write {sock; fn; cl })
+
+
+module Io = struct
+  let rec read sock s o l =
+  try
+    let n = Unix.read sock  s o l in
+    U.debug ~lvl:5 (fun k -> k "read(1) %d/%d" n l);
+    if n = 0 then raise (Closed true); n
+  with Unix.(Unix_error((EAGAIN|EWOULDBLOCK),_,_))
+     | Ssl.(Read_error(Error_want_write|Error_want_read|Error_none
+                       |Error_want_x509_lookup|Error_want_accept
+                       |Error_want_connect)) ->
+        U.debug ~lvl:5 (fun k -> k "exn schedule write %d" l);
+        schedule_read sock (fun () -> read sock s o l)
+          (fun _ -> Unix.close sock)
+     | exn -> Unix.close sock; raise exn
+
+  let rec write sock s o l =
+  try
+    let n = Unix.single_write sock s o l in
+    U.debug ~lvl:5 (fun k -> k "write(1) %d/%d" n l);
+    if n = 0 then raise (Closed false); n
+  with Unix.(Unix_error((EAGAIN|EWOULDBLOCK),_,_))
+     | Ssl.(Write_error(Error_want_write|Error_want_read|Error_none
+                        |Error_want_x509_lookup|Error_want_accept
+                        |Error_want_connect)) ->
+        U.debug ~lvl:5 (fun k -> k "exn schedule write %d" l);
+        schedule_write sock (fun () -> write sock s o l)
+          (fun _ -> Unix.close sock)
+     | exn -> Unix.close sock; raise exn
+end
 
 let is_ipv6 addr = String.contains addr ':'
 
@@ -178,6 +219,7 @@ type pollResult =
   | Accept of (Unix.file_descr * listenning)
   | Action of pending
   | Yield of ((unit,unit) continuation * float)
+  | Lock of (unit,unit) continuation
 
 exception TimeOut
 
@@ -209,6 +251,14 @@ let loop id st listens maxc granularity timeout handler () =
     in
     sleeps := fn !sleeps
   in
+  let locks = U.LinkedList.create () in
+  let add_lock lk cont = U.LinkedList.add_last (lk, cont) locks in
+  let get_lock () =
+    let fn (lk, _) = Mutex.try_lock lk in
+    match U.LinkedList.search_and_remove_first fn locks with
+    | None -> None
+    | Some (_, cont) -> Some cont
+  in
   let find s = try Hashtbl.find pendings s with _ -> assert false in
   let check rds wrs =
     let fn s =
@@ -229,11 +279,12 @@ let loop id st listens maxc granularity timeout handler () =
       if Atomic.get st.nb_connections.(id) < maxc then listen_rds else []
     in
     let now = now () in
-    let (rds,wrs) = Hashtbl.fold (fun s c (rds,wrs) ->
+    let (rds,wrs) = Hashtbl.fold (fun s c (rds,wrs as acc) ->
                         if now -. c.seen_time > timeout then
                           begin
                             Hashtbl.remove pendings s;
-                            c.cl TimeOut
+                            ignore (c.cl TimeOut);
+                            acc
                           end
                         else
                           match c.action with
@@ -241,6 +292,7 @@ let loop id st listens maxc granularity timeout handler () =
                           | Write -> (rds,s::wrs)) pendings (rds,[])
     in
     get_sleep now;
+    let lock_cont = get_lock () in
     let timeout =
       match Queue.is_empty yields, !sleeps with
       | false, _ -> 0.0
@@ -249,26 +301,31 @@ let loop id st listens maxc granularity timeout handler () =
     in
     let exception Acc of (Unix.file_descr * listenning) in
     try
-      let (rds,wrs,_) = Unix.select rds wrs [] timeout in
-      if do_decr then Atomic.decr st.nb_availables;
-      let best = ref (match Queue.peek_opt yields with
-                      | None -> Timeout
-                      | Some c -> Yield c) in
-      let fn sock =
-        match List.find_opt (fun (s,_) -> s == sock) listens with
-        | Some l -> raise (Acc l)
-        | None ->
-        let {arrival_time = t';_} as p = find sock in
-        p.seen_time <- now;
-        match !best with
-        | Timeout -> best := Action p
-        | Yield(_,t) -> if t' < t then best:=Action p
-        | Action{arrival_time=t;_} -> if t' < t then best:=Action p
-        | Accept _ -> assert false
-      in
-      List.iter fn rds;
-      List.iter fn wrs;
-      !best
+      match lock_cont with
+      | Some c -> Lock c  (* Mutex first!, get_lock acquire the mutex.
+                             See comments in Simple_httpd.mli *)
+      | None ->
+         let (rds,wrs,_) = Unix.select rds wrs [] timeout in
+         if do_decr then Atomic.decr st.nb_availables;
+         let best = ref (match Queue.peek_opt yields with
+                         | Some c -> Yield c
+                         | None   -> Timeout) in
+         let fn sock =
+           match List.find_opt (fun (s,_) -> s == sock) listens with
+           | Some l -> raise (Acc l)
+           | None ->
+              let {arrival_time = t';_} as p = find sock in
+              p.seen_time <- now;
+              match !best with
+              | Timeout -> best := Action p
+              | Yield(_,t) -> if t' < t then best:=Action p
+              | Action{arrival_time=t;_} -> if t' < t then best:=Action p
+              | Lock _ -> assert false (* rds and wrs are empty *)
+              | Accept _ -> assert false
+         in
+         List.iter fn rds;
+         List.iter fn wrs;
+         !best
     with
     | Acc l -> Accept l
     | Unix.(Unix_error(EBADF,_,_)) -> check rds wrs; poll timeout
@@ -311,6 +368,10 @@ let loop id st listens maxc granularity timeout handler () =
          U.debug ~lvl:5 (fun k -> k "yield(2)");
          ignore (Queue.pop yields);
          continue cont ();
+      | Lock(cont) ->
+         U.debug ~lvl:5 (fun k -> k "lock(2)");
+         continue cont ();
+
     with e ->
       U.debug (fun k -> k "exn: %s %a" (Printexc.to_string e) print_status st));
     do_job ()
@@ -325,6 +386,10 @@ let loop id st listens maxc granularity timeout handler () =
         | Sleep(t) ->
            Some (fun (cont : (c,_) continuation) ->
                add_sleep t cont;
+               loop ())
+        | Lock(lk) ->
+           Some (fun (cont : (c,_) continuation) ->
+               add_lock lk cont;
                loop ())
         | Read {sock; fn; cl} ->
            Some (fun (cont : (c,_) continuation) ->

@@ -31,6 +31,21 @@ type listenning = {
     ssl  : Ssl.context option ;
   }
 
+(** Module with function similar to Unix.read and Unix.single_write
+    but that will perform scheduling *)
+module Io : sig
+  val read : Unix.file_descr -> Bytes.t -> int -> int -> int
+  val write : Unix.file_descr -> Bytes.t -> int -> int -> int
+end
+
+exception Closed of bool
+
+val schedule_read : Unix.file_descr -> (unit -> int) -> (exn -> unit) -> int
+
+val schedule_write : Unix.file_descr -> (unit -> int) -> (exn -> unit) -> int
+
 val run : nb_threads:int -> listens:listenning list -> maxc:int ->
           granularity:int -> timeout:float -> (client -> unit) ->
             unit Domain.t array
+
+val lock : Mutex.t -> unit
