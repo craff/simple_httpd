@@ -48,6 +48,7 @@ type _ Effect.t +=
                -> int Effect.t
    | Yield : unit Effect.t
    | Sleep : float -> unit Effect.t
+   | Lock  : Mutex.t -> unit Effect.t
 
 type action = Read|Write
 type pending =
@@ -88,6 +89,10 @@ let sleep : float -> unit = fun t ->
   U.debug ~lvl:5 (fun k -> k "sleep(1,%e)" t);
   let t = now () +. t in
   perform (Sleep t)
+
+let lock : Mutex.t -> unit = fun lk ->
+  U.debug ~lvl:5 (fun k -> k "lock(1)");
+  if not (Mutex.try_lock lk) then perform (Lock lk)
 
 let rec fread c s o l =
   try
@@ -147,8 +152,15 @@ and write c s o l =
   else
     fwrite c s o l
 
+let schedule_read sock fn cl =
+  perform (Read {sock; fn; cl })
+
+let schedule_write sock fn cl =
+  perform (Write {sock; fn; cl })
+
+
 module Io = struct
-  let rec fread c sock s o l =
+  let rec read sock s o l =
   try
     let n = Unix.read sock  s o l in
     U.debug ~lvl:5 (fun k -> k "read(1) %d/%d" n l);
@@ -158,27 +170,11 @@ module Io = struct
                        |Error_want_x509_lookup|Error_want_accept
                        |Error_want_connect)) ->
         U.debug ~lvl:5 (fun k -> k "exn schedule write %d" l);
-        perform_read c sock s o l
+        schedule_read sock (fun () -> read sock s o l)
+          (fun _ -> Unix.close sock)
      | exn -> Unix.close sock; raise exn
 
-  and perform_read c sock s o l =
-    perform (Read { sock; fn = (fun () -> read c sock s o l)
-                  ; cl = (fun _ -> Unix.close sock)})
-
-  and read c sock s o l =
-    assert(l<>0);
-    c.counter <- c.counter + 1;
-    if c.counter mod c.granularity = 0  &&
-         (Atomic.get c.status.nb_connections.(c.domain_id) > 1 ||
-            Atomic.get c.status.nb_availables <= 0) then
-      begin
-        U.debug ~lvl:5 (fun k -> k "normal schedule read %d" l);
-        perform_read c sock s o l
-      end
-    else
-      fread c sock s o l
-
-  let rec fwrite c sock s o l =
+  let rec write sock s o l =
   try
     let n = Unix.single_write sock s o l in
     U.debug ~lvl:5 (fun k -> k "write(1) %d/%d" n l);
@@ -188,31 +184,10 @@ module Io = struct
                         |Error_want_x509_lookup|Error_want_accept
                         |Error_want_connect)) ->
         U.debug ~lvl:5 (fun k -> k "exn schedule write %d" l);
-        perform_write c sock s o l
+        schedule_write sock (fun () -> write sock s o l)
+          (fun _ -> Unix.close sock)
      | exn -> Unix.close sock; raise exn
-
-  and perform_write c sock s o l =
-    perform (Write { sock; fn = (fun () -> write c sock s o l)
-                   ; cl = (fun _ -> Unix.close sock)})
-  and write c sock s o l =
-    assert(l<>0);
-    c.counter <- c.counter + 1;
-    if c.counter mod c.granularity = 0 &&
-         (Atomic.get c.status.nb_connections.(c.domain_id) > 1 ||
-            Atomic.get c.status.nb_availables <= 0) then
-      begin
-        U.debug ~lvl:5 (fun k -> k "normal schedule write %d" l);
-        perform_write c sock s o l
-      end
-    else
-      fwrite c sock s o l
 end
-
-let schedule_read sock fn cl =
-  perform (Read {sock; fn; cl })
-
-let schedule_write sock fn cl =
-  perform (Write {sock; fn; cl })
 
 let is_ipv6 addr = String.contains addr ':'
 
@@ -244,6 +219,7 @@ type pollResult =
   | Accept of (Unix.file_descr * listenning)
   | Action of pending
   | Yield of ((unit,unit) continuation * float)
+  | Lock of (unit,unit) continuation
 
 exception TimeOut
 
@@ -274,6 +250,14 @@ let loop id st listens maxc granularity timeout handler () =
       | l -> l
     in
     sleeps := fn !sleeps
+  in
+  let locks = U.LinkedList.create () in
+  let add_lock lk cont = U.LinkedList.add_last (lk, cont) locks in
+  let get_lock () =
+    let fn (lk, _) = Mutex.try_lock lk in
+    match U.LinkedList.search_and_remove_first fn locks with
+    | None -> None
+    | Some (_, cont) -> Some cont
   in
   let find s = try Hashtbl.find pendings s with _ -> assert false in
   let check rds wrs =
@@ -308,6 +292,7 @@ let loop id st listens maxc granularity timeout handler () =
                           | Write -> (rds,s::wrs)) pendings (rds,[])
     in
     get_sleep now;
+    let lock_cont = get_lock () in
     let timeout =
       match Queue.is_empty yields, !sleeps with
       | false, _ -> 0.0
@@ -316,26 +301,31 @@ let loop id st listens maxc granularity timeout handler () =
     in
     let exception Acc of (Unix.file_descr * listenning) in
     try
-      let (rds,wrs,_) = Unix.select rds wrs [] timeout in
-      if do_decr then Atomic.decr st.nb_availables;
-      let best = ref (match Queue.peek_opt yields with
-                      | None -> Timeout
-                      | Some c -> Yield c) in
-      let fn sock =
-        match List.find_opt (fun (s,_) -> s == sock) listens with
-        | Some l -> raise (Acc l)
-        | None ->
-        let {arrival_time = t';_} as p = find sock in
-        p.seen_time <- now;
-        match !best with
-        | Timeout -> best := Action p
-        | Yield(_,t) -> if t' < t then best:=Action p
-        | Action{arrival_time=t;_} -> if t' < t then best:=Action p
-        | Accept _ -> assert false
-      in
-      List.iter fn rds;
-      List.iter fn wrs;
-      !best
+      match lock_cont with
+      | Some c -> Lock c  (* Mutex first!, get_lock acquire the mutex.
+                             See comments in Simple_httpd.mli *)
+      | None ->
+         let (rds,wrs,_) = Unix.select rds wrs [] timeout in
+         if do_decr then Atomic.decr st.nb_availables;
+         let best = ref (match Queue.peek_opt yields with
+                         | Some c -> Yield c
+                         | None   -> Timeout) in
+         let fn sock =
+           match List.find_opt (fun (s,_) -> s == sock) listens with
+           | Some l -> raise (Acc l)
+           | None ->
+              let {arrival_time = t';_} as p = find sock in
+              p.seen_time <- now;
+              match !best with
+              | Timeout -> best := Action p
+              | Yield(_,t) -> if t' < t then best:=Action p
+              | Action{arrival_time=t;_} -> if t' < t then best:=Action p
+              | Lock _ -> assert false (* rds and wrs are empty *)
+              | Accept _ -> assert false
+         in
+         List.iter fn rds;
+         List.iter fn wrs;
+         !best
     with
     | Acc l -> Accept l
     | Unix.(Unix_error(EBADF,_,_)) -> check rds wrs; poll timeout
@@ -378,6 +368,10 @@ let loop id st listens maxc granularity timeout handler () =
          U.debug ~lvl:5 (fun k -> k "yield(2)");
          ignore (Queue.pop yields);
          continue cont ();
+      | Lock(cont) ->
+         U.debug ~lvl:5 (fun k -> k "lock(2)");
+         continue cont ();
+
     with e ->
       U.debug (fun k -> k "exn: %s %a" (Printexc.to_string e) print_status st));
     do_job ()
@@ -392,6 +386,10 @@ let loop id st listens maxc granularity timeout handler () =
         | Sleep(t) ->
            Some (fun (cont : (c,_) continuation) ->
                add_sleep t cont;
+               loop ())
+        | Lock(lk) ->
+           Some (fun (cont : (c,_) continuation) ->
+               add_lock lk cont;
                loop ())
         | Read {sock; fn; cl} ->
            Some (fun (cont : (c,_) continuation) ->

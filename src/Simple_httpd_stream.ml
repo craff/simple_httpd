@@ -97,7 +97,7 @@ let of_client = of_client_ ~close:(fun c -> Simple_httpd_domain.close c)
 let of_client_close_noerr = of_client_
   ~close:(fun c -> try Simple_httpd_domain.close c with _ -> ())
 
-let of_client_fd_ ?(buf_size=16 * 1024) ~close ic sock : t =
+let of_client_fd_ ?(buf_size=16 * 1024) ~close sock : t =
   make
     ~bs:(Bytes.create buf_size)
     ~close:(fun _ -> close sock)
@@ -109,7 +109,7 @@ let of_client_fd_ ?(buf_size=16 * 1024) ~close ic sock : t =
           self.off <- 0;
           self.len <-
             let open Simple_httpd_domain in
-            Io.read ic sock self.bs 0 (Bytes.length self.bs);
+            Io.read sock self.bs 0 (Bytes.length self.bs);
         )
       )
     ()

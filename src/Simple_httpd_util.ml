@@ -203,3 +203,79 @@ let pp_date fmt date =
   in
   Format.fprintf fmt "%s, %02d %s %04d %02d:%02d:%02d GMT"
     day date.tm_mday month (date.tm_year+1900) date.tm_hour date.tm_min date.tm_sec
+
+module LinkedList = struct
+
+  type 'a cell =
+    | Nil
+    | Cons of { v : 'a
+              ; mutable next : 'a cell
+              ; mutable prev : 'a cell }
+
+  type 'a t = { mutable head : 'a cell
+              ; mutable tail : 'a cell }
+
+  let create () = { head = Nil; tail = Nil }
+
+  let add_first v l =
+    let cell = Cons { v; next = l.head; prev = Nil } in
+    match l.head with
+    | Nil -> assert (l.tail = Nil);
+             l.head <- cell; l.tail <- cell
+    | _   -> l.head <- cell
+
+  let add_last v l =
+    let cell = Cons { v; next = Nil; prev = l.tail } in
+    match l.tail with
+    | Nil -> assert (l.head = Nil);
+             l.head <- cell; l.tail <- cell
+    | _   -> l.tail <- cell
+
+  type 'a prev = Cell of 'a cell | Root of 'a t
+
+  let search_and_remove_first fn l =
+    let rec gn prev = function
+      | Nil -> None
+      | Cons{ v; next; _ } as cell ->
+         if fn v then
+           begin
+             let cell = match prev with
+              | Root r -> r.head <- next; Nil
+              | Cell (Cons c as cell) -> c.next <- next; cell
+              | Cell Nil -> assert false
+             in
+             begin
+               match next with
+               | Nil -> l.tail <- cell
+               | Cons c -> c.prev <- cell
+             end;
+             Some v
+           end
+         else
+           gn (Cell cell) next
+    in
+    gn (Root l) l.head
+
+  let search_and_remove_last fn l =
+    let rec gn next = function
+      | Nil -> None
+      | Cons{ v; prev; _ } as cell ->
+         if fn v then
+           begin
+             let cell = match next with
+              | Root r -> r.tail <- prev; Nil
+              | Cell (Cons c as cell) -> c.prev <- prev; cell
+              | Cell Nil -> assert false
+             in
+             begin
+               match prev with
+               | Nil -> l.head <- cell
+               | Cons c -> c.next <- cell
+             end;
+             Some v
+           end
+         else
+           gn (Cell cell) prev
+    in
+    gn (Root l) l.tail
+end
