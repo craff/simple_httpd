@@ -42,9 +42,9 @@ let fake_client =
       connected = false }
 
 type _ Effect.t +=
-   | Read  : { sock: Unix.file_descr; fn: (unit -> int); cl: 'b.exn -> 'b }
+   | Read  : { sock: Unix.file_descr; fn: (unit -> int); cl: exn -> unit }
                -> int Effect.t
-   | Write : { sock: Unix.file_descr; fn: (unit -> int); cl: 'b.exn -> 'b }
+   | Write : { sock: Unix.file_descr; fn: (unit -> int); cl: exn -> unit }
                -> int Effect.t
    | Yield : unit Effect.t
    | Sleep : float -> unit Effect.t
@@ -54,7 +54,7 @@ type pending =
   { sock : Unix.file_descr
   ; action:action
   ; fn : unit -> int
-  ; cl : 'b. exn -> 'b
+  ; cl : exn -> unit
   ; cont : (int, unit) continuation
   ; mutable arrival_time : float (* time it started to be pending *)
   ; mutable seen_time : float    (* last time is was returned by select *)
@@ -76,8 +76,7 @@ let close c exn =
       begin
         try apply c Unix.close Ssl.shutdown with _ -> ()
       end
-    end;
-  raise exn
+    end
 
 let yield () =
   U.debug ~lvl:5 (fun k -> k "yield(1)");
@@ -101,10 +100,10 @@ let rec fread c s o l =
                        |Error_want_connect)) ->
         U.debug ~lvl:5 (fun k -> k "exn schedule write %d" l);
         perform_read c s o l
-     | exn -> close c exn
+     | exn -> ignore (close c exn); raise exn
 
 and perform_read c s o l =
-  perform (Read {sock = c.sock; fn = (fun () -> read c s o l); cl =  close c})
+  perform (Read {sock = c.sock; fn = (fun () -> read c s o l); cl = close c})
 
 and read c s o l =
   assert(l<>0);
@@ -130,7 +129,7 @@ let rec fwrite c s o l =
                         |Error_want_connect)) ->
         U.debug ~lvl:5 (fun k -> k "exn schedule write %d" l);
         perform_write c s o l
-     | exn -> close c exn
+     | exn -> ignore (close c exn); raise exn
 
 and perform_write c s o l =
   perform (Write {sock = c.sock; fn = (fun () -> write c s o l); cl = close c})
@@ -160,10 +159,11 @@ module Io = struct
                        |Error_want_connect)) ->
         U.debug ~lvl:5 (fun k -> k "exn schedule write %d" l);
         perform_read c sock s o l
-     | exn -> close c exn
+     | exn -> Unix.close sock; raise exn
 
   and perform_read c sock s o l =
-    perform (Read {sock; fn = (fun () -> read c sock s o l); cl =  close c})
+    perform (Read { sock; fn = (fun () -> read c sock s o l)
+                  ; cl = (fun _ -> Unix.close sock)})
 
   and read c sock s o l =
     assert(l<>0);
@@ -189,11 +189,11 @@ module Io = struct
                         |Error_want_connect)) ->
         U.debug ~lvl:5 (fun k -> k "exn schedule write %d" l);
         perform_write c sock s o l
-     | exn -> close c exn
+     | exn -> Unix.close sock; raise exn
 
   and perform_write c sock s o l =
-    perform (Write {sock; fn = (fun () -> write c sock s o l); cl = close c})
-
+    perform (Write { sock; fn = (fun () -> write c sock s o l)
+                   ; cl = (fun _ -> Unix.close sock)})
   and write c sock s o l =
     assert(l<>0);
     c.counter <- c.counter + 1;
@@ -207,6 +207,12 @@ module Io = struct
     else
       fwrite c sock s o l
 end
+
+let schedule_read sock fn cl =
+  perform (Read {sock; fn; cl })
+
+let schedule_write sock fn cl =
+  perform (Write {sock; fn; cl })
 
 let is_ipv6 addr = String.contains addr ':'
 
@@ -289,11 +295,12 @@ let loop id st listens maxc granularity timeout handler () =
       if Atomic.get st.nb_connections.(id) < maxc then listen_rds else []
     in
     let now = now () in
-    let (rds,wrs) = Hashtbl.fold (fun s c (rds,wrs) ->
+    let (rds,wrs) = Hashtbl.fold (fun s c (rds,wrs as acc) ->
                         if now -. c.seen_time > timeout then
                           begin
                             Hashtbl.remove pendings s;
-                            c.cl TimeOut
+                            ignore (c.cl TimeOut);
+                            acc
                           end
                         else
                           match c.action with

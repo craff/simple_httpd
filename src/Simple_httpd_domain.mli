@@ -38,6 +38,12 @@ module Io : sig
   val write : client -> Unix.file_descr -> Bytes.t -> int -> int -> int
 end
 
+exception Closed of bool
+
+val schedule_read : Unix.file_descr -> (unit -> int) -> (exn -> unit) -> int
+
+val schedule_write : Unix.file_descr -> (unit -> int) -> (exn -> unit) -> int
+
 val run : nb_threads:int -> listens:listenning list -> maxc:int ->
           granularity:int -> timeout:float -> (client -> unit) ->
             unit Domain.t array

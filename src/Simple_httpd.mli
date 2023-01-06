@@ -126,3 +126,24 @@ val yield : unit -> unit
 *)
 
 val sleep : float -> unit
+
+(** exception used by the two functions below *)
+exception Closed of bool
+
+(** [schedule_read sock action close] should be called when a non blocking
+    read operation would have blocked. When read become possible, [action ()]
+    will be called. If it raises an exception [exn], [close exn] will be called
+    it is up to the user to decide of closing the socket and/or reraise the exception.
+
+    The return value should be (if possible) the number of bytes read. It this is
+    meaningless, return a non zero value if some progress was made, while returning 0
+    will call [close (Closed true)].
+
+    A typical application for this is when interacting with a data base in non
+    blocking mode. For just reading a file or socket, use the Io module above.
+  *)
+val schedule_read : Unix.file_descr -> (unit -> int) -> (exn -> unit) -> int
+
+(** [schedule_read sock action close] is similar as above for a write operation.
+   If it return [action ()] return 0; [close (Closed false)] is called. *)
+val schedule_write : Unix.file_descr -> (unit -> int) -> (exn -> unit) -> int
