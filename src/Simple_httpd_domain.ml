@@ -42,17 +42,22 @@ let fake_client =
       connected = false }
 
 type _ Effect.t +=
-   | Read  : client * Bytes.t * int * int -> int Effect.t
-   | Write : client * Bytes.t * int * int -> int Effect.t
+   | Read  : { sock: Unix.file_descr; fn: (unit -> int); cl: 'b.exn -> 'b }
+               -> int Effect.t
+   | Write : { sock: Unix.file_descr; fn: (unit -> int); cl: 'b.exn -> 'b }
+               -> int Effect.t
    | Yield : unit Effect.t
    | Sleep : float -> unit Effect.t
 
 type action = Read|Write
 type pending =
-  {client:client; action:action; buf:Bytes.t; offset:int; len: int;
-   cont : (int,unit) continuation;
-   mutable arrival_time : float; (* time it started to be pending *)
-   mutable seen_time : float;    (* last time is was returned by select *)
+  { sock : Unix.file_descr
+  ; action:action
+  ; fn : unit -> int
+  ; cl : 'b. exn -> 'b
+  ; cont : (int, unit) continuation
+  ; mutable arrival_time : float (* time it started to be pending *)
+  ; mutable seen_time : float    (* last time is was returned by select *)
   }
 
 exception Closed of bool
@@ -61,7 +66,7 @@ let apply c f1 f2 =
   match c.ssl with None -> f1 c.sock
                  | Some s -> f2 s
 
-let close exn c =
+let close c exn =
   U.debug ~lvl:3 (fun k -> k "closing because exception: %s. connected: %b"
                              (Printexc.to_string exn) c.connected);
   if c.connected then
@@ -85,7 +90,7 @@ let sleep : float -> unit = fun t ->
   let t = now () +. t in
   perform (Sleep t)
 
-let fread c s o l =
+let rec fread c s o l =
   try
     let n = apply c Unix.read Ssl.read_blocking s o l in
     U.debug ~lvl:5 (fun k -> k "read(1) %d/%d" n l);
@@ -95,20 +100,26 @@ let fread c s o l =
                        |Error_want_x509_lookup|Error_want_accept
                        |Error_want_connect)) ->
         U.debug ~lvl:5 (fun k -> k "exn schedule write %d" l);
-        perform (Read (c,s,o,l))
-     | exn -> close exn c
+        perform_read c s o l
+     | exn -> close c exn
 
-let read c s o l =
+and perform_read c s o l =
+  perform (Read {sock = c.sock; fn = (fun () -> read c s o l); cl =  close c})
+
+and read c s o l =
   assert(l<>0);
   c.counter <- c.counter + 1;
   if c.counter mod c.granularity = 0  &&
        (Atomic.get c.status.nb_connections.(c.domain_id) > 1 ||
           Atomic.get c.status.nb_availables <= 0) then
-    (U.debug ~lvl:5 (fun k -> k "normal schedule read %d" l);
-     perform (Read (c,s,o,l)))
-  else fread c s o l
+    begin
+      U.debug ~lvl:5 (fun k -> k "normal schedule read %d" l);
+      perform_read c s o l
+    end
+  else
+    fread c s o l
 
-let fwrite c s o l =
+let rec fwrite c s o l =
   try
     let n = apply c Unix.single_write Ssl.write_blocking s o l in
     U.debug ~lvl:5 (fun k -> k "write(1) %d/%d" n l);
@@ -118,18 +129,24 @@ let fwrite c s o l =
                         |Error_want_x509_lookup|Error_want_accept
                         |Error_want_connect)) ->
         U.debug ~lvl:5 (fun k -> k "exn schedule write %d" l);
-        perform (Write (c,s,o,l))
-     | exn -> close exn c
+        perform_write c s o l
+     | exn -> close c exn
 
-let write c s o l =
+and perform_write c s o l =
+  perform (Write {sock = c.sock; fn = (fun () -> write c s o l); cl = close c})
+
+and write c s o l =
   assert(l<>0);
   c.counter <- c.counter + 1;
   if c.counter mod c.granularity = 0 &&
        (Atomic.get c.status.nb_connections.(c.domain_id) > 1 ||
           Atomic.get c.status.nb_availables <= 0) then
-    (U.debug ~lvl:5 (fun k -> k "normal schedule write %d" l);
-     perform (Write(c,s,o,l)))
-  else fwrite c s o l
+    begin
+      U.debug ~lvl:5 (fun k -> k "normal schedule write %d" l);
+      perform_write c s o l
+    end
+  else
+    fwrite c s o l
 
 let is_ipv6 addr = String.contains addr ':'
 
@@ -196,10 +213,9 @@ let loop id st listens maxc granularity timeout handler () =
   let check rds wrs =
     let fn s =
       try ignore (Unix.fstat s)
-      with e ->
-            let {client=c;_} = find s in
-            Hashtbl.remove pendings s;
-            (try close e c with _ -> ());
+      with e -> let { cl; _ } = find s in
+                Hashtbl.remove pendings s;
+                (try cl e with _ -> ());
     in
     List.iter fn rds;
     List.iter fn wrs
@@ -217,7 +233,7 @@ let loop id st listens maxc granularity timeout handler () =
                         if now -. c.seen_time > timeout then
                           begin
                             Hashtbl.remove pendings s;
-                            close TimeOut c.client
+                            c.cl TimeOut
                           end
                         else
                           match c.action with
@@ -272,7 +288,7 @@ let loop id st listens maxc granularity timeout handler () =
            match linfo.ssl with
            | Some ctx ->
               let chan = Ssl.embed_socket sock ctx in
-              Ssl.accept chan;
+              Ssl.accept_blocking chan;
               Some chan
            | None ->
               None
@@ -284,19 +300,12 @@ let loop id st listens maxc granularity timeout handler () =
          let client = { sock; counter = 0; granularity; status = st; ssl;
            domain_id=id; connected = true } in
          handler client
-      | Action { action; client; buf; offset; len; cont; _ } ->
-         Hashtbl.remove pendings client.sock;
-         let n =
-           (* NOTE: if using SSL, read/write can still return "want read/write"
-              without SSL, we could safely call Unix.read/single_write without
-              handling no data *)
-           match action with
-           | Read  -> fread client buf offset len
-           | Write -> fwrite client buf offset len
-         in
-         U.debug ~lvl:5 (fun k -> k "%s(2) %d/%d"
-           (if action = Read then "read" else "write") n len);
-         if n = 0 then close (Closed (action=Read)) client;
+      | Action { action; sock; fn; cl; cont; _ } ->
+         Hashtbl.remove pendings sock;
+         let n = fn () in
+         U.debug ~lvl:5 (fun k -> k "%s(2) %d"
+           (if action = Read then "read" else "write") n);
+         if n = 0 then cl (Closed (action=Read));
          continue cont n;
       | Yield(cont,_) ->
          U.debug ~lvl:5 (fun k -> k "yield(2)");
@@ -317,19 +326,19 @@ let loop id st listens maxc granularity timeout handler () =
            Some (fun (cont : (c,_) continuation) ->
                add_sleep t cont;
                loop ())
-        | Read (client,buf,offset,len) ->
+        | Read {sock; fn; cl} ->
            Some (fun (cont : (c,_) continuation) ->
                let now = now () in
-               Hashtbl.add pendings client.sock
-                 {client;action=Read;buf;offset;len;cont;
-                  arrival_time = now; seen_time = now};
+               Hashtbl.add pendings sock
+                 { sock; action=Read; fn; cl; cont
+                 ; arrival_time = now; seen_time = now};
                loop ())
-        | Write(client,buf,offset,len) ->
+        | Write{sock; fn; cl} ->
            Some (fun (cont : (c,_) continuation) ->
                let now = now () in
-               Hashtbl.add pendings client.sock
-                 {client;action=Write;buf;offset;len;cont;
-                  arrival_time = now; seen_time = now};
+               Hashtbl.add pendings sock
+                 { sock; action=Write; fn; cl; cont
+                 ; arrival_time = now; seen_time = now};
                loop ())
         | _ -> None
     )}
@@ -362,4 +371,4 @@ let flush c = apply c (fun _ -> ()) ssl_flush
    close in Simple_httpd_server may be because there is no keep alive and
    the server close, so we flush before closing to handle the (very rare)
    ssl_flush exception above *)
-let close c = flush c; close Exit c
+let close c = flush c; close c Exit
