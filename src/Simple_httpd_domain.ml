@@ -367,7 +367,7 @@ let loop id st listens maxc granularity timeout handler () =
            match linfo.ssl with
            | Some ctx ->
               let chan = Ssl.embed_socket sock ctx in
-              Ssl.accept_blocking chan;
+              Ssl.accept chan;
               Some chan
            | None ->
               None
