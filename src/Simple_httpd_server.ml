@@ -212,6 +212,7 @@ module Request = struct
   let meth self = self.meth
   let path self = self.path
   let body self = self.body
+  let client self = self.client
   let start_time self = self.start_time
 
   let query self = self.query

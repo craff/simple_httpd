@@ -5,6 +5,9 @@ type status = {
 
 val string_status : status -> string
 
+type session_data = ..
+type session_data += NoData
+
 type client = {
     mutable connected : bool;
     mutable counter : int;
@@ -13,6 +16,15 @@ type client = {
     ssl  : Ssl.socket option;
     status : status;
     domain_id : int;
+    session : session option
+  }
+
+and session =
+  { addr : string
+  ; key : string
+  ; mutex : Mutex.t
+  ; mutable clients : client list
+  ; mutable data : session_data
   }
 
 val fake_client : client

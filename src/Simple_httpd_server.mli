@@ -164,6 +164,9 @@ module Request : sig
   val path : _ t -> string
   (** Request path. *)
 
+  val client : _ t -> Simple_httpd_domain.client
+  (** Request client *)
+
   val query : _ t -> (string*string) list
   (** Decode the query part of the {!path} field
       @since 0.4 *)
