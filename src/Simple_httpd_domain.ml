@@ -112,7 +112,7 @@ let close c exn =
            Mutex.unlock sess.mutex
       end;
       begin
-        try apply c Unix.close Ssl.shutdown_blocking with _ -> ()
+        try apply c Unix.close Ssl.shutdown with _ -> ()
       end
     end
 
