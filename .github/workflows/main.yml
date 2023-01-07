@@ -22,6 +22,9 @@ jobs:
     runs-on: ${{ matrix.os }}
 
     steps:
+      - run: apt-get install -y libcurl4-openssl-dev
+        if: ${{ matrix.os == 'ubuntu-latest' }}
+
       - name: Checkout code
         uses: actions/checkout@v3
 
