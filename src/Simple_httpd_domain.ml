@@ -22,6 +22,9 @@ let string_status st =
 let print_status ch st =
   output_string ch (string_status st)
 
+type session_data = ..
+type session_data += NoData
+
 type client = {
     mutable connected : bool;
     mutable counter : int;
@@ -30,6 +33,15 @@ type client = {
     ssl  : Ssl.socket option;
     status : status;
     domain_id : int;
+    session : session option
+  }
+
+and session =
+  { addr : string
+  ; key : string
+  ; mutex : Mutex.t
+  ; mutable clients : client list
+  ; mutable data : session_data
   }
 
 let fake_client =
@@ -39,7 +51,9 @@ let fake_client =
                  nb_connections = [||] };
       domain_id = 0;
       ssl = None;
-      connected = false }
+      connected = false;
+      session = None;
+    }
 
 type _ Effect.t +=
    | Read  : { sock: Unix.file_descr; fn: (unit -> int); cl: exn -> unit }
@@ -67,18 +81,6 @@ let apply c f1 f2 =
   match c.ssl with None -> f1 c.sock
                  | Some s -> f2 s
 
-let close c exn =
-  U.debug ~lvl:3 (fun k -> k "closing because exception: %s. connected: %b"
-                             (Printexc.to_string exn) c.connected);
-  if c.connected then
-    begin
-      Atomic.decr c.status.nb_connections.(c.domain_id);
-      c.connected <- false;
-      begin
-        try apply c Unix.close Ssl.shutdown with _ -> ()
-      end
-    end
-
 let yield () =
   U.debug ~lvl:5 (fun k -> k "yield(1)");
   perform Yield
@@ -93,6 +95,26 @@ let sleep : float -> unit = fun t ->
 let lock : Mutex.t -> unit = fun lk ->
   U.debug ~lvl:5 (fun k -> k "lock(1)");
   if not (Mutex.try_lock lk) then perform (Lock lk)
+
+let close c exn =
+  U.debug ~lvl:3 (fun k -> k "closing because exception: %s. connected: %b"
+                             (Printexc.to_string exn) c.connected);
+  if c.connected then
+    begin
+      Atomic.decr c.status.nb_connections.(c.domain_id);
+      c.connected <- false;
+      begin
+        match c.session with
+        | None -> ()
+        | Some sess ->
+           lock sess.mutex;
+           sess.clients <- List.filter (fun c' -> c != c') sess.clients;
+           Mutex.unlock sess.mutex
+      end;
+      begin
+        try apply c Unix.close Ssl.shutdown_blocking with _ -> ()
+      end
+    end
 
 let rec fread c s o l =
   try
@@ -355,7 +377,7 @@ let loop id st listens maxc granularity timeout handler () =
             of accept *)
          Unix.set_nonblock sock;
          let client = { sock; counter = 0; granularity; status = st; ssl;
-           domain_id=id; connected = true } in
+           domain_id=id; connected = true; session = None } in
          handler client
       | Action { action; sock; fn; cl; cont; _ } ->
          Hashtbl.remove pendings sock;
