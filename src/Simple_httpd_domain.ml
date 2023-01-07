@@ -444,15 +444,7 @@ let run ~nb_threads ~listens ~maxc ~granularity ~timeout handler =
   in
   r
 
-let rec ssl_flush s =
-  try Ssl.flush s
-  with Ssl.Flush_error(true) ->
-    U.debug ~lvl:0 (fun k -> k "Retry in flush");
-    (* TODO: this is bad busy waiting. Should schedule like blocked read/write.
-       We could not observe this exception during tests *)
-    ssl_flush s
-
-let flush c = apply c (fun _ -> ()) ssl_flush
+let flush c = apply c (fun _ -> ()) Ssl.flush
 
 (* All close above where because of error or socket closed on client side.
    close in Simple_httpd_server may be because there is no keep alive and
