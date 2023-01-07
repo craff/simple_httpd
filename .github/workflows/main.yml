@@ -22,7 +22,7 @@ jobs:
     runs-on: ${{ matrix.os }}
 
     steps:
-      - run: sudo apt-get update && sudo apt-get upgrade && sudo apt-get install -y libcurl4-openssl-dev
+      - run: sudo apt-get update
         if: ${{ matrix.os == 'ubuntu-latest' }}
 
       - name: Checkout code
