@@ -25,7 +25,7 @@ jobs:
       - run: sudo apt-get update
         if: ${{ matrix.os == 'ubuntu-latest' }}
 
-      - run: sudo brew install openssl@3
+      - run: brew install openssl@3
         if: ${{ matrix.os == 'macos-latest' }}
 
       - name: Checkout code
