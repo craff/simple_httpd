@@ -2,6 +2,11 @@ open Effect
 open Effect.Deep
 open Domain
 
+module Ssl = struct
+  include Ssl
+  include SslNoRelease
+end
+
 module U = Simple_httpd_util
 
 type status = {
@@ -112,13 +117,13 @@ let close c exn =
            Mutex.unlock sess.mutex
       end;
       begin
-        try apply c Unix.close Ssl.shutdown_blocking with _ -> ()
+        try apply c Unix.close Ssl.shutdown with _ -> ()
       end
     end
 
 let rec fread c s o l =
   try
-    let n = apply c Unix.read Ssl.read_blocking s o l in
+    let n = apply c Unix.read Ssl.read s o l in
     U.debug ~lvl:5 (fun k -> k "read(1) %d/%d" n l);
     if n = 0 then raise (Closed true); n
   with Unix.(Unix_error((EAGAIN|EWOULDBLOCK),_,_))
@@ -147,7 +152,7 @@ and read c s o l =
 
 let rec fwrite c s o l =
   try
-    let n = apply c Unix.single_write Ssl.write_blocking s o l in
+    let n = apply c Unix.single_write Ssl.write s o l in
     U.debug ~lvl:5 (fun k -> k "write(1) %d/%d" n l);
     if n = 0 then raise (Closed false); n
   with Unix.(Unix_error((EAGAIN|EWOULDBLOCK),_,_))
@@ -367,7 +372,7 @@ let loop id st listens maxc granularity timeout handler () =
            match linfo.ssl with
            | Some ctx ->
               let chan = Ssl.embed_socket sock ctx in
-              Ssl.accept_blocking chan;
+              Ssl.accept chan;
               Some chan
            | None ->
               None
@@ -445,7 +450,7 @@ let run ~nb_threads ~listens ~maxc ~granularity ~timeout handler =
   r
 
 let rec ssl_flush s =
-  try ignore (Ssl.flush_blocking s); 1
+  try ignore (Ssl.flush s); 1
   with Ssl.Flush_error(true) ->
     U.debug ~lvl:0 (fun k -> k "Retry in flush");
     schedule_write (Ssl.file_descr_of_socket s) (fun () -> ssl_flush s)
