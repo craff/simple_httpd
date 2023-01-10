@@ -866,7 +866,7 @@ let run (self:t) : (unit,_) result =
     let handler client_sock = handle_client_ self client_sock in
     let maxc = (self.max_connections + self.num_thread - 1) / self.num_thread in
     let a = D.run ~nb_threads:self.num_thread ~listens:self.listens
-              ~maxc ~granularity:self.granularity ~timeout:self.timeout handler
+              ~maxc ~timeout:self.timeout handler
     in
     Array.iter (fun d -> Domain.join d) a;
     Ok ()

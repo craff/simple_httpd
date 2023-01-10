@@ -1,6 +1,6 @@
 type status = {
     nb_availables : int Atomic.t;
-    nb_connections : int Atomic.t array
+    nb_connections : int array
   }
 
 val string_status : status -> string
@@ -10,8 +10,6 @@ type session_data += NoData
 
 type client = {
     mutable connected : bool;
-    mutable counter : int;
-    mutable granularity : int;
     sock : Unix.file_descr;
     ssl  : Ssl.socket option;
     status : status;
@@ -57,7 +55,7 @@ val schedule_read : Unix.file_descr -> (unit -> int) -> (exn -> unit) -> int
 val schedule_write : Unix.file_descr -> (unit -> int) -> (exn -> unit) -> int
 
 val run : nb_threads:int -> listens:listenning list -> maxc:int ->
-          granularity:int -> timeout:float -> (client -> unit) ->
+          timeout:float -> (client -> unit) ->
             unit Domain.t array
 
 val lock : Mutex.t -> unit

@@ -2,16 +2,11 @@ open Effect
 open Effect.Deep
 open Domain
 
-module Ssl = struct
-  include Ssl
-  include SslNoRelease
-end
-
 module U = Simple_httpd_util
 
 type status = {
     nb_availables : int Atomic.t;
-    nb_connections : int Atomic.t array
+    nb_connections : int array
   }
 
 let string_status st =
@@ -21,7 +16,7 @@ let string_status st =
     (fun b ->
       Array.iteri (fun i a -> Printf.bprintf b "%s%d"
                                 (if i = 0 then "" else ", ")
-                                (Atomic.get a)) st.nb_connections);
+                                a) st.nb_connections);
   Buffer.contents b
 
 let print_status ch st =
@@ -32,8 +27,6 @@ type session_data += NoData
 
 type client = {
     mutable connected : bool;
-    mutable counter : int;
-    mutable granularity : int;
     sock : Unix.file_descr;
     ssl  : Ssl.socket option;
     status : status;
@@ -50,8 +43,7 @@ and session =
   }
 
 let fake_client =
-    { counter = 0;
-      granularity = 0; sock = Unix.stdout;
+    { sock = Unix.stdout;
       status = { nb_availables = Atomic.make 0;
                  nb_connections = [||] };
       domain_id = 0;
@@ -106,7 +98,8 @@ let close c exn =
                              (Printexc.to_string exn) c.connected);
   if c.connected then
     begin
-      Atomic.decr c.status.nb_connections.(c.domain_id);
+      c.status.nb_connections.(c.domain_id) <-
+        c.status.nb_connections.(c.domain_id) - 1 ;
       c.connected <- false;
       begin
         match c.session with
@@ -121,7 +114,7 @@ let close c exn =
       end
     end
 
-let rec fread c s o l =
+let rec read c s o l =
   try
     let n = apply c Unix.read Ssl.read s o l in
     U.debug ~lvl:5 (fun k -> k "read(1) %d/%d" n l);
@@ -137,20 +130,7 @@ let rec fread c s o l =
 and perform_read c s o l =
   perform (Read {sock = c.sock; fn = (fun () -> read c s o l); cl = close c})
 
-and read c s o l =
-  assert(l<>0);
-  c.counter <- c.counter + 1;
-  if c.counter mod c.granularity = 0  &&
-       (Atomic.get c.status.nb_connections.(c.domain_id) > 1 ||
-          Atomic.get c.status.nb_availables <= 0) then
-    begin
-      U.debug ~lvl:5 (fun k -> k "normal schedule read %d" l);
-      perform_read c s o l
-    end
-  else
-    fread c s o l
-
-let rec fwrite c s o l =
+let rec write c s o l =
   try
     let n = apply c Unix.single_write Ssl.write s o l in
     U.debug ~lvl:5 (fun k -> k "write(1) %d/%d" n l);
@@ -166,25 +146,11 @@ let rec fwrite c s o l =
 and perform_write c s o l =
   perform (Write {sock = c.sock; fn = (fun () -> write c s o l); cl = close c})
 
-and write c s o l =
-  assert(l<>0);
-  c.counter <- c.counter + 1;
-  if c.counter mod c.granularity = 0 &&
-       (Atomic.get c.status.nb_connections.(c.domain_id) > 1 ||
-          Atomic.get c.status.nb_availables <= 0) then
-    begin
-      U.debug ~lvl:5 (fun k -> k "normal schedule write %d" l);
-      perform_write c s o l
-    end
-  else
-    fwrite c s o l
-
 let schedule_read sock fn cl =
   perform (Read {sock; fn; cl })
 
 let schedule_write sock fn cl =
   perform (Write {sock; fn; cl })
-
 
 module Io = struct
   let rec read sock s o l =
@@ -250,7 +216,7 @@ type pollResult =
 
 exception TimeOut
 
-let loop id st listens maxc granularity timeout handler () =
+let loop id st listens maxc timeout handler () =
   let listens =
     List.map (fun l ->
         let sock = connect l.addr l.port maxc in
@@ -303,7 +269,7 @@ let loop id st listens maxc granularity timeout handler () =
       else false
     in
     let rds =
-      if Atomic.get st.nb_connections.(id) < maxc then listen_rds else []
+      if st.nb_connections.(id) < maxc then listen_rds else []
     in
     let now = now () in
     let (rds,wrs) = Hashtbl.fold (fun s c (rds,wrs as acc) ->
@@ -363,7 +329,7 @@ let loop id st listens maxc granularity timeout handler () =
       | Timeout -> Domain.cpu_relax (); ()
       | Accept (lsock, linfo) ->
          U.debug (fun k -> k "accept connection from %d %a" id print_status st);
-         Atomic.incr st.nb_connections.(id);
+         st.nb_connections.(id) <- st.nb_connections.(id) + 1;
          let sock, _ = Unix.accept lsock in
          (* NOTE: non blocking is not needed, we use select.
             for ssl, this means we may block waiting for the rest of an
@@ -381,7 +347,7 @@ let loop id st listens maxc granularity timeout handler () =
             we should deal with "retry" exceptions and schedule the retry
             of accept *)
          Unix.set_nonblock sock;
-         let client = { sock; counter = 0; granularity; status = st; ssl;
+         let client = { sock; status = st; ssl;
            domain_id=id; connected = true; session = None } in
          handler client
       | Action { action; sock; fn; cl; cont; _ } ->
@@ -436,17 +402,15 @@ let loop id st listens maxc granularity timeout handler () =
     )}
   in loop ()
 
-let run ~nb_threads ~listens ~maxc ~granularity ~timeout handler =
+let run ~nb_threads ~listens ~maxc ~timeout handler =
   let status = {
       nb_availables = Atomic.make 0;
-      nb_connections = Array.init nb_threads (fun _ -> Atomic.make 0)
+      nb_connections = Array.init nb_threads (fun _ -> 0)
     }
   in
-  let fn id = spawn (loop id status listens maxc granularity timeout handler) in
+  let fn id = spawn (loop id status listens maxc timeout handler) in
   let r = Array.init (nb_threads - 1) fn in
-  let _ = loop (nb_threads -1 )
-            status listens maxc granularity timeout handler ()
-  in
+  let _ = loop (nb_threads - 1) status listens maxc timeout handler () in
   r
 
 let rec ssl_flush s =
