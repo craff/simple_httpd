@@ -110,7 +110,11 @@ let close c exn =
            Mutex.unlock sess.mutex
       end;
       begin
-        try apply c Unix.close Ssl.shutdown with _ -> ()
+        let fn s =
+          (try Ssl.shutdown s with _ -> ());
+          Unix.close (Ssl.file_descr_of_socket s)
+        in
+        try apply c Unix.close fn with _ -> ()
       end
     end
 
