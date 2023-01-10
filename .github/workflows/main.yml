@@ -37,6 +37,8 @@ jobs:
           ocaml-compiler: ${{ matrix.ocaml-compiler }}
           opam-depext-flags: --with-test
 
+      - run: opam pin add git://github.com/craff/ocaml-ssl#test
+
       - run: opam install . --deps-only --with-test
 
       - run: opam exec -- dune build @install -p simple_httpd,simple_httpd_camlzip
