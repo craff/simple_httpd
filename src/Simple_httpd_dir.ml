@@ -173,14 +173,15 @@ let finally_ ~h x f =
     raise e
 
 (* @param on_fs: if true, we assume the file exists on the FS *)
-let add_vfs_ ~on_fs ~top ~config ~vfs:((module VFS:VFS) as vfs) ~prefix server : unit=
+let add_vfs_ ?(accept=(fun _req -> Ok (fun x -> x))) ~on_fs ~top ~config
+               ~vfs:((module VFS:VFS) as vfs) ~prefix server : unit=
 
   let route () =
     if prefix="" then S.Route.rest_of_path_urlencoded
     else S.Route.exact_path prefix S.Route.rest_of_path_urlencoded
   in
   if config.delete then (
-    S.add_route_handler server ~meth:`DELETE (route())
+    S.add_route_handler ~accept server ~meth:`DELETE (route())
       (fun path _req ->
          if contains_dot_dot path then (
            S.Response.fail_raise ~code:403 "invalid path in delete"
@@ -192,7 +193,7 @@ let add_vfs_ ~on_fs ~top ~config ~vfs:((module VFS:VFS) as vfs) ~prefix server :
          )
       );
   ) else (
-    S.add_route_handler server ~meth:`DELETE (route())
+    S.add_route_handler ~accept server ~meth:`DELETE (route())
       (fun _ _  -> S.Response.make_raw ~code:405 "delete not allowed");
   );
 
@@ -204,7 +205,7 @@ let add_vfs_ ~on_fs ~top ~config ~vfs:((module VFS:VFS) as vfs) ~prefix server :
             Error (403, "max upload size is " ^ string_of_int config.max_upload_size)
           | Some _ when contains_dot_dot req.S.Request.path ->
             Error (403, "invalid path (contains '..')")
-          | _ -> Ok ()
+          | _ -> accept req
         )
       (fun path req ->
          let write, close =
@@ -220,12 +221,12 @@ let add_vfs_ ~on_fs ~top ~config ~vfs:((module VFS:VFS) as vfs) ~prefix server :
          S.Response.make_raw ~code:201 "upload successful"
       )
   ) else (
-    S.add_route_handler server ~meth:`PUT (route())
+    S.add_route_handler ~accept server ~meth:`PUT (route())
       (fun _ _  -> S.Response.make_raw ~code:405 "upload not allowed");
   );
 
   if config.download then (
-    S.add_route_handler server ~meth:`GET (route())
+    S.add_route_handler ~accept server ~meth:`GET (route())
       (fun path req ->
          U.debug (fun k->k "path=%S" path);
          let mtime = lazy (
@@ -284,16 +285,16 @@ let add_vfs_ ~on_fs ~top ~config ~vfs:((module VFS:VFS) as vfs) ~prefix server :
              S.Response.fail ~code:500 "error while reading file: %s" (Printexc.to_string e))
       )
   ) else (
-    S.add_route_handler server ~meth:`GET (route())
+    S.add_route_handler server ~accept ~meth:`GET (route())
       (fun _ _  -> S.Response.make_raw ~code:405 "download not allowed");
   );
   ()
 
-let add_vfs ~config ~vfs ~prefix server : unit =
-  add_vfs_ ~on_fs:false ~top:"." ~config ~prefix ~vfs server
+let add_vfs ?accept ~config ~vfs ~prefix server : unit =
+  add_vfs_ ?accept ~on_fs:false ~top:"." ~config ~prefix ~vfs server
 
-let add_dir_path ~config ~dir ~prefix server : unit =
-  add_vfs_ ~on_fs:true ~top:dir ~config ~prefix ~vfs:(vfs_of_dir dir) server
+let add_dir_path ?accept ~config ~dir ~prefix server : unit =
+  add_vfs_ ?accept ~on_fs:true ~top:dir ~config ~prefix ~vfs:(vfs_of_dir dir) server
 
 module Embedded_fs = struct
   module Str_map = Map.Make(String)

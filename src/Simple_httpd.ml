@@ -43,3 +43,7 @@ module Util = Simple_httpd_util
 module Dir = Simple_httpd_dir
 
 module Html = Simple_httpd_html
+
+module Domain = Simple_httpd_domain
+
+module Session = Simple_httpd_session

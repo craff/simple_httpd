@@ -117,11 +117,16 @@ module Cookies = struct
   let get name cookies =
     List.assoc name cookies
 
-  let encode cookies =
-    let buf = Buffer.create 1024 in
-    List.iter (fun (_, c) ->
-        Printf.bprintf buf "Set-Cookie: %s\n" (to_set_cookie c)) cookies;
-    Buffer.contents buf
+  let delete_all cookies =
+    List.map (fun (name, c) -> (name, Http_cookie.delete c)) cookies
+
+  let delete name cookies =
+    try
+      let c = List.assoc name cookies in
+      let cookies = List.filter (fun (n,_) -> n <> name) cookies in
+      (name, Http_cookie.delete c) :: cookies
+    with
+      Not_found -> cookies
 end
 
 module Headers = struct
@@ -144,6 +149,9 @@ module Headers = struct
   let pp out l =
     let pp_pair out (k,v) = Format.fprintf out "@[<h>%s: %s@]" k v in
     Format.fprintf out "@[<v>%a@]" (Format.pp_print_list pp_pair) l
+  let set_cookies cookies h =
+    List.fold_left (fun h (_, c) ->
+        ("Set-Cookie", Http_cookie.to_set_cookie c) :: h) h cookies
 
   (*  token = 1*tchar
   tchar = "!" / "#" / "$" / "%" / "&" / "'" / "*" / "+" / "-" / "." / "^" / "_"
@@ -401,37 +409,40 @@ module Response = struct
   let set_header k v self = {self with headers = Headers.set k v self.headers}
   let set_code code self = {self with code}
 
-  let make_raw ?(headers=[]) ~code body : t =
+  let make_raw ?(cookies=[]) ?(headers=[]) ~code body : t =
     (* add content length to response *)
     let headers =
       Headers.set "Content-Length" (string_of_int (String.length body)) headers
     in
+    let headers = Headers.set_cookies cookies headers in
     { code; headers; body=`String body; }
 
-  let make_raw_stream ?(headers=[]) ~code body : t =
+  let make_raw_stream ?(cookies=[]) ?(headers=[]) ~code body : t =
     (* add content length to response *)
     let headers = Headers.set "Transfer-Encoding" "chunked" headers in
+    let headers = Headers.set_cookies cookies headers in
     { code; headers; body=`Stream body; }
 
-  let make_void ?(headers=[]) ~code () : t =
+  let make_void ?(cookies=[]) ?(headers=[]) ~code () : t =
+    let headers = Headers.set_cookies cookies headers in
     { code; headers; body=`Void; }
 
-  let make_string ?headers r = match r with
-    | Ok body -> make_raw ?headers ~code:200 body
-    | Error (code,msg) -> make_raw ?headers ~code msg
+  let make_string ?cookies ?headers r = match r with
+    | Ok body -> make_raw ?cookies ?headers ~code:200 body
+    | Error (code,msg) -> make_raw ?cookies ?headers ~code msg
 
-  let make_stream ?headers r = match r with
-    | Ok body -> make_raw_stream ?headers ~code:200 body
-    | Error (code,msg) -> make_raw ?headers ~code msg
+  let make_stream ?cookies ?headers r = match r with
+    | Ok body -> make_raw_stream ?cookies ?headers ~code:200 body
+    | Error (code,msg) -> make_raw ?cookies ?headers ~code msg
 
-  let make ?headers r : t = match r with
-    | Ok (`String body) -> make_raw ?headers ~code:200 body
-    | Ok (`Stream body) -> make_raw_stream ?headers ~code:200 body
-    | Ok `Void -> make_void ?headers ~code:200 ()
-    | Error (code,msg) -> make_raw ?headers ~code msg
+  let make ?cookies ?headers r : t = match r with
+    | Ok (`String body) -> make_raw ?cookies ?headers ~code:200 body
+    | Ok (`Stream body) -> make_raw_stream ?cookies ?headers ~code:200 body
+    | Ok `Void -> make_void ?cookies ?headers ~code:200 ()
+    | Error (code,msg) -> make_raw ?cookies ?headers ~code msg
 
-  let fail ?headers ~code fmt =
-    Printf.ksprintf (fun msg -> make_raw ?headers ~code msg) fmt
+  let fail ?cookies ?headers ~code fmt =
+    Printf.ksprintf (fun msg -> make_raw ?cookies ?headers ~code msg) fmt
   let fail_raise ~code fmt =
     Printf.ksprintf (fun msg -> raise (Bad_req (code,msg))) fmt
 
@@ -663,11 +674,14 @@ let add_encode_response_cb self f =
 
 let set_top_handler self f = self.handler <- f
 
+type finaliser = Response.t -> Response.t
+type 'a accept = 'a Request.t -> (finaliser, Response_code.t * string) result
+
 (* route the given handler.
    @param tr_req wraps the actual concrete function returned by the route
    and makes it into a handler. *)
 let add_route_handler_
-    ?(accept=fun _req -> Ok ()) ?(middlewares=[])
+    ?(accept=fun _req -> Ok (fun x -> x)) ?(middlewares=[])
     ?meth ~tr_req self (route:_ Route.t) f =
   let ph req : cb_path_handler resp_result option =
     match meth with
@@ -677,10 +691,11 @@ let add_route_handler_
         | Some handler ->
           (* we have a handler, do we accept the request based on its headers? *)
           begin match accept req with
-            | Ok () ->
+            | Ok fn ->
               Some (Ok (fun oc ->
                   Middleware.apply_l middlewares @@
-                  fun req ~resp -> tr_req oc req ~resp handler))
+                    fun req ~resp -> let resp r = resp (fn r) in
+                                     tr_req oc req ~resp handler))
             | Error _ as e -> Some e
           end
         | None ->

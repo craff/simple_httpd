@@ -48,8 +48,15 @@ module Cookies : sig
       ?extension:string ->
       name:string ->
       string -> t -> t
+
   val get : string -> t -> Http_cookie.t
-  val encode : t -> string
+
+  (** remove a cookie by setting a negative max-age. Does nothing
+      if there are no cookie with that name. *)
+  val delete : string -> t -> t
+
+  (** remove all cookies by setting a negative max-age *)
+  val delete_all : t -> t
 end
 
 (** {2 Headers}
@@ -75,6 +82,9 @@ module Headers : sig
   (** [set k v headers] sets the key [k] to value [v].
       It erases any previous entry for [k] *)
 
+  val set_cookies : Cookies.t -> t -> t
+  (** Encode all the cookies in the header *)
+
   val remove : string -> t -> t
   (** Remove the key from the headers, if present. *)
 
@@ -83,6 +93,7 @@ module Headers : sig
 
   val pp : Format.formatter -> t -> unit
   (** Pretty print the headers. *)
+
 
 end
 
@@ -252,6 +263,7 @@ module Response : sig
       @since 0.11 *)
 
   val make_raw :
+    ?cookies:Cookies.t ->
     ?headers:Headers.t ->
     code:Response_code.t ->
     string ->
@@ -260,6 +272,7 @@ module Response : sig
       Use [""] to not send a body at all. *)
 
   val make_raw_stream :
+    ?cookies:Cookies.t ->
     ?headers:Headers.t ->
     code:Response_code.t ->
     byte_stream ->
@@ -268,6 +281,7 @@ module Response : sig
       the chunked transfer-encoding. *)
 
   val make :
+    ?cookies:Cookies.t ->
     ?headers:Headers.t ->
     (body, Response_code.t * string) result -> t
   (** [make r] turns a result into a response.
@@ -278,16 +292,20 @@ module Response : sig
   *)
 
   val make_string :
+    ?cookies:Cookies.t ->
     ?headers:Headers.t ->
     (string, Response_code.t * string) result -> t
   (** Same as {!make} but with a string body. *)
 
   val make_stream :
+    ?cookies:Cookies.t ->
     ?headers:Headers.t ->
     (byte_stream, Response_code.t * string) result -> t
   (** Same as {!make} but with a stream body. *)
 
-  val fail : ?headers:Headers.t -> code:int ->
+  val fail :
+    ?cookies:Cookies.t ->
+    ?headers:Headers.t -> code:int ->
     ('a, unit, string, t) format4 -> 'a
   (** Make the current request fail with the given code and message.
       Example: [fail ~code:404 "oh noes, %s not found" "waldo"].
@@ -479,8 +497,11 @@ val set_top_handler : t -> (string Request.t -> Response.t) -> unit
     installed via {!add_path_handler}.
     If no top handler is installed, unhandled paths will return a [404] not found. *)
 
+type finaliser = Response.t -> Response.t
+type 'a accept = 'a Request.t -> (finaliser, Response_code.t * string) result
+
 val add_route_handler :
-  ?accept:(unit Request.t -> (unit, Response_code.t * string) result) ->
+  ?accept:(unit accept) ->
   ?middlewares:Middleware.t list ->
   ?meth:Meth.t ->
   t ->
@@ -495,8 +516,9 @@ val add_route_handler :
 
     @param meth if provided, only accept requests with the given method.
     Typically one could react to [`GET] or [`PUT].
-    @param accept should return [Ok()] if the given request (before its body
-    is read) should be accepted, [Error (code,message)] if it's to be rejected (e.g. because
+    @param accept should return [Ok fn] if the given request (before its body
+    is read) should be accepted, [Error (code,message)] if it's to be rejected
+    (e.g. because. [fn: finaliser] is used to transform the response.
     its content is too big, or for some permission error).
     See the {!http_of_dir} program for an example of how to use [accept] to
     filter uploads that are too large before the upload even starts.
@@ -506,7 +528,7 @@ val add_route_handler :
 *)
 
 val add_route_handler_stream :
-  ?accept:(unit Request.t -> (unit, Response_code.t * string) result) ->
+  ?accept:(unit accept) ->
   ?middlewares:Middleware.t list ->
   ?meth:Meth.t ->
   t ->
@@ -556,7 +578,7 @@ type server_sent_generator = (module SERVER_SENT_GENERATOR)
     @since 0.9 *)
 
 val add_route_server_sent_handler :
-  ?accept:(unit Request.t -> (unit, Response_code.t * string) result) ->
+  ?accept:(unit accept) ->
   t ->
   ('a, string Request.t -> server_sent_generator -> unit) Route.t -> 'a ->
   unit

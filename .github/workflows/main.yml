@@ -39,6 +39,8 @@ jobs:
 
       - run: opam pin add https://github.com/craff/ocaml-ssl#test -k git
 
+      - run: opam pin add https://github.com/craff/http-cookie#delete_cookie -k git
+
       - run: opam install . --deps-only --with-test
 
       - run: opam exec -- dune build @install -p simple_httpd,simple_httpd_camlzip

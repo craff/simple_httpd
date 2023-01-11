@@ -74,6 +74,7 @@ val config :
     [server] to serve static files in [dir] when url starts with [prefix],
     using the given configuration [config]. *)
 val add_dir_path :
+  ?accept:(hidden Simple_httpd_server.accept) ->
   config:config ->
   dir:string ->
   prefix:string ->
@@ -122,6 +123,7 @@ val vfs_of_dir : string -> (module VFS)
 *)
 
 val add_vfs :
+  ?accept:(hidden Simple_httpd_server.accept) ->
   config:config ->
   vfs:(module VFS) ->
   prefix:string ->

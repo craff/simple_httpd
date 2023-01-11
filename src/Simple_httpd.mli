@@ -107,6 +107,10 @@ module Html = Simple_httpd_html
 (** Alias to {!Simple_httpd_html}
     @since NEXT_RELEASE *)
 
+module Domain = Simple_httpd_domain
+
+module Session = Simple_httpd_session
+
 type listenning = Simple_httpd_domain.listenning =
   {
     addr : string;

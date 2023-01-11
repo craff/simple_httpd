@@ -31,7 +31,7 @@ type client = {
     ssl  : Ssl.socket option;
     status : status;
     domain_id : int;
-    session : session option
+    mutable session : session option
   }
 
 and session =
