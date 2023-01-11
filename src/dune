@@ -2,7 +2,7 @@
 (library
   (name simple_httpd)
   (public_name simple_httpd)
-  (libraries unix seq ssl)
+  (libraries unix seq ssl http-cookie)
   (flags :standard -safe-string -warn-error -a+8)
   (wrapped false))
 

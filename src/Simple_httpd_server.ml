@@ -79,34 +79,49 @@ module Meth = struct
     | s -> bad_reqf 400 "unknown method %S" s
 end
 
-module SetCookie = struct
-  type sameSite = Strict | Lax | None
-  type t =
-    | MaxAge of int
-    | Expires of Unix.tm
-    | Domain of string
-    | Path of string
-    | Secure
-    | HttpOnly
-    | SameSite of sameSite
+module Cookies = struct
+  open Http_cookie
+  exception BadCookies of string
+  type nonrec t = (string * t) list
 
-  let pp fmt = function
-    | MaxAge s -> Format.fprintf fmt "Max-Age=%d" s
-    | Expires d -> Format.fprintf fmt "Expires=%a" U.pp_date d
-    | Domain d -> Format.fprintf fmt "Domain=%s" d
-    | Path p -> Format.fprintf fmt "Path=%s" p
-    | Secure -> Format.fprintf fmt "Secure"
-    | HttpOnly -> Format.fprintf fmt "HttpOnly"
-    | SameSite Strict -> Format.fprintf fmt "Same=Strict"
-    | SameSite Lax -> Format.fprintf fmt "Same=Lax"
-    | SameSite None -> Format.fprintf fmt "Same=None"
+  let empty = []
 
-  let rec pps fmt = function
-    | [] -> ()
-    | prop::ls -> Format.fprintf fmt "; %a%a" pp prop pps ls
+  let parse s =
+    match of_cookie s with
+    | Ok l ->
+       List.fold_left (fun acc c -> (name c, c)::acc) [] l
+    | Error err -> raise (BadCookies err)
 
-  let set props key value =
-    Format.asprintf "%s=%s%a" key value pps props
+  let add name c cookies =
+    let cookies = List.filter (fun (n, _) -> n <> name) cookies in
+    (name, c) :: cookies
+
+  let create : ?path:string ->
+      ?domain:string ->
+      ?expires:date_time ->
+      ?max_age:int64 ->
+      ?secure:bool ->
+      ?http_only:bool ->
+      ?same_site:same_site ->
+      ?extension:string ->
+      name:string ->
+      string -> t -> t =
+    fun ?path ?domain ?expires ?max_age ?secure ?http_only
+        ?same_site ?extension ~name value cookies ->
+      let cookies = List.filter (fun (n, _) -> n <> name) cookies in
+      match create ?path ?domain ?expires ?max_age ?secure ?http_only
+              ?same_site ?extension ~name value
+      with Ok c -> add name c cookies
+         | Error err -> raise (BadCookies err)
+
+  let get name cookies =
+    List.assoc name cookies
+
+  let encode cookies =
+    let buf = Buffer.create 1024 in
+    List.iter (fun (_, c) ->
+        Printf.bprintf buf "Set-Cookie: %s\n" (to_set_cookie c)) cookies;
+    Buffer.contents buf
 end
 
 module Headers = struct
@@ -144,7 +159,7 @@ module Headers = struct
     try String.iter (fun c->if not (pred c) then raise Exit) s; true
     with Exit -> false
 
-  let parse_ ~buf (bs:byte_stream) : t * t =
+  let parse_ ~buf (bs:byte_stream) : t * Cookies.t =
     let rec loop headers cookies =
       let line = Byte_stream.read_line ~buf bs in
       debug ~lvl:3 (fun k->k  "parsed header line %S" line);
@@ -165,16 +180,9 @@ module Headers = struct
         let headers, cookies =
           if k = "cookie" then
             begin
-              let fn_eq s =
-                match String.split_on_char '=' s with
-                | k::v::_ when for_all is_tchar (String.trim k) ->
-                   Some String.(trim k,trim v)
-                | _       -> None
-              in
-              let cookies =
-                List.filter_map fn_eq (String.split_on_char ';' v) @ cookies
-              in
-              (headers, cookies)
+              let new_cookies = Cookies.parse v in
+              (headers, List.fold_left (fun acc (name, c) ->
+                  Cookies.add name c acc) cookies new_cookies)
             end
           else
             ((k,v)::headers, cookies)
@@ -184,11 +192,6 @@ module Headers = struct
     in
     loop [] []
 
-  let set_cookie ?(props=[]) k v h =
-      set "Set-Cookie" (SetCookie.set props k v) h
-  let unset_cookie k v h =
-      set_cookie ~props:[MaxAge 0] k v h
-
 end
 
 module Request = struct
@@ -197,7 +200,7 @@ module Request = struct
     host: string;
     client: D.client;
     headers: Headers.t;
-    cookies: Headers.t;
+    cookies: Cookies.t;
     http_version: int*int;
     path: string;
     path_components: string list;
@@ -224,12 +227,9 @@ module Request = struct
   let update_headers f self = {self with headers=f self.headers}
   let set_body b self = {self with body=b}
 
-  let get_cookie ?(f=fun x -> x) self h =
-    try Some (f (List.assoc h self.cookies))
+  let get_cookie self h =
+    try Some (Cookies.get h self.cookies)
     with Not_found -> None
-  let get_cookie_int self h = match get_cookie self h with
-    | Some x -> (try Some (int_of_string x) with _ -> None)
-    | None -> None
 
   (** Should we close the connection after this request? *)
   let close_after_req (self:_ t) : bool =

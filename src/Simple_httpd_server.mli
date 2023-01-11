@@ -32,16 +32,24 @@ end
 (** {2 Set Cookie}
 
     A module to set new cookies in the header *)
-module SetCookie : sig
-  type sameSite = Strict | Lax | None
-  type t =
-    | MaxAge of int
-    | Expires of Unix.tm (** assume UTC/GMT *)
-    | Domain of string
-    | Path of string
-    | Secure
-    | HttpOnly
-    | SameSite of sameSite
+module Cookies : sig
+  type t
+
+  val empty : t
+  val parse : string -> t
+  val add : string -> Http_cookie.t -> t -> t
+  val create : ?path:string ->
+      ?domain:string ->
+      ?expires:Http_cookie.date_time ->
+      ?max_age:int64 ->
+      ?secure:bool ->
+      ?http_only:bool ->
+      ?same_site:Http_cookie.same_site ->
+      ?extension:string ->
+      name:string ->
+      string -> t -> t
+  val get : string -> t -> Http_cookie.t
+  val encode : t -> string
 end
 
 (** {2 Headers}
@@ -76,14 +84,6 @@ module Headers : sig
   val pp : Format.formatter -> t -> unit
   (** Pretty print the headers. *)
 
-  val set_cookie : ?props:SetCookie.t list -> string -> string -> t -> t
-  (** Set a cookie in the header
-      @since 0.12 *)
-
-  val unset_cookie : string -> string -> t -> t
-  (** Unset a cookie in the header (needs key and values)
-      @since 0.12 *)
-
 end
 
 (** {2 Requests}
@@ -96,7 +96,7 @@ module Request : sig
     host: string;
     client: Simple_httpd_domain.client;
     headers: Headers.t;
-    cookies: Headers.t;
+    cookies: Cookies.t;
     http_version: int*int;
     path: string;
     path_components: string list;
@@ -143,16 +143,12 @@ module Request : sig
   (** [set_body b req] returns a new query whose body is [b].
       @since 0.11 *)
 
-  val cookies : _ t -> Headers.t
+  val cookies : _ t -> Cookies.t
   (** List of cookies of the request
       @since 0.12 *)
 
-  val get_cookie : ?f:(string->string) -> _ t -> string -> string option
+  val get_cookie : _ t -> string -> Http_cookie.t option
   (** get a cookie
-      @since 0.12 *)
-
-  val get_cookie_int : _ t -> string -> int option
-  (** get a cookie as int
       @since 0.12 *)
 
   val host : _ t -> string
