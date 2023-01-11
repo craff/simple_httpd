@@ -124,11 +124,12 @@ let rec read c s o l =
     U.debug ~lvl:5 (fun k -> k "read(1) %d/%d" n l);
     if n = 0 then raise (Closed true); n
   with Unix.(Unix_error((EAGAIN|EWOULDBLOCK),_,_))
-     | Ssl.(Read_error(Error_want_write|Error_want_read|Error_none
-                       |Error_want_x509_lookup|Error_want_accept
-                       |Error_want_connect)) ->
+     | Ssl.(Read_error(Error_want_read)) ->
         U.debug ~lvl:5 (fun k -> k "exn schedule write %d" l);
         perform_read c s o l
+     | Ssl.(Read_error(Error_want_write)) ->
+        U.debug ~lvl:5 (fun k -> k "exn schedule read(want_write) %d" l);
+        perform (Write {sock = c.sock; fn = (fun () -> read c s o l); cl = close c})
      | exn -> ignore (close c exn); raise exn
 
 and perform_read c s o l =
@@ -140,11 +141,12 @@ let rec write c s o l =
     U.debug ~lvl:5 (fun k -> k "write(1) %d/%d" n l);
     if n = 0 then raise (Closed false); n
   with Unix.(Unix_error((EAGAIN|EWOULDBLOCK),_,_))
-     | Ssl.(Write_error(Error_want_write|Error_want_read|Error_none
-                        |Error_want_x509_lookup|Error_want_accept
-                        |Error_want_connect)) ->
+     | Ssl.(Write_error(Error_want_write)) ->
         U.debug ~lvl:5 (fun k -> k "exn schedule write %d" l);
         perform_write c s o l
+     | Ssl.(Write_error(Error_want_read)) ->
+        U.debug ~lvl:5 (fun k -> k "exn schedule write(want_read) %d" l);
+        perform (Read {sock = c.sock; fn = (fun () -> write c s o l); cl = close c})
      | exn -> ignore (close c exn); raise exn
 
 and perform_write c s o l =
@@ -163,11 +165,13 @@ module Io = struct
     U.debug ~lvl:5 (fun k -> k "read(1) %d/%d" n l);
     if n = 0 then raise (Closed true); n
   with Unix.(Unix_error((EAGAIN|EWOULDBLOCK),_,_))
-     | Ssl.(Read_error(Error_want_write|Error_want_read|Error_none
-                       |Error_want_x509_lookup|Error_want_accept
-                       |Error_want_connect)) ->
-        U.debug ~lvl:5 (fun k -> k "exn schedule write %d" l);
+     | Ssl.(Read_error(Error_want_read)) ->
+        U.debug ~lvl:5 (fun k -> k "exn schedule read %d" l);
         schedule_read sock (fun () -> read sock s o l)
+          (fun _ -> Unix.close sock)
+     | Ssl.(Read_error(Error_want_write)) ->
+        U.debug ~lvl:5 (fun k -> k "exn schedule read(want_write) %d" l);
+        schedule_write sock (fun () -> read sock s o l)
           (fun _ -> Unix.close sock)
      | exn -> Unix.close sock; raise exn
 
@@ -177,11 +181,13 @@ module Io = struct
     U.debug ~lvl:5 (fun k -> k "write(1) %d/%d" n l);
     if n = 0 then raise (Closed false); n
   with Unix.(Unix_error((EAGAIN|EWOULDBLOCK),_,_))
-     | Ssl.(Write_error(Error_want_write|Error_want_read|Error_none
-                        |Error_want_x509_lookup|Error_want_accept
-                        |Error_want_connect)) ->
+     | Ssl.(Write_error(Error_want_write)) ->
         U.debug ~lvl:5 (fun k -> k "exn schedule write %d" l);
         schedule_write sock (fun () -> write sock s o l)
+          (fun _ -> Unix.close sock)
+     | Ssl.(Write_error(Error_want_read)) ->
+        U.debug ~lvl:5 (fun k -> k "exn schedule write(want_read) %d" l);
+        schedule_read sock (fun () -> write sock s o l)
           (fun _ -> Unix.close sock)
      | exn -> Unix.close sock; raise exn
 end
@@ -335,22 +341,25 @@ let loop id st listens maxc timeout handler () =
          U.debug (fun k -> k "accept connection from %d %a" id print_status st);
          st.nb_connections.(id) <- st.nb_connections.(id) + 1;
          let sock, _ = Unix.accept lsock in
-         (* NOTE: non blocking is not needed, we use select.
-            for ssl, this means we may block waiting for the rest of an
-            encrypted block. But we non blocking seems not reliable with ssl *)
+         Unix.set_nonblock sock;
          let ssl =
            match linfo.ssl with
            | Some ctx ->
               let chan = Ssl.embed_socket sock ctx in
-              Ssl.accept chan;
-              Some chan
+              let rec fn () =
+                try Ssl.accept chan; 1
+                with
+                | Ssl.(Accept_error(Error_want_write)) ->
+                   U.debug ~lvl:5 (fun k -> k "exn schedule accept(write)");
+                   perform (Write {sock; fn; cl = (fun _ -> Unix.close sock)})
+                | Ssl.(Accept_error(Error_want_read)) ->
+                   U.debug ~lvl:5 (fun k -> k "exn schedule accept(read)");
+                   perform (Read {sock; fn; cl = (fun _ -> Unix.close sock)})
+              in
+              ignore (fn ()); Some chan
            | None ->
               None
          in
-         (* TODO: we could set nonblock before accept, but in this case,
-            we should deal with "retry" exceptions and schedule the retry
-            of accept *)
-         Unix.set_nonblock sock;
          let client = { sock; status = st; ssl;
            domain_id=id; connected = true; session = None } in
          handler client
