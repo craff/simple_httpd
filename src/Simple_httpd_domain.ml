@@ -304,7 +304,6 @@ let loop id st listens maxc timeout handler () =
       | _ -> timeout
     in
     let timeout2 = Poll.Timeout.after (Int64.of_float (1e9 *. timeout)) in
-    let exception Acc of (Unix.file_descr * listenning) in
     try
       match lock_cont with
       | Some c -> Lock c  (* Mutex first!, get_lock acquire the mutex.
@@ -320,7 +319,7 @@ let loop id st listens maxc timeout handler () =
          let fn sock _ =
            incr count;
            match List.find_opt (fun (s,_) -> s == sock) listens with
-           | Some l -> raise (Acc l)
+           | Some l -> best := Accept l
            | None ->
               let {arrival_time = t';_} as p = find sock in
               p.seen_time <- now;
@@ -329,13 +328,12 @@ let loop id st listens maxc timeout handler () =
               | Yield(_,t) -> if t' < t then best:=Action p
               | Action{arrival_time=t;_} -> if t' < t then best:=Action p
               | Lock _ -> assert false (* rds and wrs are empty *)
-              | Accept _ -> assert false
+              | Accept _ -> ()
          in
          Poll.iter_ready poll_list ~f:fn;
          Printf.eprintf "POLL: %d\n%!" !count;
          !best
     with
-    | Acc l -> Accept l
     | _ -> check (); poll timeout (* FIXME: which exception *)
   in
   let rec do_job () =
