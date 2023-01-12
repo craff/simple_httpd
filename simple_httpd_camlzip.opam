@@ -18,6 +18,6 @@ depends: [
 ]
 tags: [ "http" "thread" "server" "gzip" "camlzip" ]
 homepage: "https://github.com/craff/simple_httpd/"
-doc: "https://craff.github.io/simple_httpd/"
+doc: "https://raffalli.eu/simple_httpd/"
 bug-reports: "https://github.com/craff/simple_httpd/issues"
 dev-repo: "git+https://github.com/craff/simple_httpd.git"
