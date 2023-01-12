@@ -227,10 +227,11 @@ type pollResult =
 exception TimeOut
 
 let loop id st listens maxc timeout handler () =
-  let poll_list = Poll.create ~num_events:1 () in
+  let poll_list = Polly.create () in
   let listens =
     List.map (fun l ->
         let sock = connect l.addr l.port maxc in
+        Polly.(add poll_list sock Events.(inp lor rdnorm lor oneshot));
         (sock, l)) listens
   in
   let pendings : (Unix.file_descr, pending) Hashtbl.t
@@ -267,7 +268,7 @@ let loop id st listens maxc timeout handler () =
     let torm = Hashtbl.fold (fun s _ torm ->
         try ignore (Unix.fstat s); torm
         with e -> let { cl; _ } = find s in
-                  Poll.set poll_list s Poll.Event.none;
+                  Polly.del poll_list s;
                   (try cl e with _ -> ());
                   s::torm) pendings []
     in
@@ -278,8 +279,6 @@ let loop id st listens maxc timeout handler () =
       if Hashtbl.length pendings = 0 then (Atomic.incr st.nb_availables; true)
       else false
     in
-    List.iter (fun (sock, _) ->
-        Poll.set poll_list sock Poll.Event.read) listens;
     (*
     let rds =
       if st.nb_connections.(id) < maxc then listen_rds else []
@@ -288,7 +287,7 @@ let loop id st listens maxc timeout handler () =
     let torm = Hashtbl.fold (fun s c torm ->
                 if now -. c.seen_time > timeout then
                   begin
-                    Poll.set poll_list s Poll.Event.none;
+                    Polly.del poll_list s;
                     ignore (c.cl TimeOut);
                     s::torm
                   end
@@ -303,24 +302,19 @@ let loop id st listens maxc timeout handler () =
       | _, (t,_)::_ -> min timeout (t -. now)
       | _ -> timeout
     in
-    let timeout2 = Poll.Timeout.after (Int64.of_float (1e9 *. timeout)) in
-    let exception Acc of (Unix.file_descr * listenning) in
+    let timeout2 = (int_of_float (1e3 *. timeout)) in
     try
       match lock_cont with
       | Some c -> Lock c  (* Mutex first!, get_lock acquire the mutex.
                              See comments in Simple_httpd.mli *)
       | None ->
-         Poll.clear poll_list;
-         let _res = Poll.wait poll_list timeout2 in
          if do_decr then Atomic.decr st.nb_availables;
          let best = ref (match Queue.peek_opt yields with
                          | Some c -> Yield c
                          | None   -> Timeout) in
-         let count = ref 0 in
-         let fn sock _ =
-           incr count;
+         let fn _ sock _ =
            match List.find_opt (fun (s,_) -> s == sock) listens with
-           | Some l -> raise (Acc l)
+           | Some l -> best := Accept l
            | None ->
               let {arrival_time = t';_} as p = find sock in
               p.seen_time <- now;
@@ -329,14 +323,14 @@ let loop id st listens maxc timeout handler () =
               | Yield(_,t) -> if t' < t then best:=Action p
               | Action{arrival_time=t;_} -> if t' < t then best:=Action p
               | Lock _ -> assert false (* rds and wrs are empty *)
-              | Accept _ -> assert false
+              | Accept _ -> ()
          in
-         Poll.iter_ready poll_list ~f:fn;
-         Printf.eprintf "POLL: %d\n%!" !count;
+         let res = Polly.wait poll_list 1 timeout2 fn in
+         U.debug ~lvl:6 (fun k -> k "polly returns %d sockets\n%!" res);
          !best
     with
-    | Acc l -> Accept l
-    | _ -> check (); poll timeout (* FIXME: which exception *)
+    | exn -> Printf.eprintf "EXN: %s\n%!" (Printexc.to_string exn);
+             check (); poll timeout (* FIXME: which exception *)
   in
   let rec do_job () =
     (try
@@ -366,11 +360,12 @@ let loop id st listens maxc timeout handler () =
               None
          in
          let client = { sock; status = st; ssl;
-           domain_id=id; connected = true; session = None } in
+                        domain_id=id; connected = true; session = None } in
+         Polly.(upd poll_list lsock Events.(inp lor rdnorm lor oneshot));
          handler client
       | Action { action; sock; fn; cl; cont; _ } ->
          Hashtbl.remove pendings sock;
-         Poll.set poll_list sock Poll.Event.none;
+         Polly.del poll_list sock;
          let n = fn () in
          U.debug ~lvl:5 (fun k -> k "%s(2) %d"
            (if action = Read then "read" else "write") n);
@@ -409,7 +404,7 @@ let loop id st listens maxc timeout handler () =
                Hashtbl.add pendings sock
                  { sock; action=Read; fn; cl; cont
                    ; arrival_time = now; seen_time = now};
-               Poll.set poll_list sock Poll.Event.read;
+               Polly.(add poll_list sock Events.(rdnorm lor inp lor rdhup lor hup));
                loop ())
         | Write{sock; fn; cl} ->
            Some (fun (cont : (c,_) continuation) ->
@@ -417,7 +412,7 @@ let loop id st listens maxc timeout handler () =
                Hashtbl.add pendings sock
                  { sock; action=Write; fn; cl; cont
                  ; arrival_time = now; seen_time = now};
-               Poll.set poll_list sock Poll.Event.write;
+               Polly.(add poll_list sock Events.(wrnorm lor out lor hup));
                loop ())
         | _ -> None
     )}
