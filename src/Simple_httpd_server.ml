@@ -118,13 +118,13 @@ module Cookies = struct
     List.assoc name cookies
 
   let delete_all cookies =
-    List.map (fun (name, c) -> (name, Http_cookie.delete c)) cookies
+    List.map (fun (name, c) -> (name, Http_cookie.expire c)) cookies
 
   let delete name cookies =
     try
       let c = List.assoc name cookies in
       let cookies = List.filter (fun (n,_) -> n <> name) cookies in
-      (name, Http_cookie.delete c) :: cookies
+      (name, Http_cookie.expire c) :: cookies
     with
       Not_found -> cookies
 end
