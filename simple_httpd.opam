@@ -15,6 +15,7 @@ depends: [
   "seq"
   "ssl"
   "http-cookie"
+  "poll"
   "ocaml" { >= "5.00.0" }
   "odoc" {with-doc}
   "qtest" { >= "2.9" & with-test}
