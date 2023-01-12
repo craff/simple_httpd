@@ -1,3 +1,6 @@
+(** General functions related to OCaml's domain and asynchrone cooperative
+    multithreading. *)
+
 type status = {
     nb_availables : int Atomic.t;
     nb_connections : int array

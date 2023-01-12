@@ -1,3 +1,4 @@
+(** Managment of sessions using cookies *)
 
 val check : ?init:(unit -> Simple_httpd_domain.session_data) ->
             ?remove:bool ->
