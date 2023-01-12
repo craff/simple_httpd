@@ -227,12 +227,12 @@ type pollResult =
 exception TimeOut
 
 let loop id st listens maxc timeout handler () =
+  let poll_list = Poll.create ~num_events:1 () in
   let listens =
     List.map (fun l ->
         let sock = connect l.addr l.port maxc in
         (sock, l)) listens
   in
-  let listen_rds = List.map fst listens in
   let pendings : (Unix.file_descr, pending) Hashtbl.t
     = Hashtbl.create 32
   in
@@ -263,37 +263,38 @@ let loop id st listens maxc timeout handler () =
     | Some (_, cont) -> Some cont
   in
   let find s = try Hashtbl.find pendings s with _ -> assert false in
-  let check rds wrs =
-    let fn s =
-      try ignore (Unix.fstat s)
-      with e -> let { cl; _ } = find s in
-                Hashtbl.remove pendings s;
-                (try cl e with _ -> ());
+  let check () =
+    let torm = Hashtbl.fold (fun s _ torm ->
+        try ignore (Unix.fstat s); torm
+        with e -> let { cl; _ } = find s in
+                  Poll.set poll_list s Poll.Event.none;
+                  (try cl e with _ -> ());
+                  s::torm) pendings []
     in
-    List.iter fn rds;
-    List.iter fn wrs
+    List.iter (Hashtbl.remove pendings) torm
   in
   let rec poll timeout =
     let do_decr =
       if Hashtbl.length pendings = 0 then (Atomic.incr st.nb_availables; true)
       else false
     in
+    List.iter (fun (sock, _) ->
+        Poll.set poll_list sock Poll.Event.read) listens;
+    (*
     let rds =
       if st.nb_connections.(id) < maxc then listen_rds else []
-    in
+    in*)
     let now = now () in
-    let (rds,wrs) = Hashtbl.fold (fun s c (rds,wrs as acc) ->
-                        if now -. c.seen_time > timeout then
-                          begin
-                            Hashtbl.remove pendings s;
-                            ignore (c.cl TimeOut);
-                            acc
-                          end
-                        else
-                          match c.action with
-                          | Read  -> (s::rds,wrs)
-                          | Write -> (rds,s::wrs)) pendings (rds,[])
+    let torm = Hashtbl.fold (fun s c torm ->
+                if now -. c.seen_time > timeout then
+                  begin
+                    Poll.set poll_list s Poll.Event.none;
+                    ignore (c.cl TimeOut);
+                    s::torm
+                  end
+                else torm) pendings []
     in
+    List.iter (Hashtbl.remove pendings) torm;
     get_sleep now;
     let lock_cont = get_lock () in
     let timeout =
@@ -302,18 +303,22 @@ let loop id st listens maxc timeout handler () =
       | _, (t,_)::_ -> min timeout (t -. now)
       | _ -> timeout
     in
+    let timeout2 = Poll.Timeout.after (Int64.of_float (1e9 *. timeout)) in
     let exception Acc of (Unix.file_descr * listenning) in
     try
       match lock_cont with
       | Some c -> Lock c  (* Mutex first!, get_lock acquire the mutex.
                              See comments in Simple_httpd.mli *)
       | None ->
-         let (rds,wrs,_) = Unix.select rds wrs [] timeout in
+         Poll.clear poll_list;
+         let _res = Poll.wait poll_list timeout2 in
          if do_decr then Atomic.decr st.nb_availables;
          let best = ref (match Queue.peek_opt yields with
                          | Some c -> Yield c
                          | None   -> Timeout) in
-         let fn sock =
+         let count = ref 0 in
+         let fn sock _ =
+           incr count;
            match List.find_opt (fun (s,_) -> s == sock) listens with
            | Some l -> raise (Acc l)
            | None ->
@@ -326,12 +331,12 @@ let loop id st listens maxc timeout handler () =
               | Lock _ -> assert false (* rds and wrs are empty *)
               | Accept _ -> assert false
          in
-         List.iter fn rds;
-         List.iter fn wrs;
+         Poll.iter_ready poll_list ~f:fn;
+         Printf.eprintf "POLL: %d\n%!" !count;
          !best
     with
     | Acc l -> Accept l
-    | Unix.(Unix_error(EBADF,_,_)) -> check rds wrs; poll timeout
+    | _ -> check (); poll timeout (* FIXME: which exception *)
   in
   let rec do_job () =
     (try
@@ -365,6 +370,7 @@ let loop id st listens maxc timeout handler () =
          handler client
       | Action { action; sock; fn; cl; cont; _ } ->
          Hashtbl.remove pendings sock;
+         Poll.set poll_list sock Poll.Event.none;
          let n = fn () in
          U.debug ~lvl:5 (fun k -> k "%s(2) %d"
            (if action = Read then "read" else "write") n);
@@ -402,7 +408,8 @@ let loop id st listens maxc timeout handler () =
                let now = now () in
                Hashtbl.add pendings sock
                  { sock; action=Read; fn; cl; cont
-                 ; arrival_time = now; seen_time = now};
+                   ; arrival_time = now; seen_time = now};
+               Poll.set poll_list sock Poll.Event.read;
                loop ())
         | Write{sock; fn; cl} ->
            Some (fun (cont : (c,_) continuation) ->
@@ -410,6 +417,7 @@ let loop id st listens maxc timeout handler () =
                Hashtbl.add pendings sock
                  { sock; action=Write; fn; cl; cont
                  ; arrival_time = now; seen_time = now};
+               Poll.set poll_list sock Poll.Event.write;
                loop ())
         | _ -> None
     )}
