@@ -302,7 +302,6 @@ let loop id st listens maxc timeout handler () =
       | _, (t,_)::_ -> min timeout (t -. now)
       | _ -> timeout
     in
-    let exception Acc of (Unix.file_descr * listenning) in
     try
       match lock_cont with
       | Some c -> Lock c  (* Mutex first!, get_lock acquire the mutex.
@@ -315,7 +314,7 @@ let loop id st listens maxc timeout handler () =
                          | None   -> Timeout) in
          let fn sock =
            match List.find_opt (fun (s,_) -> s == sock) listens with
-           | Some l -> raise (Acc l)
+           | Some l -> best := Accept l
            | None ->
               let {arrival_time = t';_} as p = find sock in
               p.seen_time <- now;
@@ -324,13 +323,12 @@ let loop id st listens maxc timeout handler () =
               | Yield(_,t) -> if t' < t then best:=Action p
               | Action{arrival_time=t;_} -> if t' < t then best:=Action p
               | Lock _ -> assert false (* rds and wrs are empty *)
-              | Accept _ -> assert false
+              | Accept _ -> ()
          in
          List.iter fn rds;
          List.iter fn wrs;
          !best
     with
-    | Acc l -> Accept l
     | Unix.(Unix_error(EBADF,_,_)) -> check rds wrs; poll timeout
   in
   let rec do_job () =
