@@ -605,13 +605,13 @@ type server_sent_generator = (module SERVER_SENT_GENERATOR)
 type t = {
   listens : D.listenning list;
 
+  delta: float;
+
   timeout: float;
 
   num_thread: int;
 
   max_connections: int;
-
-  granularity: int;
 
   masksigpipe: bool;
 
@@ -760,8 +760,8 @@ let add_route_server_sent_handler ?accept self route f =
 let create
     ?(masksigpipe=true)
     ?(max_connections=32)
-    ?(granularity=3)
     ?(num_thread=Domain.recommended_domain_count () - 1)
+    ?(delta=0.030)
     ?(timeout=300.0)
     ?(buf_size=16 * 2048)
     ?(get_time_s=Unix.gettimeofday)
@@ -774,7 +774,7 @@ let create
     invalid_arg "bad number of threads or max connections";
   let self = {
     listens; masksigpipe; handler; buf_size;
-    max_connections; granularity;
+    max_connections; delta;
     path_handlers=[]; timeout; get_time_s; num_thread;
     middlewares=[]; middlewares_sorted=lazy [];
   } in
@@ -881,7 +881,7 @@ let run (self:t) : (unit,_) result =
     let handler client_sock = handle_client_ self client_sock in
     let maxc = (self.max_connections + self.num_thread - 1) / self.num_thread in
     let a = D.run ~nb_threads:self.num_thread ~listens:self.listens
-              ~maxc ~timeout:self.timeout handler
+              ~maxc ~delta:self.delta ~timeout:self.timeout handler
     in
     Array.iter (fun d -> Domain.join d) a;
     Ok ()

@@ -9,6 +9,21 @@ type status = {
     nb_connections : int array
   }
 
+let max_domain = 16384
+
+let all_domain_schedule = Array.make max_domain 0.0
+
+let schedule () =
+  let id = Domain.self () in
+  let time = all_domain_schedule.((id :> int)) in
+  let now = Unix.gettimeofday () in
+  now >= time
+
+let set_schedule delta =
+  let id = Domain.self () in
+  let now = Unix.gettimeofday () in
+  all_domain_schedule.((id :> int)) <- now +. delta
+
 let string_status st =
   let b = Buffer.create 128 in
   Printf.bprintf b "free sockets: %d\nconnections per sockets: [%t]"
@@ -91,7 +106,7 @@ let sleep : float -> unit = fun t ->
 
 let lock : Mutex.t -> unit = fun lk ->
   U.debug ~lvl:5 (fun k -> k "lock(1)");
-  if not (Mutex.try_lock lk) then perform (Lock lk)
+  if not (Mutex.try_lock lk) || schedule () then perform (Lock lk)
 
 let close c exn =
   U.debug ~lvl:3 (fun k -> k "closing because exception: %s. connected: %b"
@@ -118,7 +133,7 @@ let close c exn =
       end
     end
 
-let rec read c s o l =
+let rec fread c s o l =
   try
     let n = apply c Unix.read Ssl.read s o l in
     U.debug ~lvl:5 (fun k -> k "read(1) %d/%d" n l);
@@ -129,13 +144,16 @@ let rec read c s o l =
         perform_read c s o l
      | Ssl.(Read_error(Error_want_write)) ->
         U.debug ~lvl:5 (fun k -> k "exn schedule read(want_write) %d" l);
-        perform (Write {sock = c.sock; fn = (fun () -> read c s o l); cl = close c})
+        perform (Write {sock = c.sock; fn = (fun () -> fread c s o l); cl = close c})
      | exn -> ignore (close c exn); raise exn
 
-and perform_read c s o l =
-  perform (Read {sock = c.sock; fn = (fun () -> read c s o l); cl = close c})
+and read c s o l =
+  if schedule () then perform_read c s o l else fread c s o l
 
-let rec write c s o l =
+and perform_read c s o l =
+  perform (Read {sock = c.sock; fn = (fun () -> fread c s o l); cl = close c})
+
+let rec fwrite c s o l =
   try
     let n = apply c Unix.single_write Ssl.write s o l in
     U.debug ~lvl:5 (fun k -> k "write(1) %d/%d" n l);
@@ -146,11 +164,14 @@ let rec write c s o l =
         perform_write c s o l
      | Ssl.(Write_error(Error_want_read)) ->
         U.debug ~lvl:5 (fun k -> k "exn schedule write(want_read) %d" l);
-        perform (Read {sock = c.sock; fn = (fun () -> write c s o l); cl = close c})
+        perform (Read {sock = c.sock; fn = (fun () -> fwrite c s o l); cl = close c})
      | exn -> ignore (close c exn); raise exn
 
+and write c s o l =
+  if schedule () then perform_write c s o l else fwrite c s o l
+
 and perform_write c s o l =
-  perform (Write {sock = c.sock; fn = (fun () -> write c s o l); cl = close c})
+  perform (Write {sock = c.sock; fn = (fun () -> fwrite c s o l); cl = close c})
 
 let schedule_read sock fn cl =
   perform (Read {sock; fn; cl })
@@ -159,7 +180,7 @@ let schedule_write sock fn cl =
   perform (Write {sock; fn; cl })
 
 module Io = struct
-  let rec read sock s o l =
+  let rec fread sock s o l =
   try
     let n = Unix.read sock  s o l in
     U.debug ~lvl:5 (fun k -> k "read(1) %d/%d" n l);
@@ -167,15 +188,20 @@ module Io = struct
   with Unix.(Unix_error((EAGAIN|EWOULDBLOCK),_,_))
      | Ssl.(Read_error(Error_want_read)) ->
         U.debug ~lvl:5 (fun k -> k "exn schedule read %d" l);
-        schedule_read sock (fun () -> read sock s o l)
+        schedule_read sock (fun () -> fread sock s o l)
           (fun _ -> Unix.close sock)
      | Ssl.(Read_error(Error_want_write)) ->
         U.debug ~lvl:5 (fun k -> k "exn schedule read(want_write) %d" l);
-        schedule_write sock (fun () -> read sock s o l)
+        schedule_write sock (fun () -> fread sock s o l)
           (fun _ -> Unix.close sock)
      | exn -> Unix.close sock; raise exn
 
-  let rec write sock s o l =
+  and read sock s o l =
+    if schedule () then schedule_read sock (fun () -> fread sock s o l)
+                          (fun _ -> Unix.close sock)
+    else fread sock s o l
+
+  let rec fwrite sock s o l =
   try
     let n = Unix.single_write sock s o l in
     U.debug ~lvl:5 (fun k -> k "write(1) %d/%d" n l);
@@ -183,13 +209,18 @@ module Io = struct
   with Unix.(Unix_error((EAGAIN|EWOULDBLOCK),_,_))
      | Ssl.(Write_error(Error_want_write)) ->
         U.debug ~lvl:5 (fun k -> k "exn schedule write %d" l);
-        schedule_write sock (fun () -> write sock s o l)
+        schedule_write sock (fun () -> fwrite sock s o l)
           (fun _ -> Unix.close sock)
      | Ssl.(Write_error(Error_want_read)) ->
         U.debug ~lvl:5 (fun k -> k "exn schedule write(want_read) %d" l);
-        schedule_read sock (fun () -> write sock s o l)
+        schedule_read sock (fun () -> fwrite sock s o l)
           (fun _ -> Unix.close sock)
      | exn -> Unix.close sock; raise exn
+
+  and write sock s o l =
+    if schedule () then schedule_write sock (fun () -> fwrite sock s o l)
+                          (fun _ -> Unix.close sock)
+    else fwrite sock s o l
 end
 
 let is_ipv6 addr = String.contains addr ':'
@@ -226,7 +257,7 @@ type pollResult =
 
 exception TimeOut
 
-let loop id st listens maxc timeout handler () =
+let loop id st listens maxc delta timeout handler () =
   let poll_list = Polly.create () in
   let listens =
     List.map (fun l ->
@@ -274,7 +305,7 @@ let loop id st listens maxc timeout handler () =
     in
     List.iter (Hashtbl.remove pendings) torm
   in
-  let rec poll timeout =
+  let rec poll () =
     let do_decr =
       if Hashtbl.length pendings = 0 then (Atomic.incr st.nb_availables; true)
       else false
@@ -296,13 +327,13 @@ let loop id st listens maxc timeout handler () =
     List.iter (Hashtbl.remove pendings) torm;
     get_sleep now;
     let lock_cont = get_lock () in
-    let timeout =
+    let select_timeout =
       match Queue.is_empty yields, !sleeps with
       | false, _ -> 0.0
-      | _, (t,_)::_ -> min timeout (t -. now)
-      | _ -> timeout
+      | _, (t,_)::_ -> min delta (t -. now)
+      | _ -> delta
     in
-    let timeout2 = (int_of_float (1e3 *. timeout)) in
+    let select_timeout = int_of_float (1e3 *. select_timeout) in
     try
       match lock_cont with
       | Some c -> Lock c  (* Mutex first!, get_lock acquire the mutex.
@@ -325,16 +356,16 @@ let loop id st listens maxc timeout handler () =
               | Lock _ -> assert false (* rds and wrs are empty *)
               | Accept _ -> ()
          in
-         let res = Polly.wait poll_list 1 timeout2 fn in
+         let res = Polly.wait poll_list 1 select_timeout fn in
          U.debug ~lvl:6 (fun k -> k "polly returns %d sockets\n%!" res);
          !best
     with
     | exn -> Printf.eprintf "EXN: %s\n%!" (Printexc.to_string exn);
-             check (); poll timeout (* FIXME: which exception *)
+             check (); poll () (* FIXME: which exception *)
   in
   let rec do_job () =
     (try
-      match poll timeout with
+      match poll () with
       | Timeout -> Domain.cpu_relax (); ()
       | Accept (lsock, linfo) ->
          U.debug (fun k -> k "accept connection from %d %a" id print_status st);
@@ -362,6 +393,7 @@ let loop id st listens maxc timeout handler () =
          let client = { sock; status = st; ssl;
                         domain_id=id; connected = true; session = None } in
          Polly.(upd poll_list lsock Events.(inp lor rdnorm lor oneshot));
+         set_schedule delta;
          handler client
       | Action { action; sock; fn; cl; cont; _ } ->
          Hashtbl.remove pendings sock;
@@ -370,13 +402,16 @@ let loop id st listens maxc timeout handler () =
          U.debug ~lvl:5 (fun k -> k "%s(2) %d"
            (if action = Read then "read" else "write") n);
          if n = 0 then cl (Closed (action=Read));
+         set_schedule delta;
          continue cont n;
       | Yield(cont,_) ->
          U.debug ~lvl:5 (fun k -> k "yield(2)");
          ignore (Queue.pop yields);
+         set_schedule delta;
          continue cont ();
       | Lock(cont) ->
          U.debug ~lvl:5 (fun k -> k "lock(2)");
+         set_schedule delta;
          continue cont ();
 
     with e ->
@@ -404,7 +439,7 @@ let loop id st listens maxc timeout handler () =
                Hashtbl.add pendings sock
                  { sock; action=Read; fn; cl; cont
                    ; arrival_time = now; seen_time = now};
-               Polly.(add poll_list sock Events.(rdnorm lor inp lor rdhup lor hup));
+               Polly.(add poll_list sock Events.(inp lor rdhup lor hup));
                loop ())
         | Write{sock; fn; cl} ->
            Some (fun (cont : (c,_) continuation) ->
@@ -412,21 +447,21 @@ let loop id st listens maxc timeout handler () =
                Hashtbl.add pendings sock
                  { sock; action=Write; fn; cl; cont
                  ; arrival_time = now; seen_time = now};
-               Polly.(add poll_list sock Events.(wrnorm lor out lor hup));
+               Polly.(add poll_list sock Events.(out lor hup));
                loop ())
         | _ -> None
     )}
   in loop ()
 
-let run ~nb_threads ~listens ~maxc ~timeout handler =
+let run ~nb_threads ~listens ~maxc ~delta ~timeout handler =
   let status = {
       nb_availables = Atomic.make 0;
       nb_connections = Array.init nb_threads (fun _ -> 0)
     }
   in
-  let fn id = spawn (loop id status listens maxc timeout handler) in
+  let fn id = spawn (loop id status listens maxc delta timeout handler) in
   let r = Array.init (nb_threads - 1) fn in
-  let _ = loop (nb_threads - 1) status listens maxc timeout handler () in
+  let _ = loop (nb_threads - 1) status listens maxc delta timeout handler () in
   r
 
 let rec ssl_flush s =
