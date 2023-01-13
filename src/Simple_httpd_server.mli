@@ -408,8 +408,8 @@ type t
 val create :
   ?masksigpipe:bool ->
   ?max_connections:int ->
-  ?granularity:int ->
   ?num_thread:int ->
+  ?delta:float ->
   ?timeout:float ->
   ?buf_size:int ->
   ?get_time_s:(unit -> float) ->
@@ -431,10 +431,11 @@ val create :
     @param middlewares see {!add_middleware} for more details.
 
     @param max_connections maximum number of simultaneous connections.
-    @param granularity yield every granularity read or write.
     @param num_thread number of thread to treat client.
+    @param delta one each domain context switching will occur the first time
+      a read/write/lock will happends after delta seconds. Default: 0.030s (30ms)
     @param timeout connection is closed if the socket does not do read or
-      write for the amount of second. Default: 0.0 which means no timeout.
+      write for the amount of second. Default: 300s, (< 0.0 means no timeout).
       timeout is not recommended when using proxy.
     @param addr address (IPv4 or IPv6) to listen on. Default ["127.0.0.1"].
     @param port to listen on. Default [8080].
