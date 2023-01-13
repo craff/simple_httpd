@@ -231,7 +231,7 @@ let loop id st listens maxc timeout handler () =
   let listens =
     List.map (fun l ->
         let sock = connect l.addr l.port maxc in
-        Polly.(add poll_list sock Events.(inp lor rdnorm lor oneshot));
+        Polly.(add poll_list sock Events.(inp lor rdnorm lor oneshot lor et));
         (sock, l)) listens
   in
   let pendings : (Unix.file_descr, pending) Hashtbl.t
