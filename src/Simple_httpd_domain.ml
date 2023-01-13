@@ -327,19 +327,18 @@ let loop id st listens maxc delta timeout handler () =
     in
     get_sleep now;
     let lock_cont = get_lock () in
-    let timeout =
+    let select_timeout =
       match Queue.is_empty yields, !sleeps with
       | false, _ -> 0.0
-      | _, (t,_)::_ -> if timeout < 0.0 then t -. now else
-                         min timeout (t -. now)
-      | _ -> timeout
+      | _, (t,_)::_ -> min delta (t -. now)
+      | _ -> delta
     in
     try
       match lock_cont with
       | Some c -> Lock c  (* Mutex first!, get_lock acquire the mutex.
                              See comments in Simple_httpd.mli *)
       | None ->
-         let (rds,wrs,_) = Unix.select rds wrs [] timeout in
+         let (rds,wrs,_) = Unix.select rds wrs [] select_timeout in
          if do_decr then Atomic.decr st.nb_availables;
          let best = ref (match Queue.peek_opt yields with
                          | Some c -> Yield c
