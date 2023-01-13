@@ -316,7 +316,7 @@ let loop id st listens maxc delta timeout handler () =
     in*)
     let now = now () in
     let torm = Hashtbl.fold (fun s c torm ->
-                if now -. c.seen_time > timeout then
+                if timeout > 0.0 && now -. c.seen_time > timeout then
                   begin
                     Polly.del poll_list s;
                     ignore (c.cl TimeOut);
@@ -366,12 +366,15 @@ let loop id st listens maxc delta timeout handler () =
   let rec do_job () =
     (try
       match poll () with
-      | Timeout -> Domain.cpu_relax (); ()
+      | Timeout ->
+         Domain.cpu_relax ();
       | Accept (lsock, linfo) ->
          U.debug (fun k -> k "accept connection from %d %a" id print_status st);
+         Polly.(upd poll_list lsock Events.(inp lor oneshot lor et));
          st.nb_connections.(id) <- st.nb_connections.(id) + 1;
          let sock, _ = Unix.accept lsock in
          Unix.set_nonblock sock;
+         set_schedule delta;
          let ssl =
            match linfo.ssl with
            | Some ctx ->
@@ -392,8 +395,6 @@ let loop id st listens maxc delta timeout handler () =
          in
          let client = { sock; status = st; ssl;
                         domain_id=id; connected = true; session = None } in
-         Polly.(upd poll_list lsock Events.(inp lor rdnorm lor oneshot));
-         set_schedule delta;
          handler client
       | Action { action; sock; fn; cl; cont; _ } ->
          Hashtbl.remove pendings sock;
