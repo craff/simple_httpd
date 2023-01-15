@@ -3,8 +3,8 @@ module U = Simple_httpd_util
 module D = Simple_httpd_dir
 module Pf = Printf
 
-let serve ~config ~timeout ~delta (dir:string) listens j t : _ result =
-  let server = S.create ~delta ~timeout ~max_connections:j ~num_thread:t ~listens () in
+let serve ~config ~delta ~timeout ~maxc (dir:string) listens t : _ result =
+  let server = S.create ~delta ~timeout ~max_connections:maxc ~num_thread:t ~listens () in
   List.iter S.(fun l ->
       Printf.printf "serve directory %s on http://%s:%d\n%!"
         dir l.addr l.port) (S.listens server);
@@ -29,7 +29,7 @@ let main () =
   let port     = ref 8080 in
   let ssl_cert = ref "" in
   let ssl_priv = ref "" in
-  let j        = ref 32 in
+  let maxc     = ref 100 in
   let delta    = ref 0.030 in
   let timeout  = ref (-1.0) in
   let t        = ref (Domain.recommended_domain_count ()) in
@@ -48,14 +48,14 @@ let main () =
       "--max-upload", String (fun i -> config.max_upload_size <- parse_size i),
                       " maximum size of files that can be uploaded";
       "--delta", Set_float delta, " schedule write/read/lock after delta seconds (default 30ms)";
-      "--timeout", Set_float timeout, " timeout in seconds, connection is closed after timeout second of inactivity (default -1.0 means no timeout)";
+      "--timeout", Set_float timeout, " timeout in seconds, connection is closed after timeout second of inactivity (default: -1.0 means no timeout)";
       "--auto-index",
       Bool (fun b -> config.dir_behavior <-
                (if b then Index_or_lists else Lists)),
       " <bool> automatically redirect to index.html if present";
       "--delete", Unit (fun () -> config.delete <- true), " enable `delete` on files";
       "--no-delete", Unit (fun () -> config.delete <- false), " disable `delete` on files";
-      "-j", Set_int j, " maximum number of simultaneous connections";
+      "--maxc", Set_int maxc, " maximum number of simultaneous connections (default 100)";
       "-t", Set_int t, " maximum number of threads";
     ]) (fun s -> dir_ := s) "http_of_dir [options] [dir]";
 
@@ -71,8 +71,9 @@ let main () =
   in
   let listens = S.[{addr = !addr;port = !port;ssl}] in
   let timeout = !timeout and delta = !delta in
+  let maxc = !maxc in
 
-  match serve ~config ~delta ~timeout !dir_ listens !j !t with
+  match serve ~config ~delta ~timeout ~maxc !dir_ listens !t with
   | Ok () -> ()
   | Error e ->
     raise e
