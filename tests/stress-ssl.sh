@@ -2,7 +2,7 @@
 
 SERVER=$1
 PORT=8444
-"$SERVER" . -p $PORT --cache --ssl domain.crt domain.key > /dev/null &
+"$SERVER" . -p $PORT --cache-zlib --ssl domain.crt domain.key > /dev/null &
 PID=$!
 
 # need to sleep to make sure server is ready before first curl
@@ -13,7 +13,7 @@ nb=$2
 
 for (( c=1; c<=$nb; c++ )); do
   f=$(mktemp)
-  (curl -k -s $url > $f; stat -c %s $f; rm $f) &
+  (curl -k -s $url > $f; stat -c %s $f; diff $f foo_50; rm $f) &
   PIDS[$c]=$!
 done
 

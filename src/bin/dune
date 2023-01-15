@@ -2,7 +2,7 @@
 (executable
   (name http_of_dir)
   (public_name http_of_dir)
-  (package simple_httpd)
+  (package simple_httpd_camlzip)
   (modules http_of_dir)
   (flags :standard -warn-error -3)
   (libraries simple_httpd simple_httpd_camlzip))
