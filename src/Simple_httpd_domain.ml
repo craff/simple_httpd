@@ -262,14 +262,34 @@ let loop id st listens maxc delta timeout handler () =
   let listens =
     List.map (fun l ->
         let sock = connect l.addr l.port maxc in
-        Polly.(add poll_list sock Events.(inp lor rdnorm lor oneshot lor et));
+        Polly.(add poll_list sock Events.(inp lor oneshot lor et));
         (sock, l)) listens
   in
+
+  (* managment of max connection *)
+  let accepting = ref true in
+  let stop_accept () =
+    accepting := false;
+    List.iter (fun (sock, _) ->
+        Polly.(upd poll_list sock Events.empty)) listens
+  in
+  let do_accept () =
+    accepting := true;
+    List.iter (fun (sock, _) ->
+        Polly.(upd poll_list sock Events.(inp lor oneshot lor et))) listens
+  in
+
+  (* table of all sockets *)
   let pendings : (Unix.file_descr, pending) Hashtbl.t
     = Hashtbl.create 32
   in
+
+  (* Queue for yields *)
   let yields = Queue.create () in
+
+  (* Managment of sleep *)
   let sleeps = ref [] in
+  (* O(N) when N is the current number of sleep. Could use Map ?*)
   let add_sleep t cont =
     let rec fn acc = function
       | [] -> List.rev_append acc [(t,cont)]
@@ -278,6 +298,7 @@ let loop id st listens maxc delta timeout handler () =
     in
     sleeps := fn [] !sleeps
   in
+  (* amortized O(1) *)
   let get_sleep now =
     let rec fn l =
       match l with
@@ -286,8 +307,12 @@ let loop id st listens maxc delta timeout handler () =
     in
     sleeps := fn !sleeps
   in
+
+  (* Managment of lock *)
   let locks = U.LinkedList.create () in
+  (* O(1) *)
   let add_lock lk cont = U.LinkedList.add_last (lk, cont) locks in
+  (* O(N) when N is the number of waiting lock *)
   let get_lock () =
     let fn (lk, _) = Mutex.try_lock lk in
     match U.LinkedList.search_and_remove_first fn locks with
@@ -295,37 +320,34 @@ let loop id st listens maxc delta timeout handler () =
     | Some (_, cont) -> Some cont
   in
   let find s = try Hashtbl.find pendings s with _ -> assert false in
-  let check () =
-    let torm = Hashtbl.fold (fun s _ torm ->
-        try ignore (Unix.fstat s); torm
-        with e -> let { cl; _ } = find s in
-                  Polly.del poll_list s;
-                  (try cl e with _ -> ());
-                  s::torm) pendings []
-    in
-    List.iter (Hashtbl.remove pendings) torm
+
+  (* managment of timeout and "bad" sockets *)
+  (* O(N) but not run every "timeout" *)
+  let next_timeout_check =
+    ref (if timeout > 0.0 then Unix.gettimeofday () +. timeout
+         else infinity) in
+  let check now =
+    Hashtbl.filter_map_inplace (fun s c ->
+      try
+        if  timeout > 0.0 && now -. c.seen_time > timeout then raise TimeOut;
+        ignore (Unix.fstat s);
+        Some c
+      with e -> let { cl; _ } = find s in
+                Polly.del poll_list s;
+                (try cl e with _ -> ());
+                None) pendings;
+    if timeout > 0.0 then next_timeout_check := now +. timeout;
   in
+
   let rec poll () =
     let do_decr =
       if Hashtbl.length pendings = 0 then (Atomic.incr st.nb_availables; true)
       else false
     in
-    (*
-    let rds =
-      if st.nb_connections.(id) < maxc then listen_rds else []
-    in*)
     let now = now () in
-    let torm = Hashtbl.fold (fun s c torm ->
-                if timeout > 0.0 && now -. c.seen_time > timeout then
-                  begin
-                    Polly.del poll_list s;
-                    ignore (c.cl TimeOut);
-                    s::torm
-                  end
-                else torm) pendings []
-    in
-    List.iter (Hashtbl.remove pendings) torm;
+    if now >= !next_timeout_check then check now;
     get_sleep now;
+    (* O(n) when n is the number of waiting lock *)
     let lock_cont = get_lock () in
     let select_timeout =
       match Queue.is_empty yields, !sleeps with
@@ -333,6 +355,8 @@ let loop id st listens maxc delta timeout handler () =
       | _, (t,_)::_ -> min delta (t -. now)
       | _ -> delta
     in
+    if st.nb_connections.(id) < maxc && not !accepting then do_accept ();
+    if st.nb_connections.(id) >= maxc && !accepting then stop_accept ();
     let select_timeout = int_of_float (1e3 *. select_timeout) in
     try
       match lock_cont with
@@ -360,8 +384,9 @@ let loop id st listens maxc delta timeout handler () =
          U.debug ~lvl:6 (fun k -> k "polly returns %d sockets\n%!" res);
          !best
     with
-    | exn -> Printf.eprintf "EXN: %s\n%!" (Printexc.to_string exn);
-             check (); poll () (* FIXME: which exception *)
+    | exn -> U.debug ~lvl:0 (fun k -> k "UNEXPECTED EXCEPTION: %s\n%!"
+                                        (Printexc.to_string exn));
+             check now; poll () (* FIXME: which exception *)
   in
   let rec do_job () =
     (try
@@ -440,7 +465,7 @@ let loop id st listens maxc delta timeout handler () =
                Hashtbl.add pendings sock
                  { sock; action=Read; fn; cl; cont
                    ; arrival_time = now; seen_time = now};
-               Polly.(add poll_list sock Events.(inp lor rdhup lor hup));
+               Polly.(add poll_list sock Events.(inp));
                loop ())
         | Write{sock; fn; cl} ->
            Some (fun (cont : (c,_) continuation) ->
@@ -448,7 +473,7 @@ let loop id st listens maxc delta timeout handler () =
                Hashtbl.add pendings sock
                  { sock; action=Write; fn; cl; cont
                  ; arrival_time = now; seen_time = now};
-               Polly.(add poll_list sock Events.(out lor hup));
+               Polly.(add poll_list sock Events.(out));
                loop ())
         | _ -> None
     )}
