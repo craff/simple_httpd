@@ -11,6 +11,15 @@ val string_status : status -> string
 type session_data = ..
 type session_data += NoData
 
+module Mutex : sig
+  type t
+
+  val create : unit -> t
+  val try_lock : t -> bool
+  val lock : t -> unit
+  val unlock : t -> unit
+end
+
 type client = {
     mutable connected : bool;
     sock : Unix.file_descr;
@@ -60,5 +69,3 @@ val schedule_write : Unix.file_descr -> (unit -> int) -> (exn -> unit) -> int
 val run : nb_threads:int -> listens:listenning list -> maxc:int ->
           delta:float -> timeout:float -> (client -> unit) ->
             unit Domain.t array
-
-val lock : Mutex.t -> unit

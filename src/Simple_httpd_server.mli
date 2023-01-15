@@ -258,6 +258,10 @@ module Response : sig
   (** Set all headers.
       @since 0.11 *)
 
+  val headers : t -> Headers.t
+  (** Get headers
+      @since Simple_httpd *)
+
   val set_code : Response_code.t -> t -> t
   (** Set the response code.
       @since 0.11 *)

@@ -405,6 +405,7 @@ module Response = struct
 
   let set_body body self = {self with body}
   let set_headers headers self = {self with headers}
+  let headers self = self.headers
   let update_headers f self = {self with headers=f self.headers}
   let set_header k v self = {self with headers = Headers.set k v self.headers}
   let set_code code self = {self with code}
@@ -476,7 +477,13 @@ module Response = struct
     let self = {self with headers; body} in
     debug ~lvl:3 (fun k->k "output response: %s"
                (Format.asprintf "%a" pp {self with body=`String "<…>"}));
-    List.iter (fun (k,v) -> Out.printf oc "%s: %s\r\n" k v) headers;
+    List.iter (fun (k,v) ->
+        Out.add_string oc k;
+        Out.add_char oc ':';
+        Out.add_char oc ' ';
+        Out.add_string oc v;
+        Out.add_char oc '\r';
+        Out.add_char oc '\n') headers;
     Out.add_string oc "\r\n";
     begin match body with
       | `String "" | `Void -> Out.flush oc;

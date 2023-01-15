@@ -3,6 +3,28 @@ module U = Simple_httpd_util
 module S = Simple_httpd_server
 module BS = Simple_httpd_stream
 
+(* zlib string compression *)
+let deflate_string ?(buf_size=16 * 4096) str =
+  let zlib_str = Zlib.deflate_init 4 false in
+  let in_pos = ref 0 in
+  let in_len = String.length str in
+  let buf_out = Bytes.make buf_size ' ' in
+  let stop = ref false in
+  let res = Buffer.create (min buf_size (in_len / 4)) in
+  while not !stop do
+    let do_flush = !in_pos < in_len in
+    let flush = if do_flush then Zlib.Z_NO_FLUSH else Zlib.Z_FINISH in
+    let (finished, used_in, used_out) =
+      Zlib.deflate_string zlib_str
+        str !in_pos (in_len - !in_pos) buf_out 0 buf_size flush
+    in
+    stop:= finished || (used_out = 0 && !in_pos >= in_len);
+    in_pos := !in_pos + used_in;
+    Buffer.add_subbytes res buf_out 0 used_out
+  done;
+  Zlib.deflate_end zlib_str;
+  Buffer.contents res
+
 let decode_deflate_stream_ ~buf_size (is:S.byte_stream) : S.byte_stream =
   S.debug ~lvl:4 (fun k->k "wrap stream with deflate.decode");
   let zlib_str = Zlib.inflate_init false in
@@ -132,12 +154,18 @@ let split_on_char ?(f=fun x->x) c s : string list =
   in
   loop [] 0
 
-let accept_deflate (req:_ S.Request.t) =
+let has_deflate headers =
   match
-    S.Request.get_header req "Accept-Encoding"
+    S.Headers.get "Accept-Encoding" headers
   with
   | Some s -> List.mem "deflate" @@ split_on_char ~f:String.trim ',' s
   | None -> false
+
+let accept_deflate (req:_ S.Request.t) =
+  has_deflate (S.Request.headers req)
+
+let not_deflated (resp: S.Response.t) =
+  not (has_deflate (S.Response.headers resp))
 
 let has_deflate s =
   try Scanf.sscanf s "deflate, %s" (fun _ -> true)
@@ -174,7 +202,7 @@ let compress_resp_stream_
     |> S.Headers.set "Content-Encoding" "deflate"
   in
 
-  if accept_deflate req then (
+  if accept_deflate req && not_deflated resp then (
     match resp.body with
     | `String s when String.length s > compress_above ->
       (* big string, we compress *)

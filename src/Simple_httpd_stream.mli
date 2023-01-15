@@ -146,7 +146,7 @@ module Out_buf : sig
   val add_substring : t -> string -> int -> int -> unit
   val add_bytes : t -> bytes -> unit
   val add_subbytes : t -> bytes -> int -> int -> unit
-  val printf : t -> ('a, Buffer.t, unit) format -> 'a
+  val printf : t -> ('a, unit, string, unit) format4 -> 'a
 end
 
 val output_chunked : Out_buf.t -> t -> unit

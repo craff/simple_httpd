@@ -217,6 +217,13 @@ module LinkedList = struct
 
   let create () = { head = Nil; tail = Nil }
 
+  let size l =
+    let rec fn acc = function
+      | Nil -> acc
+      | Cons { next; _ } -> fn (acc+1) next
+    in
+    fn 0 l.head
+
   let add_first v l =
     let cell = Cons { v; next = l.head; prev = Nil } in
     match l.head with

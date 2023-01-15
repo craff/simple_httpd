@@ -40,6 +40,18 @@ let print_status ch st =
 type session_data = ..
 type session_data += NoData
 
+module MutexTmp = struct
+  type t = bool Atomic.t
+
+  let create () = Atomic.make false
+
+  let try_lock m =
+    Atomic.compare_and_set m false true
+
+  let unlock m =
+    Atomic.set m false
+end
+
 type client = {
     mutable connected : bool;
     sock : Unix.file_descr;
@@ -52,7 +64,7 @@ type client = {
 and session =
   { addr : string
   ; key : string
-  ; mutex : Mutex.t
+  ; mutex : MutexTmp.t
   ; mutable clients : client list
   ; mutable data : session_data
   }
@@ -67,6 +79,7 @@ let fake_client =
       session = None;
     }
 
+
 type _ Effect.t +=
    | Read  : { sock: Unix.file_descr; fn: (unit -> int); cl: exn -> unit }
                -> int Effect.t
@@ -74,7 +87,7 @@ type _ Effect.t +=
                -> int Effect.t
    | Yield : unit Effect.t
    | Sleep : float -> unit Effect.t
-   | Lock  : Mutex.t -> unit Effect.t
+   | Lock  : MutexTmp.t -> unit Effect.t
 
 type action = Read|Write
 type pending =
@@ -104,9 +117,14 @@ let sleep : float -> unit = fun t ->
   let t = now () +. t in
   perform (Sleep t)
 
-let lock : Mutex.t -> unit = fun lk ->
-  U.debug ~lvl:5 (fun k -> k "lock(1)");
-  if not (Mutex.try_lock lk) || schedule () then perform (Lock lk)
+module Mutex = struct
+  include MutexTmp
+
+
+  let lock : t -> unit = fun lk ->
+    U.debug ~lvl:5 (fun k -> k "lock(1)");
+    if not (try_lock lk) || schedule () then perform (Lock lk)
+end
 
 let close c exn =
   U.debug ~lvl:3 (fun k -> k "closing because exception: %s. connected: %b"
@@ -120,7 +138,7 @@ let close c exn =
         match c.session with
         | None -> ()
         | Some sess ->
-           lock sess.mutex;
+           Mutex.lock sess.mutex;
            sess.clients <- List.filter (fun c' -> c != c') sess.clients;
            Mutex.unlock sess.mutex
       end;
@@ -355,13 +373,16 @@ let loop id st listens maxc delta timeout handler () =
       | _, (t,_)::_ -> min delta (t -. now)
       | _ -> delta
     in
+    U.debug ~lvl:7 (fun k -> k "Select with timeout: %f" select_timeout);
     if st.nb_connections.(id) < maxc && not !accepting then do_accept ();
     if st.nb_connections.(id) >= maxc && !accepting then stop_accept ();
-    let select_timeout = int_of_float (1e3 *. select_timeout) in
+    let select_timeout = int_of_float (1e3 *. select_timeout +. 1.0) in
     try
       match lock_cont with
-      | Some c -> Lock c  (* Mutex first!, get_lock acquire the mutex.
-                             See comments in Simple_httpd.mli *)
+      | Some c ->
+         U.debug ~lvl:6 (fun k -> k "poll got unlocked mutex\n%!");
+         Lock c  (* Mutex first!, get_lock acquire the mutex.
+                    See comments in Simple_httpd.mli *)
       | None ->
          if do_decr then Atomic.decr st.nb_availables;
          let best = ref (match Queue.peek_opt yields with
@@ -388,8 +409,8 @@ let loop id st listens maxc delta timeout handler () =
                                         (Printexc.to_string exn));
              check now; poll () (* FIXME: which exception *)
   in
-  let rec do_job () =
-    (try
+  let step () =
+      try
       match poll () with
       | Timeout ->
          Domain.cpu_relax ();
@@ -439,45 +460,42 @@ let loop id st listens maxc delta timeout handler () =
          U.debug ~lvl:5 (fun k -> k "lock(2)");
          set_schedule delta;
          continue cont ();
-
     with e ->
-      U.debug (fun k -> k "exn: %s %a" (Printexc.to_string e) print_status st));
-    do_job ()
-  and loop () =
-    try_with do_job ()
+      U.debug (fun k -> k "exn: %s %a" (Printexc.to_string e) print_status st);
+  in
+  let step_handler () =
+    try_with step ()
     { effc = (fun (type c) (eff: c Effect.t) ->
         match eff with
         | Yield ->
            Some (fun (cont : (c,_) continuation) ->
-               Queue.add (cont, now ()) yields;
-               loop ())
+               Queue.add (cont, now ()) yields)
         | Sleep(t) ->
            Some (fun (cont : (c,_) continuation) ->
-               add_sleep t cont;
-               loop ())
+               add_sleep t cont)
         | Lock(lk) ->
            Some (fun (cont : (c,_) continuation) ->
-               add_lock lk cont;
-               loop ())
+               add_lock lk cont)
         | Read {sock; fn; cl} ->
            Some (fun (cont : (c,_) continuation) ->
                let now = now () in
                Hashtbl.add pendings sock
                  { sock; action=Read; fn; cl; cont
                    ; arrival_time = now; seen_time = now};
-               Polly.(add poll_list sock Events.(inp));
-               loop ())
+               Polly.(add poll_list sock Events.(inp)))
         | Write{sock; fn; cl} ->
            Some (fun (cont : (c,_) continuation) ->
                let now = now () in
                Hashtbl.add pendings sock
                  { sock; action=Write; fn; cl; cont
                  ; arrival_time = now; seen_time = now};
-               Polly.(add poll_list sock Events.(out));
-               loop ())
+               Polly.(add poll_list sock Events.(out)))
         | _ -> None
     )}
-  in loop ()
+  in
+  while true do
+    step_handler ()
+  done
 
 let run ~nb_threads ~listens ~maxc ~delta ~timeout handler =
   let status = {

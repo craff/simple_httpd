@@ -2,7 +2,7 @@
 
 SERVER=$1
 PORT=8088
-"$SERVER" . -p $PORT &
+"$SERVER" . -p $PORT --cache &
 PID=$!
 
 url=http://localhost:${PORT}/foo_50

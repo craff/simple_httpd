@@ -29,6 +29,9 @@ type hidden
 
 (** configuration for static file handlers. This might get
     more fields over time. *)
+type cache = NoCache | SimpleCache
+             | ZlibCache of { chk : 'a . 'a Simple_httpd_server.Request.t -> bool
+                            ; cmp : string -> string }
 type config = {
   mutable download: bool;
   (** Is downloading files allowed? *)
@@ -46,6 +49,9 @@ type config = {
   (** If {!upload} is true, this is the maximum size in bytes for
       uploaded files. *)
 
+  mutable cache: cache;
+  (** Cache download of file. *)
+
   _rest: hidden;
   (** Just ignore this field. *)
 }
@@ -56,6 +62,7 @@ type config = {
   ; delete=false
   ; upload=false
   ; max_upload_size = 10 * 1024 * 1024
+  ; cache=false
   }] *)
 val default_config : unit -> config
 
@@ -65,6 +72,7 @@ val config :
   ?delete:bool ->
   ?upload:bool ->
   ?max_upload_size:int ->
+  ?cache:cache ->
   unit ->
   config
 (** Build a config from {!default_config}.
@@ -106,8 +114,11 @@ module type VFS = sig
   val create : string -> (bytes -> int -> int -> unit) * (unit -> unit)
   (** Create a file and obtain a pair [write, close] *)
 
-  val read_file_content : string -> Simple_httpd_stream.t
+  val read_file_content : string -> string
   (** Read content of a file *)
+
+  val read_file_stream : string -> Simple_httpd_stream.t
+  (** Read content of a file as a stream *)
 
   val file_size : string -> int option
   (** File size, e.g. using "stat" *)

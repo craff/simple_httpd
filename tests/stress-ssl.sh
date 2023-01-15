@@ -2,7 +2,7 @@
 
 SERVER=$1
 PORT=8444
-"$SERVER" . -p $PORT --ssl domain.crt domain.key > /dev/null &
+"$SERVER" . -p $PORT --cache --ssl domain.crt domain.key > /dev/null &
 PID=$!
 
 url=https://localhost:${PORT}/foo_50

@@ -353,64 +353,80 @@ let read_chunked ?(buf=Buf.create()) ~fail (bs:t) : t=
 
 
 module Out_buf = struct
-  let write_str oc str =
-    let len = Bytes.length str in
-    let n = ref 0 in
-    while !n < len do
-      let w = Simple_httpd_domain.write oc str !n (len - !n) in
-      n := !n + w
-    done
-
-  let write_buf oc buf =
-    if Buffer.length buf > 0 then
-      begin
-        write_str oc (Buffer.to_bytes buf);
-        Buffer.clear buf
-      end
-
-  let partial_write_str oc str =
-    let len = Bytes.length str in
-    let w = Simple_httpd_domain.write oc str 0 len in
-    Bytes.sub str w (len - w)
-
-  let partial_write_buf oc buf =
-    let remain = partial_write_str oc (Buffer.to_bytes buf) in
-    Buffer.clear buf;
-    Buffer.add_bytes buf remain
-
-  type t = { fd : Simple_httpd_domain.client; b: Buffer.t; s : int }
+  type t = { fd : Simple_httpd_domain.client; b: Bytes.t
+           ; mutable o : int; s : int }
 
   let create ?(buf_size=16* 4_096) fd =
-    {fd; s=buf_size; b=Buffer.create (2*buf_size)}
-
-  let flush oc = write_buf oc.fd oc.b; Simple_httpd_domain.flush oc.fd
+    {fd; s=buf_size; o = 0; b=Bytes.make buf_size ' '}
 
   let push oc =
-    while Buffer.length oc.b > oc.s do
-      partial_write_buf oc.fd oc.b
-    done
+    assert(oc.o = oc.s);
+    let w = Simple_httpd_domain.write oc.fd oc.b 0 oc.s in
+    if w < oc.s then
+      begin
+        Bytes.blit oc.b oc.o oc.b 0 (oc.s - w);
+        oc.o <- oc.s - w
+      end
+    else
+      oc.o <- 0
+
+  let flush oc =
+    let n = ref 0 in
+    while !n < oc.o do
+      let w = Simple_httpd_domain.write oc.fd oc.b !n (oc.o - !n) in
+      n := !n + w
+    done;
+    oc.o <- 0
 
   let close oc =
     flush oc; Simple_httpd_domain.close oc.fd
 
+  let add_substring oc str offset len =
+    if oc.o + len < oc.s then
+      begin
+        Bytes.blit_string str offset oc.b oc.o len;
+        oc.o <- oc.o + len
+      end
+    else
+      begin
+        let start =
+          if oc.o > 0 then
+            begin
+              let nb = oc.s - oc.o in
+              Bytes.blit_string str offset oc.b oc.o nb;
+              oc.o <- oc.s;
+              flush oc;
+              offset + nb
+            end
+          else
+            offset
+        in
+        let n = ref start in
+        while len - !n >= oc.s do
+          let str = Bytes.unsafe_of_string str in
+          let w = Simple_httpd_domain.write oc.fd str !n (len - !n) in
+          n := !n + w
+        done;
+        Bytes.blit_string str !n oc.b 0 (len - !n);
+        oc.o <- len - !n
+      end
+
+  let add_string oc str = add_substring oc str 0 (String.length str)
+
   let printf oc format =
-    let cont _ = push oc in
-    Printf.kbprintf cont oc.b format
-
-  let add_string oc str =
-    Buffer.add_string oc.b str; push oc
-
-  let add_substring oc str off len =
-    Buffer.add_substring oc.b str off len; push oc
+    let cont s = add_string oc s in
+    Printf.ksprintf cont format
 
   let add_bytes oc str =
-    Buffer.add_bytes oc.b str; push oc
+    add_string oc (Bytes.unsafe_to_string str)
 
-  let add_subbytes oc str off len =
-    Buffer.add_subbytes oc.b str off len; push oc
+  let add_subbytes oc str offset len =
+    add_substring oc (Bytes.unsafe_to_string str) offset len
 
   let add_char oc c =
-    Buffer.add_char oc.b c; push oc
+    if oc.o >= oc.s then push oc;
+    Bytes.set oc.b oc.o c;
+    oc.o <- oc.o + 1
 
 end
 

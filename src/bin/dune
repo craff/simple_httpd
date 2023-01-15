@@ -5,7 +5,7 @@
   (package simple_httpd)
   (modules http_of_dir)
   (flags :standard -warn-error -3)
-  (libraries simple_httpd))
+  (libraries simple_httpd simple_httpd_camlzip))
 
 (executable
   (name vfs_pack)

@@ -38,6 +38,8 @@ let main () =
       "-a", Set_string addr, " alias to --listen";
       "--port", Set_int port, " port to listen on";
       "-p", Set_int port, " alias to --port";
+      "--cache", Unit (fun () -> config.cache <- SimpleCache), " cache files in memory";
+      "--cache-zlib", Unit (fun () -> config.cache <- Simple_httpd_camlzip.(ZlibCache  { chk = accept_deflate; cmp = deflate_string})), " cache compressed files in memory";
       "--ssl", Tuple[Set_string ssl_cert; Set_string ssl_priv], " give ssl certificate and private key";
       "--dir", Set_string dir_, " directory to serve (default: \".\")";
       "--debug", Int U.set_debug, " debug mode";

@@ -181,4 +181,11 @@ val schedule_read : Unix.file_descr -> (unit -> int) -> (exn -> unit) -> int
    If it return [action ()] return 0; [close (Closed false)] is called. *)
 val schedule_write : Unix.file_descr -> (unit -> int) -> (exn -> unit) -> int
 
-val lock : Mutex.t -> unit
+module Mutex : sig
+  type t
+
+  val create : unit -> t
+  val try_lock : t -> bool
+  val lock : t -> unit
+  val unlock : t -> unit
+end

@@ -13,3 +13,9 @@ val setup :
     compressed streams
     @param compress_above threshold above with string responses are compressed
     @param buf_size size of the underlying buffer for compression/decompression *)
+
+val deflate_string : ?buf_size:int -> string -> string
+(** zlib string compression *)
+
+val accept_deflate : 'a Simple_httpd_server.Request.t -> bool
+(** check if request accept deplate *)

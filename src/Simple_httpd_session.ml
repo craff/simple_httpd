@@ -11,7 +11,7 @@ let get_session =
   let all_sessions = Hashtbl.create 1024 in
   let mutex = Mutex.create () in
   let get_session client key init =
-    lock mutex;
+    Mutex.lock mutex;
     match client.session with
     | Some s ->
        Mutex.unlock mutex;

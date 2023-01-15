@@ -36,7 +36,7 @@ let schedule_read = Simple_httpd_domain.schedule_read
 
 let schedule_write = Simple_httpd_domain.schedule_write
 
-let lock = Simple_httpd_domain.lock
+module Mutex = Simple_httpd_domain.Mutex
 
 module Util = Simple_httpd_util
 
