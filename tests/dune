@@ -2,7 +2,7 @@
 
 (rule
   (targets echo1.out)
-  (deps (:bin ../examples/echo.exe))
+  (deps (:bin ../examples/echo.exe) echo1.sh)
   (locks /port)
   (enabled_if (= %{system} "linux"))
   (package simple_httpd_camlzip)
@@ -18,7 +18,7 @@
 
 (rule
   (targets sse_count.out)
-  (deps (:bin ../examples/sse_server.exe))
+  (deps (:bin ../examples/sse_server.exe) sse_count.sh)
   (locks /port)
   (enabled_if (= %{system} "linux"))
   (package simple_httpd)
@@ -34,7 +34,7 @@
 
 (rule
   (targets chunked-out)
-  (deps (:bin ../src/bin/http_of_dir.exe) foo_50)
+  (deps (:bin ../src/bin/http_of_dir.exe) foo_50 chunked.sh)
   (locks /port)
   (package simple_httpd)
   (enabled_if (= %{system} "linux"))
@@ -51,7 +51,8 @@
 
 (rule
   (targets chunked-ssl-out)
-  (deps (:bin ../src/bin/http_of_dir.exe) foo_50 domain.crt domain.key)
+  (deps (:bin ../src/bin/http_of_dir.exe) foo_50 domain.crt domain.key
+  	chunked_ssl.sh)
   (locks /port)
   (package simple_httpd)
   (enabled_if (= %{system} "linux"))
@@ -67,7 +68,7 @@
 ;stress
 (rule
   (targets dl-stress)
-  (deps (:bin ../src/bin/http_of_dir.exe) foo_50)
+  (deps (:bin ../src/bin/http_of_dir.exe) foo_50 stress.sh)
   (locks /port)
   (package simple_httpd)
   (enabled_if (= %{system} "linux"))
@@ -83,7 +84,8 @@
 ;ssl stress
 (rule
   (targets dl-stress-ssl)
-  (deps (:bin ../src/bin/http_of_dir.exe) foo_50 domain.crt domain.key)
+  (deps (:bin ../src/bin/http_of_dir.exe) foo_50 domain.crt domain.key
+  	stress-ssl.sh)
   (locks /port)
   (package simple_httpd)
   (enabled_if (= %{system} "linux"))
