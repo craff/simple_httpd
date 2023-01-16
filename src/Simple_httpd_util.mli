@@ -50,6 +50,5 @@ module LinkedList : sig
   val size : 'a t -> int
   val add_first : 'a -> 'a t -> unit
   val add_last : 'a -> 'a t -> unit
-  val search_and_remove_first : ('a -> bool) -> 'a t -> 'a option
-  val search_and_remove_last : ('a -> bool) -> 'a t -> 'a option
+  val search_and_remove : ('a -> bool) -> ('a -> unit) -> 'a t -> unit
 end

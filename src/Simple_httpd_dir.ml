@@ -207,7 +207,7 @@ let add_vfs_ ?(accept=(fun _req -> Ok (fun x -> x))) ~on_fs ~top ~config
           let rec fn () =
             match Atomic.get ready with
             | true ->
-               let mtime' = VFS.file_mtime key in
+               let mtime' = VFS.file_mtime (top // key) in
                if mtime' <> mtime then raise Not_found;
                Mutex.unlock cache_mutex;
                !ptr
@@ -219,9 +219,9 @@ let add_vfs_ ?(accept=(fun _req -> Ok (fun x -> x))) ~on_fs ~top ~config
           fn ()
         with Not_found ->
           let ready = Atomic.make false in
-          let mtime = VFS.file_mtime key in
+          let mtime = VFS.file_mtime (top // key) in
           let ptr = ref (S.Response.make_raw ~code:400 "") in
-          Hashtbl.add cache key (ready, mtime, ptr);
+          Hashtbl.replace cache key (ready, mtime, ptr);
           Mutex.unlock cache_mutex;
           let x = fn key in
           ptr := x;
@@ -334,13 +334,13 @@ let add_vfs_ ?(accept=(fun _req -> Ok (fun x -> x))) ~on_fs ~top ~config
               begin
                 match config.cache with
                 | ZlibCache {chk; cmp} when chk req ->
-                   let string = cmp (VFS.read_file_content path) in
+                   let string = cmp (VFS.read_file_content (top // path)) in
                    S.Response.make_raw
                      ~headers:(mime_type@[("Etag", Lazy.force mtime)
                                          ;("Content-Encoding", "deflate")])
                      ~code:200 string
                 | SimpleCache | ZlibCache _ ->
-                   let string = VFS.read_file_content path in
+                   let string = VFS.read_file_content (top // path) in
                    S.Response.make_raw
                      ~headers:(mime_type@[("Etag", Lazy.force mtime)])
                      ~code:200 string

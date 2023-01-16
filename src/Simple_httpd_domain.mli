@@ -23,7 +23,7 @@ end
 type client = {
     mutable connected : bool;
     sock : Unix.file_descr;
-    ssl  : Ssl.socket option;
+    mutable ssl  : Ssl.socket option; (* modified once after ssl negociation *)
     status : status;
     domain_id : int;
     mutable session : session option
@@ -60,11 +60,11 @@ module Io : sig
   val write : Unix.file_descr -> Bytes.t -> int -> int -> int
 end
 
-exception Closed of bool
+exception Closed
 
-val schedule_read : Unix.file_descr -> (unit -> int) -> (exn -> unit) -> int
+val schedule_read : Unix.file_descr -> (unit -> int) -> int
 
-val schedule_write : Unix.file_descr -> (unit -> int) -> (exn -> unit) -> int
+val schedule_write : Unix.file_descr -> (unit -> int) -> int
 
 val run : nb_threads:int -> listens:listenning list -> maxc:int ->
           delta:float -> timeout:float -> (client -> unit) ->

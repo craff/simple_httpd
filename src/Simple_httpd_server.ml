@@ -461,35 +461,40 @@ module Response = struct
       (Response_code.descr self.code);
     let body, is_chunked = match self.body with
       | `String s when String.length s > 1024 * 500 ->
-        (* chunk-encode large bodies *)
-        `Stream (Byte_stream.of_string s), true
+         (* chunk-encode large bodies *)
+         `Stream (Byte_stream.of_string s), true
       | `String _ as b -> b, false
       | `Stream _ as b -> b, true
       | `Void as b -> b, false
     in
-    let headers =
-      if is_chunked then (
-        self.headers
-        |> Headers.set "transfer-encoding" "chunked"
-        |> Headers.remove "content-length"
-      ) else self.headers
-    in
-    let self = {self with headers; body} in
-    debug ~lvl:3 (fun k->k "output response: %s"
-               (Format.asprintf "%a" pp {self with body=`String "<…>"}));
-    List.iter (fun (k,v) ->
-        Out.add_string oc k;
-        Out.add_char oc ':';
-        Out.add_char oc ' ';
-        Out.add_string oc v;
-        Out.add_char oc '\r';
-        Out.add_char oc '\n') headers;
-    Out.add_string oc "\r\n";
-    begin match body with
+    try
+      let headers =
+        if is_chunked then (
+          self.headers
+          |> Headers.set "transfer-encoding" "chunked"
+          |> Headers.remove "content-length"
+        ) else self.headers
+      in
+      let self = {self with headers; body} in
+      debug ~lvl:3 (fun k->k "output response: %s"
+                             (Format.asprintf "%a" pp {self with body=`String "<…>"}));
+      List.iter (fun (k,v) ->
+          Out.add_string oc k;
+          Out.add_char oc ':';
+          Out.add_char oc ' ';
+          Out.add_string oc v;
+          Out.add_char oc '\r';
+          Out.add_char oc '\n') headers;
+      Out.add_string oc "\r\n";
+      begin match body with
       | `String "" | `Void -> Out.flush oc;
       | `String s -> Out.add_string oc s; Out.flush oc;
       | `Stream str -> Byte_stream.output_chunked oc str; Out.flush oc
-    end;
+      end;
+    with exn ->
+      match body with
+      | `Stream str -> Byte_stream.close str; raise exn
+      | _           -> raise exn
 end
 
 module Route = struct

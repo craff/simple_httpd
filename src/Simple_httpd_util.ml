@@ -240,9 +240,9 @@ module LinkedList = struct
 
   type 'a prev = Cell of 'a cell | Root of 'a t
 
-  let search_and_remove_first fn l =
+  let search_and_remove fn fn' l =
     let rec gn prev = function
-      | Nil -> None
+      | Nil -> ()
       | Cons{ v; next; _ } as cell ->
          if fn v then
            begin
@@ -256,33 +256,11 @@ module LinkedList = struct
                | Nil -> l.tail <- cell
                | Cons c -> c.prev <- cell
              end;
-             Some v
+             fn' v
            end
          else
            gn (Cell cell) next
     in
     gn (Root l) l.head
 
-  let search_and_remove_last fn l =
-    let rec gn next = function
-      | Nil -> None
-      | Cons{ v; prev; _ } as cell ->
-         if fn v then
-           begin
-             let cell = match next with
-              | Root r -> r.tail <- prev; Nil
-              | Cell (Cons c as cell) -> c.prev <- prev; cell
-              | Cell Nil -> assert false
-             in
-             begin
-               match prev with
-               | Nil -> l.head <- cell
-               | Cons c -> c.next <- cell
-             end;
-             Some v
-           end
-         else
-           gn (Cell cell) prev
-    in
-    gn (Root l) l.tail
 end
