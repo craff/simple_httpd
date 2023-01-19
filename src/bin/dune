@@ -5,7 +5,7 @@
   (package simple_httpd_camlzip)
   (modules http_of_dir)
   (flags :standard -warn-error -3)
-  (libraries simple_httpd simple_httpd_camlzip))
+  (libraries simple_httpd simple_httpd_camlzip magic-mime))
 
 (executable
   (name vfs_pack)

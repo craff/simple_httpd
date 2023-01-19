@@ -28,8 +28,6 @@ let yield = Simple_httpd_domain.yield
 
 let sleep = Simple_httpd_domain.sleep
 
-exception Closed = Simple_httpd_domain.Closed
-
 module Io = Simple_httpd_domain.Io
 
 let schedule_read = Simple_httpd_domain.schedule_read

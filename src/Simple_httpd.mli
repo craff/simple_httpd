@@ -153,15 +153,10 @@ val yield : unit -> unit
 val sleep : float -> unit
 (** Same as above, but with a minimum sleeping time in second *)
 
-(** exception used by the two functions below *)
-exception Closed
 
 (** Module with function similar to Unix.read and Unix.single_write
     but that will perform scheduling *)
-module Io : sig
-  val read : Unix.file_descr -> Bytes.t -> int -> int -> int
-  val write : Unix.file_descr -> Bytes.t -> int -> int -> int
-end
+module Io : Simple_httpd_domain.Io
 
 (** [schedule_read sock action] should be called when a non blocking
     read operation would have blocked. When read become possible, [action ()]

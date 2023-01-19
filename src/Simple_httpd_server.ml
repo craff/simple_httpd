@@ -289,8 +289,7 @@ module Request = struct
     debug ~lvl:3 (fun k->k "body: must read exactly %d bytes" size);
     Byte_stream.read_exactly bs ~close_rec:false
       ~size ~too_short:(fun size ->
-          bad_reqf 400 "body is too short by %d bytes" size
-        )
+        bad_reqf 400 "body is too short by %d bytes" size)
 
   (* parse request, but not body (yet) *)
   let parse_req_start ~client ~get_time_s ~buf (bs:byte_stream)
@@ -467,34 +466,35 @@ module Response = struct
       | `Stream _ as b -> b, true
       | `Void as b -> b, false
     in
-    try
-      let headers =
-        if is_chunked then (
-          self.headers
-          |> Headers.set "transfer-encoding" "chunked"
-          |> Headers.remove "content-length"
-        ) else self.headers
-      in
-      let self = {self with headers; body} in
-      debug ~lvl:3 (fun k->k "output response: %s"
-                             (Format.asprintf "%a" pp {self with body=`String "<…>"}));
-      List.iter (fun (k,v) ->
-          Out.add_string oc k;
-          Out.add_char oc ':';
-          Out.add_char oc ' ';
-          Out.add_string oc v;
-          Out.add_char oc '\r';
-          Out.add_char oc '\n') headers;
-      Out.add_string oc "\r\n";
-      begin match body with
-      | `String "" | `Void -> Out.flush oc;
-      | `String s -> Out.add_string oc s; Out.flush oc;
-      | `Stream str -> Byte_stream.output_chunked oc str; Out.flush oc
-      end;
-    with exn ->
-      match body with
-      | `Stream str -> Byte_stream.close str; raise exn
-      | _           -> raise exn
+    let headers =
+      if is_chunked then (
+        self.headers
+        |> Headers.set "transfer-encoding" "chunked"
+        |> Headers.remove "content-length"
+      ) else self.headers
+    in
+    let self = {self with headers; body} in
+    debug ~lvl:3 (fun k->k "output response: %s"
+                           (Format.asprintf "%a" pp {self with body=`String "<…>"}));
+    List.iter (fun (k,v) ->
+        Out.add_string oc k;
+        Out.add_char oc ':';
+        Out.add_char oc ' ';
+        Out.add_string oc v;
+        Out.add_char oc '\r';
+        Out.add_char oc '\n') headers;
+    Out.add_string oc "\r\n";
+    begin match body with
+    | `String "" | `Void -> ()
+    | `String s -> Out.add_string oc s;
+    | `Stream str ->
+       try
+         Byte_stream.output_chunked oc str;
+         Byte_stream.close str;
+       with e -> Byte_stream.close str; raise e
+    end;
+    Out.flush oc
+
 end
 
 module Route = struct
@@ -868,22 +868,18 @@ let handle_client_ (self:t) (client:D.client) : unit =
             Response.output_ oc r
           with Sys_error _ | Unix.Unix_error _ -> continue := false
         in
-
         (* call handler *)
-        begin
-          try handler oc req ~resp
-          with Sys_error _ | Unix.Unix_error _ -> continue := false
-        end
+        handler oc req ~resp
       with
-      | Sys_error _ | Unix.Unix_error _ ->
+      | Sys_error _ | Unix.Unix_error _ | D.ClosedByHandler | D.TimeOut ->
         continue := false; (* connection broken somehow *)
       | Bad_req (code,s) ->
         continue := false;
         Response.output_ oc @@ Response.make_raw ~code s
       | e ->
-        continue := false;
-        Response.output_ oc @@
-          Response.fail ~code:500 "server error: %s" (Printexc.to_string e)
+         continue := false;
+         Response.output_ oc @@
+           Response.fail ~code:500 "server error: %s" (Printexc.to_string e)
   done;
   debug ~lvl:3 (fun k->k "done with client, exiting");
   ()
@@ -891,7 +887,7 @@ let handle_client_ (self:t) (client:D.client) : unit =
 let run (self:t) : (unit,_) result =
   try
     let handler client_sock = handle_client_ self client_sock in
-    let maxc = (self.max_connections + self.num_thread - 1) / self.num_thread in
+    let maxc = self.max_connections in
     let a = D.run ~nb_threads:self.num_thread ~listens:self.listens
               ~maxc ~delta:self.delta ~timeout:self.timeout handler
     in

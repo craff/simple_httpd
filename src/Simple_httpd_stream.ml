@@ -97,7 +97,9 @@ let of_client = of_client_ ~close:(fun c -> Simple_httpd_domain.close c)
 let of_client_close_noerr = of_client_
   ~close:(fun c -> try Simple_httpd_domain.close c with _ -> ())
 
-let of_client_fd_ ?(buf_size=16 * 1024) ~close sock : t =
+module Io = Simple_httpd_domain.Io
+
+let of_client_fd_ ?(buf_size=16 * 1024) ~close (sock:Io.t) : t =
   make
     ~bs:(Bytes.create buf_size)
     ~close:(fun _ -> close sock)
@@ -108,15 +110,13 @@ let of_client_fd_ ?(buf_size=16 * 1024) ~close sock : t =
         if self.off >= self.len then (
           self.off <- 0;
           self.len <-
-            let open Simple_httpd_domain in
             Io.read sock self.bs 0 (Bytes.length self.bs);
         )
       )
     ()
 
-let of_client_fd = of_client_fd_ ~close:(fun c -> Unix.close c)
-let of_client_fd_close_noerr = of_client_fd_
-  ~close:(fun c -> try Unix.close c with _ -> ())
+let of_client_fd = of_client_fd_ ~close:(fun c -> Io.close c)
+let of_client_fd_close_noerr = of_client_fd
 
 let rec iter f (self:t) : unit =
   self.fill_buf();
@@ -434,7 +434,6 @@ end
 let output_chunked (oc:Out_buf.t) (self:t) : unit =
   let open Out_buf in
   let continue = ref true in
-  (* TODO: add a preallocated buffer in self ? one for each domains ? *)
   while !continue do
     (* next chunk *)
     self.fill_buf();
@@ -442,7 +441,6 @@ let output_chunked (oc:Out_buf.t) (self:t) : unit =
     printf oc "%x\r\n" n;
     add_subbytes oc self.bs self.off n;
     add_string oc "\r\n";
-    flush oc;
     self.consume n;
     if n = 0 then (
       continue := false;

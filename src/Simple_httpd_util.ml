@@ -7,7 +7,9 @@ let set_debug n = debug_lvl := n
 let debug ?(lvl=1) k =
   if !debug_lvl >= lvl then (
     k (fun fmt->
-       Printf.fprintf stdout "[domain %d]: " Domain.((self() :> int));
+        Printf.fprintf stdout "[domain %d - %.6f]: "
+          Domain.((self() :> int))
+          (Unix.gettimeofday ());
        Printf.kfprintf (fun oc -> Printf.fprintf oc "\n%!") stdout fmt)
   )
 
@@ -227,16 +229,16 @@ module LinkedList = struct
   let add_first v l =
     let cell = Cons { v; next = l.head; prev = Nil } in
     match l.head with
-    | Nil -> assert (l.tail = Nil);
-             l.head <- cell; l.tail <- cell
-    | _   -> l.head <- cell
+    | Nil    -> assert (l.tail = Nil);
+                l.head <- cell; l.tail <- cell
+    | Cons r -> r.prev <- cell; l.head <- cell
 
   let add_last v l =
     let cell = Cons { v; next = Nil; prev = l.tail } in
     match l.tail with
-    | Nil -> assert (l.head = Nil);
-             l.head <- cell; l.tail <- cell
-    | _   -> l.tail <- cell
+    | Nil    -> assert (l.head = Nil);
+                l.head <- cell; l.tail <- cell
+    | Cons r -> r.next <- cell; l.tail <- cell
 
   type 'a prev = Cell of 'a cell | Root of 'a t
 
@@ -256,7 +258,7 @@ module LinkedList = struct
                | Nil -> l.tail <- cell
                | Cons c -> c.prev <- cell
              end;
-             fn' v
+             fn' v;
            end
          else
            gn (Cell cell) next

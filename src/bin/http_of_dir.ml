@@ -32,7 +32,7 @@ let main () =
   let maxc     = ref 100 in
   let delta    = ref 0.030 in
   let timeout  = ref (-1.0) in
-  let t        = ref (Domain.recommended_domain_count ()) in
+  let t        = ref (Domain.recommended_domain_count () - 1) in
   Arg.parse (Arg.align [
       "--addr", Set_string addr, " address to listen on";
       "-a", Set_string addr, " alias to --listen";
