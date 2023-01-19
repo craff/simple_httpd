@@ -715,25 +715,27 @@ let accept_loop status listens pipes maxc =
     U.debug (fun k -> k "acceptor run accept loop");
     try
       while true do
-        let index = try Hashtbl.find tbl sock with Not_found -> assert false in
-        let (did, pipe) = get_best () in
-        let (lsock, _) = Unix.accept sock in
-        U.debug (fun k -> k "acceptor send to domain %d" did);
-        assert (Obj.is_int (Obj.repr lsock)); (* Fails on windows *)
-        Bytes.set_int32_ne pipe_buf 0 (Int32.of_int (Obj.magic (Obj.repr lsock)));
-        Bytes.set_int32_ne pipe_buf 4 (Int32.of_int index);
-        assert(Unix.single_write pipe pipe_buf 0 8 = 8);
-        let old = Atomic.fetch_and_add status.nb_connections.(did) 1 in
-        if old = 0 then Atomic.decr status.nb_availables;
+        try
+          let index = try Hashtbl.find tbl sock with Not_found -> assert false in
+          let (did, pipe) = get_best () in
+          let (lsock, _) = Unix.accept sock in
+          U.debug (fun k -> k "acceptor send to domain %d" did);
+          assert (Obj.is_int (Obj.repr lsock)); (* Fails on windows *)
+          Bytes.set_int32_ne pipe_buf 0 (Int32.of_int (Obj.magic (Obj.repr lsock)));
+          Bytes.set_int32_ne pipe_buf 4 (Int32.of_int index);
+          assert(Unix.single_write pipe pipe_buf 0 8 = 8);
+          let old = Atomic.fetch_and_add status.nb_connections.(did) 1 in
+          if old = 0 then Atomic.decr status.nb_availables;
+        with
+        | Full(t,maxc) ->
+           U.debug (fun k -> k "acceptor rejecting connection! %d >= %d" t maxc);
+           let (lsock, _) = Unix.accept sock in
+           Unix.close lsock
+        | exn ->
+           U.debug (fun k -> k "error during accept: %s" (printexn exn))
       done
     with
     | Unix.Unix_error((EAGAIN|EWOULDBLOCK),_,_) -> ()
-    | Full(t,maxc) ->
-       U.debug (fun k -> k "acceptor rejecting connection! %d >= %d" t maxc);
-       let (lsock, _) = Unix.accept sock in
-       Unix.close lsock
-    | exn ->
-       U.debug (fun k -> k "error during accept: %s" (printexn exn))
   in
   let nb_socks = Array.length listens in
   while true do
