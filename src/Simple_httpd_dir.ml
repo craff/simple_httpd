@@ -200,19 +200,11 @@ let add_vfs_ ?(accept=(fun _req -> Ok (fun x -> x))) ~config
         fun fn (_,filename as key) ->
         try
           let (ready, mtime, ptr) = Hashtbl.find cache key in
-          let rec loop () =
-            match Atomic.get ready with
-            | true ->
-               let mtime' = VFS.file_mtime filename in
-               if mtime' <> mtime then raise Not_found;
-               !ptr
-            | false ->
-               Simple_httpd_domain.sleep 0.030; (* FIXME ? *)
-               loop ()
-          in
-          loop ()
-        with
-        | Not_found ->
+          Mutex.wait_bool ready;
+          let mtime' = VFS.file_mtime filename in
+          if mtime' <> mtime then raise Not_found;
+          !ptr
+        with Not_found ->
            let ready = Atomic.make false in
            let mtime = VFS.file_mtime filename in
            let ptr = ref tmp_rep in
@@ -235,17 +227,23 @@ let add_vfs_ ?(accept=(fun _req -> Ok (fun x -> x))) ~config
     S.add_route_handler ~accept server ~meth:`DELETE (route())
       (fun path _req ->
          if contains_dot_dot path then (
+           U.debug ~lvl:2 (fun k->k "delete fails %s (dotdot)" path);
            S.Response.fail_raise ~code:403 "invalid path in delete"
          ) else (
            S.Response.make_string
              (try
+                U.debug ~lvl:2 (fun k->k "done delete %s" path);
                 VFS.delete path; Ok "file deleted successfully"
-              with e -> Error (500, Printexc.to_string e))
+              with e ->
+                U.debug ~lvl:2 (fun k->k "delete fails %s (%s)" path
+                                         (Printexc.to_string e));
+                Error (500, Printexc.to_string e))
          )
       );
   ) else (
     S.add_route_handler ~accept server ~meth:`DELETE (route())
-      (fun _ _  -> S.Response.make_raw ~code:405 "delete not allowed");
+      (fun _ _  ->
+        S.Response.make_raw ~code:405 "delete not allowed");
   );
 
   if config.upload then (
@@ -262,13 +260,15 @@ let add_vfs_ ?(accept=(fun _req -> Ok (fun x -> x))) ~config
          let write, close =
            try VFS.create path
            with e ->
+             U.debug ~lvl:2 (fun k->k "fail uploading %s (%s)"
+                                      path (Printexc.to_string e));
              S.Response.fail_raise ~code:403 "cannot upload to %S: %s"
                path (Printexc.to_string e)
          in
          let req = S.Request.limit_body_size ~max_size:config.max_upload_size req in
          Simple_httpd_stream.iter write req.S.Request.body;
          close ();
-         U.debug (fun k->k "done uploading");
+         U.debug ~lvl:2 (fun k->k "done uploading %s" path);
          S.Response.make_raw ~code:201 "upload successful"
       )
   ) else (
@@ -279,36 +279,37 @@ let add_vfs_ ?(accept=(fun _req -> Ok (fun x -> x))) ~config
   if config.download then (
     S.add_route_handler ~accept server ~meth:`GET (route())
       (fun path req ->
-        U.debug (fun k->k "path=%S" path);
         let mtime = lazy (
                         match VFS.file_mtime path with
                         | None -> S.Response.fail_raise ~code:403 "Cannot access file"
                         | Some t -> Printf.sprintf "mtime: %.4f" t
                       ) in
         if contains_dot_dot path then (
+          U.debug ~lvl:2 (fun k->k "download fails %s (dotdot)" path);
           S.Response.fail ~code:403 "Path is forbidden";
         ) else if not (VFS.contains path) then (
+          U.debug ~lvl:2 (fun k->k "download fails %s (not found)" path);
           S.Response.fail ~code:404 "File not found";
         ) else if S.Request.get_header req "If-None-Match" = Some (Lazy.force mtime) then (
-          U.debug (fun k->k "cached object %S (etag: %S)" path (Lazy.force mtime));
           S.Response.make_raw ~code:304 ""
         ) else if VFS.is_directory path then (
-          U.debug (fun k->k "list dir %S (topdir %S)" path VFS.descr);
           let parent = Filename.(dirname path) in
           let parent = if Filename.basename path <> "." then Some parent else None in
           match config.dir_behavior with
             | Index | Index_or_lists when VFS.contains (path // "index.html") ->
                (* redirect using path, not full path *)
                let new_path = "/" // prefix // path // "index.html" in
-               U.debug (fun k->k "redirect to `%s`" new_path);
+               U.debug ~lvl:2 (fun k->k "download redirect %s" path);
                S.Response.make_raw ~code:301 ""
                  ~headers:S.Headers.(empty |> set "location" new_path)
             | Lists | Index_or_lists ->
                let body = html_list_dir ~prefix vfs path ~parent |> Html.to_string_top in
+               U.debug ~lvl:2 (fun k->k "download index %s" path);
                S.Response.make_string
                  ~headers:[header_html; "ETag", Lazy.force mtime]
                  (Ok body)
             | Forbidden | Index ->
+               U.debug ~lvl:2 (fun k->k "download index fails %s (forbidden)" path);
                S.Response.make_raw ~code:405 "listing dir not allowed"
         ) else (
           let deflate = match config.cache with
@@ -323,21 +324,25 @@ let add_vfs_ ?(accept=(fun _req -> Ok (fun x -> x))) ~config
               match config.cache with
               | ZlibCache {cmp; _} when deflate ->
                  let string = cmp (VFS.read_file_content path) in
+                 U.debug ~lvl:2 (fun k->k "download ok %s" path);
                  S.Response.make_raw
                    ~headers:(mime_type@[("Etag", Lazy.force mtime)
                                          ;("Content-Encoding", "deflate")])
                    ~code:200 string
               | SimpleCache | ZlibCache _ ->
                  let string = VFS.read_file_content path in
+                 U.debug ~lvl:2 (fun k->k "download ok %s" path);
                  S.Response.make_raw
                    ~headers:(mime_type@[("Etag", Lazy.force mtime)])
                    ~code:200 string
               | NoCache ->
                  let stream = VFS.read_file_stream path in
+                 U.debug ~lvl:2 (fun k->k "download ok %s" path);
                  S.Response.make_raw_stream
                    ~headers:(mime_type@[("Etag", Lazy.force mtime)])
                    ~code:200 stream
             with e ->
+              U.debug ~lvl:2 (fun k->k "download fails %s (%s)" path (Printexc.to_string e));
               S.Response.fail ~code:500 "error while reading file: %s" (Printexc.to_string e)
           in
           search_cache fn (deflate,path)
@@ -435,7 +440,7 @@ module Embedded_fs = struct
         | Some (File {content;_}) -> Some (String.length content)
         | _ -> None
 
-      let contains p = U.debug (fun k->k "contains %S" p); match find_ self p with
+      let contains p = match find_ self p with
         | Some _ -> true
         | None -> false
 
@@ -451,7 +456,7 @@ module Embedded_fs = struct
         | Some (File {content;_}) -> Simple_httpd_stream.of_string content
         | _ -> failwith (Printf.sprintf "no such file: %S" p)
 
-      let list_dir p = U.debug (fun k->k "list dir %S" p); match find_ self p with
+      let list_dir p = match find_ self p with
         | Some (Dir sub) ->
           Str_map.fold (fun sub _ acc -> sub::acc) sub.entries [] |> Array.of_list
         | _ -> failwith (Printf.sprintf "no such directory: %S" p)

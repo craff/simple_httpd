@@ -104,21 +104,20 @@ module Util = Simple_httpd_util
 module Dir = Simple_httpd_dir
 
 module Html = Simple_httpd_html
-(** Alias to {!Simple_httpd_html}
-    @since NEXT_RELEASE *)
+(** Alias to {!Simple_httpd_html} *)
 
 module Domain = Simple_httpd_domain
 
 module Session = Simple_httpd_session
 
+(** Type describing addresses we want to listen too, provided
+    here to avoid module opening *)
 type listenning = Simple_httpd_domain.listenning =
   {
     addr : string;
     port : int;
     ssl  : Ssl.context option ;
   }
-
-(** usefull type*)
 
 (** {2 cooperative threading *)
 
@@ -157,6 +156,8 @@ val sleep : float -> unit
 (** Module with function similar to Unix.read and Unix.single_write
     but that will perform scheduling *)
 module Io : Simple_httpd_domain.Io
+
+(** The two function below are provided if you do not want to use the Io module. *)
 
 (** [schedule_read sock action] should be called when a non blocking
     read operation would have blocked. When read become possible, [action ()]
