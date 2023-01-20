@@ -627,6 +627,8 @@ type t = {
 
   get_time_s : unit -> float;
 
+  status : D.status;
+
   mutable handler: (string Request.t -> Response.t);
   (* toplevel handler, if any *)
 
@@ -642,6 +644,8 @@ type t = {
 }
 
 let listens self = self.listens
+
+let status self = self.status
 
 let active_connections _self = failwith "unimplemented"
 
@@ -780,12 +784,18 @@ let create
   let max_connections = max 4 max_connections in
   if num_thread <= 0 || max_connections < num_thread then
     invalid_arg "bad number of threads or max connections";
+  let status = D.{
+      nb_connections = Array.init num_thread (fun _ -> Atomic.make 0)
+    }
+  in
   let self = {
     listens; masksigpipe; handler; buf_size;
     max_connections; delta;
     path_handlers=[]; timeout; get_time_s; num_thread;
     middlewares=[]; middlewares_sorted=lazy [];
-  } in
+    status
+    }
+  in
   List.iter (fun (stage,m) -> add_middleware self ~stage m) middlewares;
   self
 
@@ -884,7 +894,8 @@ let run (self:t) : (unit,_) result =
     let handler client_sock = handle_client_ self client_sock in
     let maxc = self.max_connections in
     let a = D.run ~nb_threads:self.num_thread ~listens:self.listens
-              ~maxc ~delta:self.delta ~timeout:self.timeout handler
+              ~maxc ~delta:self.delta ~timeout:self.timeout ~status:self.status
+              handler
     in
     Array.iter (fun d -> Domain.join d) a;
     Ok ()

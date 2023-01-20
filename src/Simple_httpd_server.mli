@@ -455,6 +455,9 @@ val create :
 val listens : t -> Simple_httpd_domain.listenning list
 (** Addresses and ports on which the server listens. *)
 
+val status : t -> Simple_httpd_domain.status
+(** Returns server status *)
+
 val active_connections : t -> int
 (** Number of active connections *)
 

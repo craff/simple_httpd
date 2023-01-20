@@ -695,6 +695,7 @@ let accept_loop status listens pipes maxc =
            U.debug ~lvl:1 (fun k -> k "REJECT: TOO MANY CLIENTS");
            let (lsock, _) = Unix.accept sock in
            Unix.close lsock
+        | Unix.Unix_error((EAGAIN|EWOULDBLOCK),_,_) as e -> raise e
         | exn ->
            U.debug ~lvl:1 (fun k -> k "ERROR DURING ACCEPT: %s" (printexn exn))
       done
@@ -709,11 +710,7 @@ let accept_loop status listens pipes maxc =
        U.debug (fun k -> k "ERROR DURING EPOLL_WAIT: %s" (printexn exn))
   done
 
-let run ~nb_threads ~listens ~maxc ~delta ~timeout handler =
-  let status = {
-      nb_connections = Array.init nb_threads (fun _ -> Atomic.make 0)
-    }
-  in
+let run ~nb_threads ~listens ~maxc ~delta ~timeout ~status handler =
   let listens =
     List.map (fun l ->
         let sock = connect l.addr l.port maxc in
