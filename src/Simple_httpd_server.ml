@@ -175,19 +175,16 @@ module Headers = struct
 
   let parse_ ~buf (bs:byte_stream) : t * Cookies.t =
     let rec loop headers cookies =
-      let line = Byte_stream.read_line ~buf bs in
-      if line = "\r" then (
+      let k = Byte_stream.read_until ~buf  ':' bs in
+      if k = "\r" then (
         (headers, cookies)
       ) else (
-        let k,v =
+        let v =
           try
-            let i = String.index line ':' in
-            let k = String.sub line 0 i in
             if not (for_all is_tchar k) then (
               invalid_arg (Printf.sprintf "Invalid header key: %S" k));
-            let v = String.sub line (i+1) (String.length line-i-1) |> String.trim in
-            k,v
-          with _ -> bad_reqf 400 "invalid header line: %S" line
+            Byte_stream.read_line ~buf bs |> String.trim
+          with _ -> bad_reqf 400 "invalid header key: %S" k
         in
         let headers, cookies =
           if lower_eq k "Cookie" then

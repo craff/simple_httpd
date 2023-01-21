@@ -103,6 +103,10 @@ val read_line : ?buf:Simple_httpd_buf.t -> t -> string
 (** Read a line from the stream.
     @param buf a buffer to (re)use. Its content will be cleared. *)
 
+val read_until : ?buf:Simple_httpd_buf.t -> char -> t -> string
+(** Read until given char from the stream.
+    @param buf a buffer to (re)use. Its content will be cleared. *)
+
 val read_all : ?buf:Simple_httpd_buf.t -> t -> string
 (** Read the whole stream into a string.
     @param buf a buffer to (re)use. Its content will be cleared. *)

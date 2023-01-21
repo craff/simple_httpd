@@ -197,9 +197,12 @@ let read_exactly_ ~too_short (self:t) (bytes:bytes) (n:int) : unit =
   done
 
 (* read a line into the buffer, after clearing it. *)
-let read_line_into (self:t) ~buf : unit =
+let read_line_into ?stop (self:t) ~buf : unit =
   Buf.clear buf;
   let continue = ref true in
+  let stop = match stop with None -> (fun c -> c <> '\n')
+                           | Some c' -> (fun c -> c <> '\n' && c <> c')
+  in
   while !continue do
     self.fill_buf();
     if self.len=0 then (
@@ -207,13 +210,12 @@ let read_line_into (self:t) ~buf : unit =
       if Buf.size buf = 0 then raise End_of_file;
     );
     let j = ref self.off in
-    while !j < self.off + self.len && Bytes.get self.bs !j <> '\n' do
+    while !j < self.off + self.len && stop (Bytes.get self.bs !j) do
       incr j
     done;
     if !j-self.off < self.len then (
-      assert (Bytes.get self.bs !j = '\n');
       Buf.add_bytes buf self.bs self.off (!j-self.off); (* without \n *)
-      self.consume (!j-self.off+1); (* remove \n *)
+      self.consume (!j-self.off+1); (* remove \n/stop *)
       continue := false
     ) else (
       Buf.add_bytes buf self.bs self.off self.len;
@@ -295,6 +297,10 @@ let read_exactly ~close_rec ~size ~too_short (arg:t) : t =
 
 let read_line ?(buf=Buf.create()) self : string =
   read_line_into self ~buf;
+  Buf.contents buf
+
+let read_until ?(buf=Buf.create()) ch self : string =
+  read_line_into ~stop:ch self ~buf;
   Buf.contents buf
 
 let read_chunked ?(buf=Buf.create()) ~fail (bs:t) : t=
