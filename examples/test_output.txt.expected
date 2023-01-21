@@ -1,7 +1,7 @@
 listening on http://127.0.0.1:8082
 connect to 127.0.0.1:8082
 HTTP/1.1 200 OK
-content-type: text/event-stream
+Content-Type: text/event-stream
 
 data: 0
 

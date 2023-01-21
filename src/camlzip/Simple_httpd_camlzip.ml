@@ -165,7 +165,7 @@ let accept_deflate (req:_ S.Request.t) =
   has_deflate (S.Request.headers req)
 
 let not_deflated (resp: S.Response.t) =
-  not (has_deflate (S.Response.headers resp))
+  not (S.Headers.contains "Content-Encoding" (S.Response.headers resp))
 
 let has_deflate s =
   try Scanf.sscanf s "deflate, %s" (fun _ -> true)

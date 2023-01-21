@@ -132,20 +132,26 @@ end
 module Headers = struct
   type t = (string * string) list
   let empty = []
+  let lower_eq s1 s2 =
+    let len = String.length s1 in
+    len = String.length s2 &&
+      (try
+        for i = 0 to len - 1 do
+          if Char.lowercase_ascii s1.[i] <> Char.lowercase_ascii s2.[i] then
+            raise Exit
+        done;
+        true
+       with Exit -> false)
   let contains name headers =
-    let name' = String.lowercase_ascii name in
-    List.exists (fun (n, _) -> name'=n) headers
+    List.exists (fun (n, _) -> lower_eq name n) headers
   let get_exn ?(f=fun x->x) x h =
-    let x' = String.lowercase_ascii x in
-    List.assoc x' h |> f
+    snd (List.find (fun (x',_) -> lower_eq x x') h) |> f
   let get ?(f=fun x -> x) x h =
     try Some (get_exn ~f x h) with Not_found -> None
   let remove x h =
-    let x' = String.lowercase_ascii x in
-    List.filter (fun (k,_) -> k<>x') h
+    List.filter (fun (k,_) -> not (lower_eq k x)) h
   let set x y h =
-    let x' = String.lowercase_ascii x in
-    (x',y) :: List.filter (fun (k,_) -> k<>x') h
+    (x,y) :: remove x h
   let pp out l =
     let pp_pair out (k,v) = Format.fprintf out "@[<h>%s: %s@]" k v in
     Format.fprintf out "@[<v>%a@]" (Format.pp_print_list pp_pair) l
@@ -183,9 +189,8 @@ module Headers = struct
             k,v
           with _ -> bad_reqf 400 "invalid header line: %S" line
         in
-        let k = String.lowercase_ascii k in
         let headers, cookies =
-          if k = "cookie" then
+          if lower_eq k "Cookie" then
             begin
               let new_cookies = Cookies.parse v in
               (headers, List.fold_left (fun acc (name, c) ->
@@ -291,6 +296,7 @@ module Request = struct
   let parse_req_start ~client ~get_time_s ~buf (bs:byte_stream)
       : unit t option resp_result =
     try
+      debug ~lvl:2 (fun k -> k "start reading request");
       let line = Byte_stream.read_line ~buf bs in
       let start_time = get_time_s() in
       let meth, path, version =
@@ -336,7 +342,7 @@ module Request = struct
         match Headers.get_exn "Content-Length" req.headers |> int_of_string with
         | n -> n (* body of fixed size *)
         | exception Not_found -> 0
-        | exception _ -> bad_reqf 400 "invalid content-length"
+        | exception _ -> bad_reqf 400 "invalid Content-Length"
       in
       let body =
         match get_header ~f:String.trim req "Transfer-Encoding" with
@@ -383,7 +389,7 @@ end
   | Some req ->
     assert_equal (Some "coucou") (Headers.get "Host" req.Request.headers);
     assert_equal (Some "coucou") (Headers.get "host" req.Request.headers);
-    assert_equal (Some "11") (Headers.get "content-length" req.Request.headers);
+    assert_equal (Some "11") (Headers.get "Content-Length" req.Request.headers);
     assert_equal "hello" req.Request.path;
     let req = Request.Internal_.parse_body req str |> Request.read_body_full in
     assert_equal ~printer:(fun s->s) "salutations" req.Request.body;
@@ -465,8 +471,8 @@ module Response = struct
     let headers =
       if is_chunked then (
         self.headers
-        |> Headers.set "transfer-encoding" "chunked"
-        |> Headers.remove "content-length"
+        |> Headers.set "Transfer-Encoding" "chunked"
+        |> Headers.remove "Content-Length"
       ) else self.headers
     in
     let self = {self with headers; body} in
@@ -732,7 +738,7 @@ let[@inline] _opt_iter ~f o = match o with
 let add_route_server_sent_handler ?accept self route f =
   let tr_req oc req ~resp f =
     let req = Request.read_body_full ~buf_size:self.buf_size req in
-    let headers = ref Headers.(empty |> set "content-type" "text/event-stream") in
+    let headers = ref Headers.(empty |> set "Content-Type" "text/event-stream") in
 
     (* send response once *)
     let resp_sent = ref false in
@@ -868,7 +874,7 @@ let handle_client_ (self:t) (client:D.client) : unit =
         (* how to reply *)
         let resp r =
           try
-            if Headers.get "connection" r.Response.headers = Some"close" then
+            if Headers.get "Connection" r.Response.headers = Some"close" then
               continue := false;
             Response.output_ oc r
           with Sys_error _ | Unix.Unix_error _ -> continue := false

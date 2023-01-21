@@ -327,7 +327,7 @@ let add_vfs_ ?(accept=(fun _req -> Ok (fun x -> x))) ~config
                  U.debug ~lvl:2 (fun k->k "download ok %s" path);
                  S.Response.make_raw
                    ~headers:(mime_type@[("Etag", Lazy.force mtime)
-                                         ;("Content-Encoding", "deflate")])
+                                       ;("content-encoding", "deflate")])
                    ~code:200 string
               | SimpleCache | ZlibCache _ ->
                  let string = VFS.read_file_content path in
