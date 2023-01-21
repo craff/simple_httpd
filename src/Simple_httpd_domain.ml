@@ -307,12 +307,14 @@ let connect addr port maxc =
       Unix.SOCK_STREAM
       0
   in
-  Unix.set_nonblock sock;
-  Unix.setsockopt_optint sock Unix.SO_LINGER None;
-  let inet_addr = Unix.inet_addr_of_string addr in
-  Unix.bind sock (Unix.ADDR_INET (inet_addr, port));
-  Unix.listen sock maxc;
-  sock
+  try
+    Unix.set_nonblock sock;
+    Unix.setsockopt_optint sock Unix.SO_LINGER None;
+    let inet_addr = Unix.inet_addr_of_string addr in
+    Unix.bind sock (Unix.ADDR_INET (inet_addr, port));
+    Unix.listen sock maxc;
+    sock
+  with e -> Unix.close sock; raise e
 
 type listenning = {
     addr : string;
@@ -529,6 +531,7 @@ let loop id st listens pipe delta timeout handler () =
                     }
          in
          U.debug ~lvl:2 (fun k -> k "[%d] accept connection (%a)" client.id print_status st);
+         Unix.set_nonblock sock;
          Hashtbl.add pendings sock info;
          begin
            try
