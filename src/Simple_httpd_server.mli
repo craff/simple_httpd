@@ -7,7 +7,7 @@
     @since NEXT_RELEASE
 *)
 
-type buf = Simple_httpd_buf.t
+type buf = Buffer.t
 type byte_stream = Simple_httpd_stream.t
 
 (** {2 Methods} *)
@@ -191,7 +191,7 @@ module Request : sig
       @since 0.3
   *)
 
-  val read_body_full : ?buf_size:int -> byte_stream t -> string t
+  val read_body_full : buf:Buffer.t -> byte_stream t -> string t
   (** Read the whole body into a string. Potentially blocking.
 
       @param buf_size initial size of underlying buffer (since 0.11) *)
@@ -199,9 +199,9 @@ module Request : sig
   (**/**)
   (* for testing purpose, do not use *)
   module Internal_ : sig
-    val parse_req_start : ?buf:buf -> client:Simple_httpd_domain.client ->
+    val parse_req_start : buf:buf -> client:Simple_httpd_domain.client ->
                           get_time_s:(unit -> float) -> byte_stream -> unit t option
-    val parse_body : ?buf:buf -> unit t -> byte_stream -> byte_stream t
+    val parse_body : buf:buf -> unit t -> byte_stream -> byte_stream t
   end
   (**/**)
 end

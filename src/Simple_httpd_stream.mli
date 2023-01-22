@@ -99,15 +99,15 @@ val with_file : ?buf_size:int -> string -> (t -> 'a) -> 'a
 (** Open a file with given name, and obtain an input stream
     on its content. When the function returns, the stream (and file) are closed. *)
 
-val read_line : ?buf:Simple_httpd_buf.t -> t -> string
+val read_line : buf:Buffer.t -> t -> string
 (** Read a line from the stream.
     @param buf a buffer to (re)use. Its content will be cleared. *)
 
-val read_until : ?buf:Simple_httpd_buf.t -> char -> t -> string
+val read_until : buf:Buffer.t -> char -> t -> string
 (** Read until given char from the stream.
     @param buf a buffer to (re)use. Its content will be cleared. *)
 
-val read_all : ?buf:Simple_httpd_buf.t -> t -> string
+val read_all : buf:Buffer.t -> t -> string
 (** Read the whole stream into a string.
     @param buf a buffer to (re)use. Its content will be cleared. *)
 
@@ -121,7 +121,7 @@ val limit_size_to :
    @param too_big called with read size if the max size is reached *)
 
 val read_chunked :
-  ?buf:Simple_httpd_buf.t ->
+  buf:Buffer.t ->
   fail:(string -> exn) ->
   t -> t
 (** Convert a stream into a stream of byte chunks using
@@ -155,6 +155,9 @@ end
 
 val output_chunked : Out_buf.t -> t -> unit
 (** Write the stream into the channel, using the chunked encoding. *)
+
+val output_string_chunked : Out_buf.t -> string -> unit
+(** Write the string into the channel, using the chunked encoding. *)
 
 val output_str   : Out_buf.t -> string -> unit
 val output_bytes : Out_buf.t -> bytes  -> unit

@@ -1,6 +1,4 @@
 
-module Buf = Simple_httpd_buf
-
 let spf = Printf.sprintf
 
 type hidden = unit
@@ -168,12 +166,12 @@ let with_file ?buf_size file f =
     Unix.close ic;
     raise e
 
-let read_all ?(buf=Buf.create()) (self:t) : string =
+let read_all ~buf (self:t) : string =
   let continue = ref true in
   while !continue do
     self.fill_buf();
     if self.len > 0 then (
-      Buf.add_bytes buf self.bs self.off self.len;
+      Buffer.add_subbytes buf self.bs self.off self.len;
       self.consume self.len;
     );
     assert (self.len >= 0);
@@ -181,7 +179,9 @@ let read_all ?(buf=Buf.create()) (self:t) : string =
       continue := false
     )
   done;
-  Buf.contents_and_clear buf
+  let r = Buffer.contents buf in
+  Buffer.clear buf;
+  r
 
 (* put [n] bytes from the input into bytes *)
 let read_exactly_ ~too_short (self:t) (bytes:bytes) (n:int) : unit =
@@ -198,7 +198,7 @@ let read_exactly_ ~too_short (self:t) (bytes:bytes) (n:int) : unit =
 
 (* read a line into the buffer, after clearing it. *)
 let read_line_into ?stop (self:t) ~buf : unit =
-  Buf.clear buf;
+  Buffer.clear buf;
   let continue = ref true in
   let stop = match stop with None -> (fun c -> c <> '\n')
                            | Some c' -> (fun c -> c <> '\n' && c <> c')
@@ -207,18 +207,18 @@ let read_line_into ?stop (self:t) ~buf : unit =
     self.fill_buf();
     if self.len=0 then (
       continue := false;
-      if Buf.size buf = 0 then raise End_of_file;
+      if Buffer.length buf = 0 then raise End_of_file;
     );
     let j = ref self.off in
     while !j < self.off + self.len && stop (Bytes.get self.bs !j) do
       incr j
     done;
     if !j-self.off < self.len then (
-      Buf.add_bytes buf self.bs self.off (!j-self.off); (* without \n *)
+      Buffer.add_subbytes buf self.bs self.off (!j-self.off); (* without \n *)
       self.consume (!j-self.off+1); (* remove \n/stop *)
       continue := false
     ) else (
-      Buf.add_bytes buf self.bs self.off self.len;
+      Buffer.add_subbytes buf self.bs self.off self.len;
       self.consume self.len;
     )
   done
@@ -295,15 +295,15 @@ let read_exactly ~close_rec ~size ~too_short (arg:t) : t =
       ()
   )
 
-let read_line ?(buf=Buf.create()) self : string =
+let read_line ~buf self : string =
   read_line_into self ~buf;
-  Buf.contents buf
+  Buffer.contents buf
 
-let read_until ?(buf=Buf.create()) ch self : string =
+let read_until ~buf ch self : string =
   read_line_into ~stop:ch self ~buf;
-  Buf.contents buf
+  Buffer.contents buf
 
-let read_chunked ?(buf=Buf.create()) ~fail (bs:t) : t=
+let read_chunked ~buf ~fail (bs:t) : t=
   let first = ref true in
   let read_next_chunk_len () : int =
     if !first then (
@@ -388,33 +388,35 @@ module Out_buf = struct
     flush oc; Simple_httpd_domain.close oc.fd
 
   let add_substring oc str offset len =
-    if oc.o + len < oc.s then
+    if oc.o + len <= oc.s then
       begin
         Bytes.blit_string str offset oc.b oc.o len;
         oc.o <- oc.o + len
       end
     else
       begin
-        let start =
+        let start, remain =
           if oc.o > 0 then
             begin
               let nb = oc.s - oc.o in
               Bytes.blit_string str offset oc.b oc.o nb;
               oc.o <- oc.s;
               flush oc;
-              offset + nb
+              offset + nb, len - nb
             end
           else
-            offset
+            offset, len
         in
         let n = ref start in
-        while len - !n >= oc.s do
+        let r = ref remain in
+        while !r >= oc.s do
           let str = Bytes.unsafe_of_string str in
-          let w = Simple_httpd_domain.write oc.fd str !n (len - !n) in
-          n := !n + w
+          let w = Simple_httpd_domain.write oc.fd str !n !r in
+          n := !n + w;
+          r := !r - w;
         done;
-        Bytes.blit_string str !n oc.b 0 (len - !n);
-        oc.o <- len - !n
+        Bytes.blit_string str !n oc.b 0 !r;
+        oc.o <- !r
       end
 
   let add_string oc str = add_substring oc str 0 (String.length str)
@@ -433,6 +435,10 @@ module Out_buf = struct
     if oc.o >= oc.s then push oc;
     Bytes.set oc.b oc.o c;
     oc.o <- oc.o + 1
+
+  let free_space oc =
+    let r = oc.s - oc.o in
+    if r = 0 then (flush oc; oc.s) else r
 
 end
 
@@ -453,6 +459,22 @@ let output_chunked (oc:Out_buf.t) (self:t) : unit =
     );
   done;
   ()
+
+(* print a stream as a string of chunks *)
+let output_string_chunked (oc:Out_buf.t) (str:string) : unit =
+  let open Out_buf in
+  let offset = ref 0 in
+  let len = String.length str in
+  while !offset < len do
+    (* next chunk *)
+    let max_chunk = Out_buf.free_space oc - 8 in
+    let n = min max_chunk (len - !offset) in
+    printf oc "%x\r\n" n;
+    add_substring oc str !offset n;
+    add_string oc "\r\n";
+    offset := !offset + n;
+  done;
+  add_string oc "0\r\n\r\n"
 
 let output_str = Out_buf.add_string
 let output_bytes = Out_buf.add_bytes

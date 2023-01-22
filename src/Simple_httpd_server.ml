@@ -1,13 +1,11 @@
 
-type buf = Simple_httpd_buf.t
+type buf = Buffer.t
 type byte_stream = Simple_httpd_stream.t
 
 module U   = Simple_httpd_util
 module D   = Simple_httpd_domain
 
 module Out = Simple_httpd_stream.Out_buf
-
-module Buf = Simple_httpd_buf
 
 module Byte_stream = Simple_httpd_stream
 
@@ -169,10 +167,6 @@ module Headers = struct
     | '_' | '`'  | '|' | '~' -> true
     | _ -> false
 
-  let for_all pred s =
-    try String.iter (fun c->if not (pred c) then raise Exit) s; true
-    with Exit -> false
-
   let parse_ ~buf (bs:byte_stream) : t * Cookies.t =
     let rec loop headers cookies =
       let k = Byte_stream.read_until ~buf  ':' bs in
@@ -181,7 +175,7 @@ module Headers = struct
       ) else (
         let v =
           try
-            if not (for_all is_tchar k) then (
+            if not (String.for_all is_tchar k) then (
               invalid_arg (Printf.sprintf "Invalid header key: %S" k));
             Byte_stream.read_line ~buf bs |> String.trim
           with _ -> bad_reqf 400 "invalid header key: %S" k
@@ -266,8 +260,8 @@ module Request = struct
       self.path self.body pp_comp_ self.path_components pp_query self.query
 
   (* decode a "chunked" stream into a normal stream *)
-  let read_stream_chunked_ ?buf (bs:byte_stream) : byte_stream =
-    Byte_stream.read_chunked ?buf
+  let read_stream_chunked_ ~buf (bs:byte_stream) : byte_stream =
+    Byte_stream.read_chunked ~buf
       ~fail:(fun s -> Bad_req (400, s))
       bs
 
@@ -335,6 +329,7 @@ module Request = struct
      @param tr_stream a transformation of the input stream. *)
   let parse_body_ ~tr_stream ~buf (req:byte_stream t) : byte_stream t resp_result =
     try
+      Buffer.clear buf;
       let size =
         match Headers.get_exn "Content-Length" req.headers |> int_of_string with
         | n -> n (* body of fixed size *)
@@ -358,9 +353,8 @@ module Request = struct
     | e ->
       Error (400, Printexc.to_string e)
 
-  let read_body_full ?buf_size (self:byte_stream t) : string t =
+  let read_body_full ~buf (self:byte_stream t) : string t =
     try
-      let buf = Buf.create ?size:buf_size () in
       let body = Byte_stream.read_all ~buf self.body in
       { self with body }
     with
@@ -368,10 +362,10 @@ module Request = struct
     | e -> bad_reqf 500 "failed to read body: %s" (Printexc.to_string e)
 
   module Internal_ = struct
-    let parse_req_start ?(buf=Buf.create()) ~client ~get_time_s bs =
+    let parse_req_start ~buf ~client ~get_time_s bs =
       parse_req_start ~client ~get_time_s ~buf bs |> unwrap_resp_result
 
-    let parse_body ?(buf=Buf.create()) req bs : _ t =
+    let parse_body ~buf req bs : _ t =
       parse_body_ ~tr_stream:(fun s->s) ~buf {req with body=bs} |> unwrap_resp_result
   end
 end
@@ -379,7 +373,8 @@ end
 (*$R
   let q = "GET hello HTTP/1.1\r\nHost: coucou\r\nContent-Length: 11\r\n\r\nsalutationsSOMEJUNK" in
   let str = Simple_httpd.Byte_stream.of_string q in
-  let r = Request.Internal_.parse_req_start ~client:Simple_httpd_domain.fake_client
+  let buf = Buffer.create 256 in
+  let r = Request.Internal_.parse_req_start ~buf ~client:Simple_httpd_domain.fake_client
              ~get_time_s:(fun _ -> 0.) str in
   match r with
   | None -> assert_failure "should parse"
@@ -388,7 +383,8 @@ end
     assert_equal (Some "coucou") (Headers.get "host" req.Request.headers);
     assert_equal (Some "11") (Headers.get "Content-Length" req.Request.headers);
     assert_equal "hello" req.Request.path;
-    let req = Request.Internal_.parse_body req str |> Request.read_body_full in
+    let req = Request.Internal_.parse_body ~buf req str
+      |> Request.read_body_full ~buf in
     assert_equal ~printer:(fun s->s) "salutations" req.Request.body;
     ()
 *)
@@ -410,9 +406,6 @@ module Response = struct
 
   let make_raw ?(cookies=[]) ?(headers=[]) ~code body : t =
     (* add content length to response *)
-    let headers =
-      Headers.set "Content-Length" (string_of_int (String.length body)) headers
-    in
     let headers = Headers.set_cookies cookies headers in
     { code; headers; body=`String body; }
 
@@ -457,21 +450,13 @@ module Response = struct
   let output_ (oc:Out.t) (self:t) : unit =
     Out.printf oc "HTTP/1.1 %d %s\r\n" self.code
       (Response_code.descr self.code);
-    let body, is_chunked = match self.body with
-      | `String s when String.length s > 1024 * 500 ->
-         (* chunk-encode large bodies *)
-         `Stream (Byte_stream.of_string s), true
-      | `String _ as b -> b, false
-      | `Stream _ as b -> b, true
-      | `Void as b -> b, false
-    in
+    let body = self.body in
     let headers =
-      if is_chunked then (
-        self.headers
-        |> Headers.set "Transfer-Encoding" "chunked"
-        |> Headers.remove "Content-Length"
-      ) else self.headers
+      match body with
+      | `String "" | `Void -> self.headers
+      | _ -> Headers.set "Transfer-Encoding" "chunked" self.headers
     in
+
     let self = {self with headers; body} in
     debug ~lvl:2 (fun k->k "output response: %s"
                            (Format.asprintf "%a" pp {self with body=`String "<…>"}));
@@ -485,7 +470,7 @@ module Response = struct
     Out.add_string oc "\r\n";
     begin match body with
     | `String "" | `Void -> ()
-    | `String s -> Out.add_string oc s;
+    | `String s -> Byte_stream.output_string_chunked oc s;
     | `Stream str ->
        try
          Byte_stream.output_chunked oc str;
@@ -721,7 +706,9 @@ let add_route_handler_
 
 let add_route_handler (type a) ?accept ?middlewares ?meth
     self (route:(a,_) Route.t) (f:_) : unit =
-  let tr_req _oc req ~resp f = resp (f (Request.read_body_full ~buf_size:self.buf_size req)) in
+  let tr_req _oc req ~resp f =
+    resp (f (Request.read_body_full ~buf:(Request.client req).buf req))
+  in
   add_route_handler_ ?accept ?middlewares ?meth self route ~tr_req f
 
 let add_route_handler_stream ?accept ?middlewares ?meth self route f =
@@ -734,7 +721,8 @@ let[@inline] _opt_iter ~f o = match o with
 
 let add_route_server_sent_handler ?accept self route f =
   let tr_req oc req ~resp f =
-    let req = Request.read_body_full ~buf_size:self.buf_size req in
+    let buf = (Request.client req).buf in
+    let req = Request.read_body_full ~buf req in
     let headers = ref Headers.(empty |> set "Content-Type" "text/event-stream") in
 
     (* send response once *)
@@ -812,7 +800,7 @@ let find_map f l =
   in aux f l
 
 let handle_client_ (self:t) (client:D.client) : unit =
-  let buf = Buf.create ~size:self.buf_size () in
+  let buf = client.buf in
   let oc  = Out.create ~buf_size:self.buf_size client in
   let is = Byte_stream.of_client ~buf_size:self.buf_size client in
   let continue = ref true in
@@ -842,7 +830,7 @@ let handle_client_ (self:t) (client:D.client) : unit =
           | Some f -> unwrap_resp_result f
           | None ->
             (fun _oc req ~resp ->
-               let body_str = Request.read_body_full ~buf_size:self.buf_size req in
+               let body_str = Request.read_body_full ~buf req in
                resp (self.handler body_str))
         in
 
@@ -877,7 +865,8 @@ let handle_client_ (self:t) (client:D.client) : unit =
           with Sys_error _ | Unix.Unix_error _ -> continue := false
         in
         (* call handler *)
-        handler oc req ~resp
+        handler oc req ~resp;
+        D.yield ()
       with
       | Sys_error _ | Unix.Unix_error _ | D.ClosedByHandler | D.TimeOut ->
         continue := false; (* connection broken somehow *)

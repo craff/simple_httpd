@@ -60,6 +60,7 @@ type client = {
     mutable ssl : Ssl.socket option;
     mutable session : session option;
     mutable acont : any_continuation;
+    buf : Buffer.t; (* used to parse headers *)
   }
 
 and session =
@@ -76,7 +77,8 @@ let fake_client =
       connected = false;
       session = None;
       acont = N;
-      id = -1
+      id = -1;
+      buf = Buffer.create 16;
     }
 
 type _ Effect.t +=
@@ -522,7 +524,7 @@ let loop id st listens pipe delta timeout handler () =
          set_schedule delta;
          let client = { sock; ssl = None; id = new_id ();
                         connected = true; session = None;
-                        acont = N;
+                        acont = N; buf = Buffer.create 4_096
                       } in
          cur_client := Some client;
          let info = { ty = Client client

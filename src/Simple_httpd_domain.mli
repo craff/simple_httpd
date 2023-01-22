@@ -53,6 +53,7 @@ type client = {
                                           modified once after ssl negociation *)
     mutable session : session option; (** Session *)
     mutable acont : any_continuation; (** internal use *)
+    buf : Buffer.t                    (** used to parse headers *)
   }
 
 (** Record describing sessions *)

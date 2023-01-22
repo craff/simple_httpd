@@ -11,8 +11,6 @@
     it can handle hundreds of request simultaneously.
 *)
 
-module Buf = Simple_httpd_buf
-
 module Byte_stream = Simple_httpd_stream
 
 type listenning = Simple_httpd_domain.listenning =

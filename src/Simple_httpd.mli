@@ -75,14 +75,6 @@ echo:
 *)
 
 
-(** {2 Tiny buffer implementation}
-
-    These buffers are used to avoid allocating too many byte arrays when
-    processing streams and parsing requests.
-*)
-
-module Buf = Simple_httpd_buf
-
 (** {2 Generic stream of data}
 
     Streams are used to represent a series of bytes that can arrive progressively.
