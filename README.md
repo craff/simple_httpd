@@ -7,12 +7,17 @@ and optional compression with camlzip.
 It also supports [server-sent events](https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events/Using_server-sent_events)
 ([w3c](https://html.spec.whatwg.org/multipage/server-sent-events.html#event-stream-interpretation))
 
-Plan is to support SSl and krb5/Oauth/SSO authentication optionaly.
+It now supports SSL and uses OCaml 5.0.0 and epoll to get best performance.
+Unfortunatly, it is Linux only, but we plan to use kqueue to support BSD,
+and maybe windows later.
+
+For small request it can handle more then 1K simultaneous connection and
+serve more than 100K request per second.
 
 Out goal is to have a minimal library able to cover the maximum use case.
 It is not as Tiny as Tiny_httpd, but it is
 still free from all forms of `ppx`, async monads, etc. 🙃 and the dependencies
-remain minimal.
+remain relatively minimal.
 
 **Note**: it can be useful to add the `jemalloc` opam package for long running
 server, as it does a good job at controlling memory usage.
@@ -48,8 +53,9 @@ let () =
   match S.run server with
   | Ok () -> ()
   | Error e -> raise e
+```
 ```sh
-$ dune exec examples/minimal.exe &
+$ dune exec examples/minimal.exe -j 1000 &
 listening on http://127.0.0.1:8080
 
 # the path "echo" just prints the request.
@@ -62,8 +68,19 @@ echo:
          Content-Length: 10
          Content-Type: application/x-www-form-urlencoded;
  path="/echo"; body="howdy y'all"}
-
+$ wrk -t5 -c500 -d5 http://localhost:8080/echo
+Running 5s test @ http://localhost:8081/echo
+  5 threads and 500 connections
+  Thread Stats   Avg      Stdev     Max   +/- Stdev
+    Latency    13.37ms   11.80ms 142.23ms   85.34%
+    Req/Sec     8.51k     2.52k   24.75k    69.60%
+  212877 requests in 5.06s, 38.37MB read
+Requests/sec:  42067.76
+Transfer/sec:      7.58MB
 ```
+Using wrk, we see the good performances: 40000 request per seconds, on
+my small 6 core laptop, with the 5 client threads and 5 server threads running
+on the same CPU.
 
 ## `http_of_dir`
 
