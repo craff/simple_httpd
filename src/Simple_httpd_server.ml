@@ -288,6 +288,7 @@ module Request = struct
       : unit t option resp_result =
     try
       debug ~lvl:2 (fun k -> k "start reading request");
+      D.register_starttime client;
       let line = Byte_stream.read_line ~buf bs in
       let start_time = get_time_s() in
       let meth, path, version =
@@ -320,10 +321,9 @@ module Request = struct
       } in
       Ok (Some req)
     with
-    | End_of_file | Sys_error _ | Unix.Unix_error _ -> Ok None
+    | End_of_file -> Ok None
     | Bad_req (c,s) -> Error (c,s)
-    | e ->
-      Error (400, Printexc.to_string e)
+    | e -> Error (400, D.printexn e)
 
   (* parse body, given the headers.
      @param tr_stream a transformation of the input stream. *)
@@ -351,7 +351,7 @@ module Request = struct
     | End_of_file -> Error (400, "unexpected end of file")
     | Bad_req (c,s) -> Error (c,s)
     | e ->
-      Error (400, Printexc.to_string e)
+      Error (400, D.printexn e)
 
   let read_body_full ~buf (self:byte_stream t) : string t =
     try
@@ -359,7 +359,7 @@ module Request = struct
       { self with body }
     with
     | Bad_req _ as e -> raise e
-    | e -> bad_reqf 500 "failed to read body: %s" (Printexc.to_string e)
+    | e -> bad_reqf 500 "failed to read body: %s" (D.printexn e)
 
   module Internal_ = struct
     let parse_req_start ~buf ~client ~get_time_s bs =
@@ -811,12 +811,13 @@ let handle_client_ (self:t) (client:D.client) : unit =
 
     | Error (c,s) ->
       (* connection error, close *)
-      let res = Response.make_raw ~code:c s in
-      begin
-        try Response.output_ oc res
-        with Sys_error _ | Unix.Unix_error _ -> ()
-      end;
-      continue := false
+       U.debug ~lvl:1 (fun k -> k "error handling request (%s)" s);
+       let res = Response.make_raw ~code:c s in
+       begin
+         try Response.output_ oc res
+         with Sys_error _ | Unix.Unix_error _ -> ()
+       end;
+       continue := false
 
     | Ok (Some req) ->
       debug ~lvl:2 (fun k->k "req: %s" (Format.asprintf "@[%a@]" Request.pp_ req));
@@ -861,22 +862,31 @@ let handle_client_ (self:t) (client:D.client) : unit =
           try
             if Headers.get "Connection" r.Response.headers = Some"close" then
               continue := false;
-            Response.output_ oc r
-          with Sys_error _ | Unix.Unix_error _ -> continue := false
+            Response.output_ oc r;
+          with Sys_error _
+             | Unix.Unix_error _ as e ->
+                continue := false;
+                U.debug ~lvl:1 (fun k -> k "fail to output response (%s)"
+                                           (D.printexn e))
         in
         (* call handler *)
         handler oc req ~resp;
         D.yield ()
       with
-      | Sys_error _ | Unix.Unix_error _ | D.ClosedByHandler | D.TimeOut ->
-        continue := false; (* connection broken somehow *)
+      | Sys_error _ | Unix.Unix_error _ | D.ClosedByHandler | D.TimeOut as e ->
+         U.debug ~lvl:1 (fun k -> k "broken connection (%s)"
+                                    (D.printexn e));
+         continue := false; (* connection broken somehow *)
       | Bad_req (code,s) ->
-        continue := false;
-        Response.output_ oc @@ Response.make_raw ~code s
+         U.debug ~lvl:1 (fun k -> k "bad request (%s)" s);
+         continue := false;
+         Response.output_ oc @@ Response.make_raw ~code s
       | e ->
+         U.debug ~lvl:1 (fun k -> k "server error (%s)"
+                                    (D.printexn e));
          continue := false;
          Response.output_ oc @@
-           Response.fail ~code:500 "server error: %s" (Printexc.to_string e)
+           Response.fail ~code:500 "server error: %s" (D.printexn e)
   done;
   debug ~lvl:2 (fun k->k "done with client, exiting");
   ()
@@ -891,4 +901,7 @@ let run (self:t) : (unit,_) result =
     in
     Array.iter (fun d -> Domain.join d) a;
     Ok ()
-  with e -> Error e
+  with e ->
+    U.debug ~lvl:1 (fun k -> k "server exit error (%s)"
+                               (D.printexn e));
+    Error e

@@ -47,27 +47,15 @@ val empty : t
 val of_chan : ?buf_size:int -> in_channel -> t
 (** Make a buffered stream from the given channel. *)
 
-val of_chan_close_noerr : ?buf_size:int -> in_channel -> t
-(** Same as {!of_chan} but the [close] method will never fail. *)
-
 val of_fd : ?buf_size:int -> Unix.file_descr -> t
 (** Make a buffered stream from the given file descriptor. *)
-
-val of_fd_close_noerr : ?buf_size:int -> Unix.file_descr -> t
-(** Same as {!of_fd} but the [close] method will never fail. *)
 
 val of_client : ?buf_size:int -> Simple_httpd_domain.client -> t
 (** Make a buffered stream from the given http client. *)
 
-val of_client_close_noerr : ?buf_size:int -> Simple_httpd_domain.client -> t
-(** Same as {!of_fd} but the [close] method will never fail. *)
-
 val of_client_fd : ?buf_size:int -> Simple_httpd_domain.Io.t -> t
 (** Allow a to Make a buffered stream from the given descriptor.
     The call will be scheduled if read blocks. *)
-
-val of_client_fd_close_noerr : ?buf_size:int ->  Simple_httpd_domain.Io.t -> t
-(** Same as {!of_fd} but the [close] method will never fail. *)
 
 val of_bytes : ?i:int -> ?len:int -> bytes -> t
 (** A stream that just returns the slice of bytes starting from [i]

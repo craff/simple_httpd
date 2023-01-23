@@ -151,21 +151,16 @@ module Io : Simple_httpd_domain.Io
 
 (** The two function below are provided if you do not want to use the Io module. *)
 
-(** [schedule_read sock action] should be called when a non blocking
-    read operation would have blocked. When read become possible, [action ()]
-    will be called.
-    The return value should be (if possible) the number of bytes read. It this is
-    meaningless, return a non zero value if some progress was made, while returning 0
-    will call [close Closed].
+(** [schedule_io sock action] should be called when a non blocking read/write
+    operation would have blocked. When read become possible, [action ()] will
+    be called.  The return value should be (if possible) the number of bytes
+    read or written. It this is meaningless, return a non zero value if some
+    progress was made, while returning 0 will call [close Closed].
 
     A typical application for this is when interacting with a data base in non
     blocking mode. For just reading a file or socket, use the Io module above.
   *)
-val schedule_read : Unix.file_descr -> (unit -> int) -> int
-
-(** [schedule_read sock action] is similar as above for a write operation.
-   If it return [action ()] return 0; [raise Closed] is called. *)
-val schedule_write : Unix.file_descr -> (unit -> int) -> int
+val schedule_io : Unix.file_descr -> (unit -> int) -> int
 
 module Mutex : sig
   type t

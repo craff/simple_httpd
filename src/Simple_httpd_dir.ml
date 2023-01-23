@@ -1,8 +1,9 @@
 module S = Simple_httpd_server
 module U = Simple_httpd_util
+module D = Simple_httpd_domain
 module Html = Simple_httpd_html
 module Pf = Printf
-module Mutex = Simple_httpd_domain.Mutex
+module Mutex = D.Mutex
 
 type dir_behavior =
   | Index | Lists | Index_or_lists | Forbidden
@@ -106,6 +107,8 @@ let vfs_of_dir (top:string) : vfs =
         e -> close_in ch; raise e
     let read_file_stream f =
       let ic = Unix.(openfile (top // f) [O_RDONLY] 0) in
+      (* Remark: epoll is illegal on regular file, can not
+         use of_client_fd*)
       Simple_httpd_stream.of_fd ic
     let create f =
       let oc = open_out_bin (top // f) in
@@ -236,8 +239,8 @@ let add_vfs_ ?(accept=(fun _req -> Ok (fun x -> x))) ~config
                 VFS.delete path; Ok "file deleted successfully"
               with e ->
                 U.debug ~lvl:2 (fun k->k "delete fails %s (%s)" path
-                                         (Printexc.to_string e));
-                Error (500, Printexc.to_string e))
+                                         (D.printexn e));
+                Error (500, D.printexn e))
          )
       );
   ) else (
@@ -261,9 +264,9 @@ let add_vfs_ ?(accept=(fun _req -> Ok (fun x -> x))) ~config
            try VFS.create path
            with e ->
              U.debug ~lvl:2 (fun k->k "fail uploading %s (%s)"
-                                      path (Printexc.to_string e));
+                                      path (D.printexn e));
              S.Response.fail_raise ~code:403 "cannot upload to %S: %s"
-               path (Printexc.to_string e)
+               path (D.printexn e)
          in
          let req = S.Request.limit_body_size ~max_size:config.max_upload_size req in
          Simple_httpd_stream.iter write req.S.Request.body;
@@ -342,8 +345,8 @@ let add_vfs_ ?(accept=(fun _req -> Ok (fun x -> x))) ~config
                    ~headers:(mime_type@[("Etag", Lazy.force mtime)])
                    ~code:200 stream
             with e ->
-              U.debug ~lvl:2 (fun k->k "download fails %s (%s)" path (Printexc.to_string e));
-              S.Response.fail ~code:500 "error while reading file: %s" (Printexc.to_string e)
+              U.debug ~lvl:2 (fun k->k "download fails %s (%s)" path (D.printexn e));
+              S.Response.fail ~code:500 "error while reading file: %s" (D.printexn e)
           in
           search_cache fn (deflate,path)
         )

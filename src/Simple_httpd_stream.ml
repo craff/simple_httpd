@@ -57,7 +57,6 @@ let of_chan_ ?(buf_size=16 * 1024) ~close ic : t =
     ()
 
 let of_chan = of_chan_ ~close:close_in
-let of_chan_close_noerr = of_chan_ ~close:close_in_noerr
 
 let of_fd_ ?(buf_size=16 * 1024) ~close ic : t =
   make
@@ -74,7 +73,6 @@ let of_fd_ ?(buf_size=16 * 1024) ~close ic : t =
     ()
 
 let of_fd = of_fd_ ~close:Unix.close
-let of_fd_close_noerr = of_fd_ ~close:(fun c -> try Unix.close c with _ -> ())
 
 let of_client_ ?(buf_size=16 * 1024) ~close ic : t =
   make
@@ -92,8 +90,6 @@ let of_client_ ?(buf_size=16 * 1024) ~close ic : t =
     ()
 
 let of_client = of_client_ ~close:(fun c -> Simple_httpd_domain.close c)
-let of_client_close_noerr = of_client_
-  ~close:(fun c -> try Simple_httpd_domain.close c with _ -> ())
 
 module Io = Simple_httpd_domain.Io
 
@@ -114,7 +110,6 @@ let of_client_fd_ ?(buf_size=16 * 1024) ~close (sock:Io.t) : t =
     ()
 
 let of_client_fd = of_client_fd_ ~close:(fun c -> Io.close c)
-let of_client_fd_close_noerr = of_client_fd
 
 let rec iter f (self:t) : unit =
   self.fill_buf();

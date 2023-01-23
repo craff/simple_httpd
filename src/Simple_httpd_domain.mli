@@ -53,6 +53,7 @@ type client = {
                                           modified once after ssl negociation *)
     mutable session : session option; (** Session *)
     mutable acont : any_continuation; (** internal use *)
+    mutable start_time : float;       (** start of request *)
     buf : Buffer.t                    (** used to parse headers *)
   }
 
@@ -76,6 +77,11 @@ val sleep : float -> unit
 val close : client -> unit
 val flush : client -> unit
 
+(** This register the starttime of a request to compute timeout.
+    You could use it if you know a request require time and you
+    want to avoit timeout *)
+val register_starttime : client -> unit
+
 (** Module with function similar to Unix.read and Unix.single_write
     but that will perform scheduling *)
 module type Io = sig
@@ -83,7 +89,6 @@ module type Io = sig
 
   val create : Unix.file_descr -> t
   val close : t -> unit
-  val close_no_error : t -> unit
   val read : t -> Bytes.t -> int -> int -> int
   val write : t -> Bytes.t -> int -> int -> int
 end
@@ -98,9 +103,9 @@ exception SockError of socket_type * exn
 exception ClosedByHandler
 exception TimeOut
 
-(** For use if you do not want to use the provided Io module *)
-val schedule_read : Unix.file_descr -> (unit -> int) -> int
-val schedule_write : Unix.file_descr -> (unit -> int) -> int
+(** For use if you do not want to use the provided Io module, and want
+    to schedule an Io task *)
+val schedule_io : Unix.file_descr -> (unit -> int) -> int
 
 (** Type describing a socket we listen for *)
 type listenning = {

@@ -28,9 +28,7 @@ let sleep = Simple_httpd_domain.sleep
 
 module Io = Simple_httpd_domain.Io
 
-let schedule_read = Simple_httpd_domain.schedule_read
-
-let schedule_write = Simple_httpd_domain.schedule_write
+let schedule_io = Simple_httpd_domain.schedule_io
 
 module Mutex = Simple_httpd_domain.Mutex
 
