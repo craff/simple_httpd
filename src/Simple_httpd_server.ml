@@ -177,7 +177,7 @@ module Headers = struct
           try
             if not (String.for_all is_tchar k) then (
               invalid_arg (Printf.sprintf "Invalid header key: %S" k));
-            Byte_stream.read_line ~buf bs |> String.trim
+            Byte_stream.read_line ~buf bs
           with _ -> bad_reqf 400 "invalid header key: %S" k
         in
         let headers, cookies =
@@ -293,7 +293,7 @@ module Request = struct
       let start_time = get_time_s() in
       let meth, path, version =
         try
-          let meth, path, version = Scanf.sscanf line "%s %s HTTP/1.%d\r" (fun x y z->x,y,z) in
+          let meth, path, version = Scanf.sscanf line "%s %s HTTP/1.%d" (fun x y z->x,y,z) in
           if version != 0 && version != 1 then raise Exit;
           meth, path, version
         with _ ->

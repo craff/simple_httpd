@@ -209,7 +209,7 @@ let read_line_into ?stop (self:t) ~buf : unit =
       incr j
     done;
     if !j-self.off < self.len then (
-      Buffer.add_subbytes buf self.bs self.off (!j-self.off); (* without \n *)
+      Buffer.add_subbytes buf self.bs self.off (!j - self.off); (* without \n *)
       self.consume (!j-self.off+1); (* remove \n/stop *)
       continue := false
     ) else (
@@ -217,6 +217,19 @@ let read_line_into ?stop (self:t) ~buf : unit =
       self.consume self.len;
     )
   done
+
+let read_line ~buf self : string =
+  read_line_into self ~buf;
+  let len = Buffer.length buf in
+  let start = ref 0 in
+  while !start < len && Buffer.nth buf !start <= ' ' do incr start done;
+  let end_ = ref (len - 1) in
+  while !end_ > !start && Buffer.nth buf !end_ <= ' ' do decr end_ done;
+  Buffer.sub buf !start (!end_ - !start + 1)
+
+let read_until ~buf ch self : string =
+  read_line_into ~stop:ch self ~buf;
+  Buffer.contents buf
 
 (* new stream with maximum size [max_size].
    @param close_rec if true, closing this will also close the input stream
@@ -289,14 +302,6 @@ let read_exactly ~close_rec ~size ~too_short (arg:t) : t =
         )
       ()
   )
-
-let read_line ~buf self : string =
-  read_line_into self ~buf;
-  Buffer.contents buf
-
-let read_until ~buf ch self : string =
-  read_line_into ~stop:ch self ~buf;
-  Buffer.contents buf
 
 let read_chunked ~buf ~fail (bs:t) : t=
   let first = ref true in
