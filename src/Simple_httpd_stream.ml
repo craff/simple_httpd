@@ -370,7 +370,7 @@ module Out_buf = struct
     let w = Simple_httpd_domain.write oc.fd oc.b 0 oc.s in
     if w < oc.s then
       begin
-        Bytes.blit oc.b oc.o oc.b 0 (oc.s - w);
+        Bytes.blit oc.b w oc.b 0 (oc.s - w);
         oc.o <- oc.s - w
       end
     else
@@ -395,6 +395,7 @@ module Out_buf = struct
       end
     else
       begin
+        if oc.o >= oc.s then push oc;
         let start, remain =
           if oc.o > 0 then
             begin
@@ -409,7 +410,7 @@ module Out_buf = struct
         in
         let n = ref start in
         let r = ref remain in
-        while !r >= oc.s do
+        while !r > oc.s do
           let str = Bytes.unsafe_of_string str in
           let w = Simple_httpd_domain.write oc.fd str !n !r in
           n := !n + w;
@@ -420,10 +421,6 @@ module Out_buf = struct
       end
 
   let add_string oc str = add_substring oc str 0 (String.length str)
-
-  let printf oc format =
-    let cont s = add_string oc s in
-    Printf.ksprintf cont format
 
   let add_bytes oc str =
     add_string oc (Bytes.unsafe_to_string str)
@@ -436,13 +433,31 @@ module Out_buf = struct
     Bytes.set oc.b oc.o c;
     oc.o <- oc.o + 1
 
+  let add_hexa oc n =
+    let b = ref 0 in
+    while n lsr !b > 0xf do
+      b := !b + 4
+    done;
+    while !b >= 0 do
+      let d = (n lsr !b) land 0xf in
+      let c = if d < 10 then Char.chr (d + Char.code '0')
+              else Char.chr (d - 10 + Char.code 'a')
+      in
+      add_char oc c;
+      b := !b - 4
+    done
+
+  let printf oc format =
+    let cont s = add_string oc s in
+    Printf.ksprintf cont format
+
   let free_space oc =
     let r = oc.s - oc.o in
     if r = 0 then (flush oc; oc.s) else r
 
 end
 
-(* print a stream as a series of chunks *)
+(* print a stream as a series of chunks: no allocation! *)
 let output_chunked (oc:Out_buf.t) (self:t) : unit =
   let open Out_buf in
   let continue = ref true in
@@ -450,7 +465,8 @@ let output_chunked (oc:Out_buf.t) (self:t) : unit =
     (* next chunk *)
     self.fill_buf();
     let n = self.len in
-    printf oc "%x\r\n" n;
+    add_hexa oc n;
+    add_string oc "\r\n";
     add_subbytes oc self.bs self.off n;
     add_string oc "\r\n";
     self.consume n;
@@ -460,7 +476,7 @@ let output_chunked (oc:Out_buf.t) (self:t) : unit =
   done;
   ()
 
-(* print a stream as a string of chunks *)
+(* print a stream as a string of chunks: no allocation! *)
 let output_string_chunked (oc:Out_buf.t) (str:string) : unit =
   let open Out_buf in
   let offset = ref 0 in
@@ -469,7 +485,8 @@ let output_string_chunked (oc:Out_buf.t) (str:string) : unit =
     (* next chunk *)
     let max_chunk = Out_buf.free_space oc - 8 in
     let n = min max_chunk (len - !offset) in
-    printf oc "%x\r\n" n;
+    add_hexa oc n;
+    add_string oc "\r\n";
     add_substring oc str !offset n;
     add_string oc "\r\n";
     offset := !offset + n;

@@ -451,10 +451,13 @@ module Response = struct
     Out.printf oc "HTTP/1.1 %d %s\r\n" self.code
       (Response_code.descr self.code);
     let body = self.body in
-    let headers =
+    let headers, chunked =
       match body with
-      | `String "" | `Void -> self.headers
-      | _ -> Headers.set "Transfer-Encoding" "chunked" self.headers
+      | `String "" | `Void -> self.headers, false
+      | `String s when String.length s < 50_000 ->
+         Headers.set "Content-Length" (string_of_int (String.length s))
+           self.headers, false
+      | _ -> Headers.set "Transfer-Encoding" "chunked" self.headers, true
     in
 
     let self = {self with headers; body} in
@@ -470,7 +473,11 @@ module Response = struct
     Out.add_string oc "\r\n";
     begin match body with
     | `String "" | `Void -> ()
-    | `String s -> Byte_stream.output_string_chunked oc s;
+    | `String s ->
+       if chunked then
+         Byte_stream.output_string_chunked oc s
+       else
+         Byte_stream.output_str oc s;
     | `Stream str ->
        try
          Byte_stream.output_chunked oc str;
