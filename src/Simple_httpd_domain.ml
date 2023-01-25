@@ -677,6 +677,7 @@ let accept_loop status listens pipes maxc =
   while true do
     try ignore (Polly.wait poll_list nb_socks 60_000_000 treat)
     with
+    | Unix.Unix_error((EAGAIN|EWOULDBLOCK),_,_) -> ()
     | exn ->
        U.debug (fun k -> k "ERROR DURING EPOLL_WAIT: %s" (printexn exn))
   done
