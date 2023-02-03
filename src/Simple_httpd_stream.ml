@@ -433,6 +433,20 @@ module Out_buf = struct
     Bytes.set oc.b oc.o c;
     oc.o <- oc.o + 1
 
+  let add_hexa oc n =
+    let b = ref 0 in
+    while n lsr !b > 0xf do
+      b := !b + 4
+    done;
+    while !b >= 0 do
+      let d = (n lsr !b) land 0xf in
+      let c = if d < 10 then Char.chr (d + Char.code '0')
+              else Char.chr (d - 10 + Char.code 'a')
+      in
+      add_char oc c;
+      b := !b - 4
+    done
+
   let printf oc format =
     let cont s = add_string oc s in
     Printf.ksprintf cont format
@@ -451,7 +465,8 @@ let output_chunked (oc:Out_buf.t) (self:t) : unit =
     (* next chunk *)
     self.fill_buf();
     let n = self.len in
-    printf oc "%x\r\n" n;
+    add_hexa oc n;
+    add_string oc "\r\n";
     add_subbytes oc self.bs self.off n;
     add_string oc "\r\n";
     self.consume n;
@@ -470,7 +485,8 @@ let output_string_chunked (oc:Out_buf.t) (str:string) : unit =
     (* next chunk *)
     let max_chunk = Out_buf.free_space oc - 8 in
     let n = min max_chunk (len - !offset) in
-    printf oc "%x\r\n" n;
+    add_hexa oc n;
+    add_string oc "\r\n";
     add_substring oc str !offset n;
     add_string oc "\r\n";
     offset := !offset + n;
