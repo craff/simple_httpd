@@ -138,7 +138,6 @@ module Out_buf : sig
   val add_substring : t -> string -> int -> int -> unit
   val add_bytes : t -> bytes -> unit
   val add_subbytes : t -> bytes -> int -> int -> unit
-  val add_hexa : t -> int -> unit
   val printf : t -> ('a, unit, string, unit) format4 -> 'a
 end
 

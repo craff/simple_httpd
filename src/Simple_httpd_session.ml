@@ -101,7 +101,7 @@ let check ?init ?(remove=false) ?(error=(302,"index.html")) req =
         let cookies = S.Cookies.delete_all cookies in
         let gn = S.Response.update_headers
                    (fun h -> S.Headers.set_cookies cookies h) in
-        Ok gn
+        gn
       end
     else
       begin
@@ -125,8 +125,9 @@ let check ?init ?(remove=false) ?(error=(302,"index.html")) req =
         let cookies = mk_cookies session cookies in
         let gn = S.Response.update_headers
                      (fun h -> S.Headers.set_cookies cookies h) in
-        Ok gn
+        gn
         end
   with Exit ->
     delete_session session;
-    Error(error)
+    let (code, msg) = error in
+    S.Response.fail_raise ~code "session error: %S" msg

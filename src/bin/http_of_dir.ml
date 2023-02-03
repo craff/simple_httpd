@@ -3,6 +3,10 @@ module U = Simple_httpd_util
 module D = Simple_httpd_dir
 module Pf = Printf
 
+let send_status status _req =
+  let open Simple_httpd_domain in
+  S.Response.make_string (string_status status ^ "\n")
+
 let serve ~config ~delta ~timeout ~maxc (dir:string) listens t : _ result =
   let server = S.create ~delta ~timeout ~max_connections:maxc ~num_thread:t ~listens () in
   List.iter S.(fun l ->
@@ -10,6 +14,8 @@ let serve ~config ~delta ~timeout ~maxc (dir:string) listens t : _ result =
         dir l.addr l.port) (S.listens server);
 
   D.add_dir_path ~config ~dir ~prefix:"" server;
+  S.(add_route_handler server Route.(exact "status" @/ return)
+       (send_status (S.status server)));
   S.run server
 
 let parse_size s : int =

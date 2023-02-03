@@ -5,8 +5,7 @@ open Simple_httpd_domain
 val check : ?init:(unit -> session_data) ->
             ?remove:bool -> ?error:(int*string) ->
             'a Simple_httpd_server.Request.t ->
-            (Simple_httpd_server.finaliser,
-             int * string) result
+            Simple_httpd_server.finaliser
 
 val do_session_data : (session_data -> 'a) -> session -> 'a
 

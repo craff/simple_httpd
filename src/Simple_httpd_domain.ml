@@ -8,19 +8,7 @@ type status = {
     nb_connections : int Atomic.t array
   }
 
-let max_domain = 16384
-
-let string_status st =
-  let b = Buffer.create 128 in
-  Printf.bprintf b "[%t]"
-    (fun b ->
-      Array.iteri (fun i a -> Printf.bprintf b "%s%d"
-                                (if i = 0 then "" else ", ")
-                                (Atomic.get a)) st.nb_connections);
-  Buffer.contents b
-
-let print_status ch st =
-  output_string ch (string_status st)
+let max_domain = 16
 
 type session_data = ..
 type session_data += NoData
@@ -155,6 +143,22 @@ let fake_domain_info =
   }
 
 let all_domain_info = Array.make max_domain fake_domain_info
+
+let string_status st =
+  let b = Buffer.create 128 in
+  Printf.bprintf b "[%t] [%t]"
+    (fun b ->
+      Array.iteri (fun i a -> Printf.bprintf b "%s%d"
+                                (if i = 0 then "" else ", ")
+                                (Atomic.get a)) st.nb_connections)
+    (fun b ->
+      Array.iteri (fun i a -> Printf.bprintf b "%s%d"
+                                (if i = 0 then "" else ", ")
+                                (Hashtbl.length a.pendings)) all_domain_info);
+  Buffer.contents b
+
+let print_status ch st =
+  output_string ch (string_status st)
 
 let schedule () =
   let id = Domain.self () in
@@ -403,8 +407,8 @@ let loop id st listens pipe delta timeout handler () =
     try Hashtbl.find pendings s with _ -> assert false
   in
 
-  let close exn =
-    let c = get_client () in
+  let close ?client exn =
+    let c = match client with None -> get_client () | Some c -> c in
     U.debug ~lvl:1 (fun k -> k "closing because exception: %s. connected: %b (%d)"
                                (printexn exn) c.connected
                                (Atomic.get st.nb_connections.(id)));
@@ -472,8 +476,11 @@ let loop id st listens pipe delta timeout handler () =
         | _ -> delta
       in
       let select_timeout = int_of_float (1e3 *. select_timeout +. 1.0) in
-      let fn _ sock _ =
-        match find sock with
+      let fn _ sock evt =
+        let info = find sock in
+        if (Polly.Events.((err lor hup) land evt <> empty)) then
+          close ~client:(socket_client info) Exit
+        else match info with
         | { ty = Pipe; _ } ->
            begin
              try
@@ -539,7 +546,8 @@ let loop id st listens pipe delta timeout handler () =
          end;
          add_ready (Job client)
       | Job client ->
-         if client.connected then begin
+         if client.connected then
+           begin
              U.debug ~lvl:3 (fun k -> k "[%d] start job" client.id);
              cur_client := Some client;
              client.acont <- N;
@@ -548,18 +556,20 @@ let loop id st listens pipe delta timeout handler () =
       | Action ({ fn; cont; _ }, p) ->
          p.pd <- NoEvent;
          let cl = socket_client p in
-         cur_client := Some cl;
-         cl.acont <- N;
-         assert cl.connected;
-         U.debug ~lvl:3 (fun k -> k "[%d] continue io" cl.id);
-         set_schedule delta;
-         let n = fn () in
-         continue cont n;
-      | Yield(cont,cl,_) ->
-         cur_client := Some cl;
-         cl.acont <- N;
          if cl.connected then
            begin
+             cur_client := Some cl;
+             cl.acont <- N;
+             U.debug ~lvl:3 (fun k -> k "[%d] continue io" cl.id);
+             set_schedule delta;
+             let n = fn () in
+             continue cont n;
+           end
+      | Yield(cont,cl,_) ->
+         if cl.connected then
+           begin
+             cur_client := Some cl;
+             cl.acont <- N;
              U.debug ~lvl:3 (fun k -> k "[%d] continue yield" cl.id);
              set_schedule delta;
              continue cont ();

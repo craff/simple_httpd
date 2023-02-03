@@ -878,7 +878,7 @@ let handle_client_ (self:t) (client:D.client) : unit =
          try Response.output_ oc res
          with Sys_error _ | Unix.Unix_error _ -> ()
        end;
-       continue := false
+       if not (c < 500) then continue := false
 
     | e ->
        U.debug ~lvl:1 (fun k -> k "server error (%s)"
