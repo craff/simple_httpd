@@ -18,10 +18,6 @@ type status = {
 
 val string_status : status -> string
 
-(** Type associated to session, user extensible *)
-type session_data = ..
-type session_data += NoData
-
 (** Simple_httpd notion of mutex. It is a bad idea to have server wide mutex:
     a DoS attack could try to hold such a mutex. A mutex per session may be a good
     idea. A mutex per client is useless (client are treated sequentially.
@@ -44,6 +40,10 @@ end
 
 type any_continuation (** internal use only *)
 
+(** Type associated to session, user extensible *)
+type session_data = ..
+type session_data += NoData
+
 (** Record describing clients *)
 type client = {
     id : int;                         (** Unique identifier *)
@@ -57,13 +57,14 @@ type client = {
     buf : Buffer.t                    (** used to parse headers *)
   }
 
-(** Record describing sessions *)
-and session =
+and session = (* FIXME: force protection by mutex making the type private *)
   { addr : string
   ; key : string
   ; mutex : Mutex.t
   ; mutable clients : client list
   ; mutable data : session_data
+  ; mutable cleanup : session_data -> unit
+  ; mutable cookies : (string * string) list
   }
 
 (** only to please qtest *)

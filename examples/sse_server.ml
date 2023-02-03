@@ -65,7 +65,7 @@ Arg.parse (Arg.align [
             fib (n-1) + fib (n-2)
           end
       in
-      S.Response.make_string (Ok ("fib: " ^ string_of_int (fib n)^"\n"))
+      S.Response.make_string ("fib: " ^ string_of_int (fib n)^"\n")
     );
 
   List.iter S.(fun l ->

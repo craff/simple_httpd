@@ -190,7 +190,7 @@ let html_list_dir (module VFS:VFS) ~prefix ~parent d : Html.elt =
   html [][head; body]
 
 (* @param on_fs: if true, we assume the file exists on the FS *)
-let add_vfs_ ?(accept=(fun _req -> Ok (fun x -> x))) ~config
+let add_vfs_ ?(accept=(fun _req x -> x)) ~config
                ~vfs:((module VFS:VFS) as vfs) ~prefix server : unit=
   let search_cache : (bool * string -> S.Response.t)
                      -> bool * string -> S.Response.t =
@@ -236,27 +236,28 @@ let add_vfs_ ?(accept=(fun _req -> Ok (fun x -> x))) ~config
            S.Response.make_string
              (try
                 U.debug ~lvl:2 (fun k->k "done delete %s" path);
-                VFS.delete path; Ok "file deleted successfully"
+                VFS.delete path; "file deleted successfully"
               with e ->
                 U.debug ~lvl:2 (fun k->k "delete fails %s (%s)" path
                                          (D.printexn e));
-                Error (500, D.printexn e))
-         )
-      );
-  ) else (
-    S.add_route_handler ~accept server ~meth:`DELETE (route())
-      (fun _ _  ->
-        S.Response.make_raw ~code:405 "delete not allowed");
-  );
+                S.Response.fail_raise ~code:500
+                  "delete fails: %s (%s)" path (D.printexn e))
+      )))
+    else (
+      S.add_route_handler ~accept server ~meth:`DELETE (route())
+        (fun _ _  ->
+          S.Response.fail_raise ~code:405 "delete not allowed");
+    );
 
   if config.upload then (
     S.add_route_handler_stream server ~meth:`PUT (route())
       ~accept:(fun req ->
           match S.Request.get_header_int req "Content-Length" with
           | Some n when n > config.max_upload_size ->
-            Error (403, "max upload size is " ^ string_of_int config.max_upload_size)
+             S.Response.fail_raise ~code:403
+               "max upload size is %d" config.max_upload_size
           | Some _ when contains_dot_dot req.S.Request.path ->
-            Error (403, "invalid path (contains '..')")
+             S.Response.fail_raise ~code:403 "invalid path (contains '..')"
           | _ -> accept req
         )
       (fun path req ->
@@ -306,11 +307,12 @@ let add_vfs_ ?(accept=(fun _req -> Ok (fun x -> x))) ~config
                S.Response.make_raw ~code:301 ""
                  ~headers:S.Headers.(empty |> set "location" new_path)
             | Lists | Index_or_lists ->
-               let body = html_list_dir ~prefix vfs path ~parent |> Html.to_string_top in
+               let body = html_list_dir ~prefix vfs path ~parent
+                          |> Html.to_string_top in
                U.debug ~lvl:2 (fun k->k "download index %s" path);
                S.Response.make_string
                  ~headers:[header_html; "ETag", Lazy.force mtime]
-                 (Ok body)
+                 body
             | Forbidden | Index ->
                U.debug ~lvl:2 (fun k->k "download index fails %s (forbidden)" path);
                S.Response.make_raw ~code:405 "listing dir not allowed"

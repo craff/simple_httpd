@@ -58,7 +58,7 @@ let () =
   (* say hello *)
   S.add_route_handler ~meth:`GET server
     S.Route.(exact "hello" @/ string @/ return)
-    (fun name _req -> S.Response.make_string (Ok ("hello " ^name ^"!\n")));
+    (fun name _req -> S.Response.make_string ("hello " ^name ^"!\n"));
 
   (* compressed file access *)
   S.add_route_handler ~meth:`GET server
@@ -76,7 +76,7 @@ let () =
             with _ -> ignore @@ Unix.close_process_in p; []
           with _ -> []
         in
-        S.Response.make_stream ~headers:mime_type (Ok str)
+        S.Response.make_stream ~headers:mime_type str
       );
 
   (* echo request *)
@@ -88,7 +88,7 @@ let () =
           |> String.concat ";"
         in
         S.Response.make_string
-          (Ok (Format.asprintf "echo:@ %a@ (query: %s)@." S.Request.pp req q)));
+          (Format.asprintf "echo:@ %a@ (query: %s)@." S.Request.pp req q));
 
   (* file upload *)
   S.add_route_handler_stream ~meth:`PUT server
@@ -100,7 +100,7 @@ let () =
           let oc = open_out @@ "/tmp/" ^ path in
           S.Byte_stream.to_chan oc req.S.Request.body;
           flush oc;
-          S.Response.make_string (Ok "uploaded file")
+          S.Response.make_string "uploaded file"
         with e ->
           S.Response.fail ~code:500 "couldn't upload file: %s" (Printexc.to_string e)
       );
@@ -109,7 +109,7 @@ let () =
   S.add_route_handler server S.Route.(exact "stats" @/ return)
     (fun _req ->
        let stats = get_stats() in
-       S.Response.make_string @@ Ok stats
+       S.Response.make_string stats
     );
 
   (* VFS *)
@@ -138,7 +138,7 @@ let () =
            ]
          ] in
        let s = to_string_top h in
-       S.Response.make_string ~headers:["content-type", "text/html"] @@ Ok s);
+       S.Response.make_string ~headers:["content-type", "text/html"] s);
 
   List.iter S.(fun l ->
       Printf.printf "listening on http://%s:%d\n%!" l.addr l.port) (S.listens server);

@@ -46,11 +46,6 @@ module Response_code = struct
     | n -> "Unknown response code " ^ string_of_int n (* TODO *)
 end
 
-type 'a resp_result = ('a, Response_code.t * string) result
-let unwrap_resp_result = function
-  | Ok x -> x
-  | Error (c,s) -> raise (Bad_req (c,s))
-
 module Meth = struct
   type t = [
     | `GET
@@ -106,7 +101,6 @@ module Cookies = struct
       string -> t -> t =
     fun ?path ?domain ?expires ?max_age ?secure ?http_only
         ?same_site ?extension ~name value cookies ->
-      let cookies = List.filter (fun (n, _) -> n <> name) cookies in
       match create ?path ?domain ?expires ?max_age ?secure ?http_only
               ?same_site ?extension ~name value
       with Ok c -> add name c cookies
@@ -262,7 +256,7 @@ module Request = struct
   (* decode a "chunked" stream into a normal stream *)
   let read_stream_chunked_ ~buf (bs:byte_stream) : byte_stream =
     Byte_stream.read_chunked ~buf
-      ~fail:(fun s -> Bad_req (400, s))
+      ~fail:(fun s -> bad_reqf 400 "%s" s)
       bs
 
   let limit_body_size_ ~max_size (bs:byte_stream) : byte_stream =
@@ -285,7 +279,7 @@ module Request = struct
 
   (* parse request, but not body (yet) *)
   let parse_req_start ~client ~get_time_s ~buf (bs:byte_stream)
-      : unit t option resp_result =
+      : unit t option =
     try
       debug ~lvl:2 (fun k -> k "start reading request");
       D.register_starttime client;
@@ -298,7 +292,7 @@ module Request = struct
           meth, path, version
         with _ ->
           debug ~lvl:1 (fun k->k "INVALID REQUEST LINE: `%s`" line);
-          raise (Bad_req (400, "Invalid request line"))
+          raise (bad_reqf 400 "Invalid request line")
       in
       let meth = Meth.of_string meth in
       debug ~lvl:2 (fun k->k "got meth: %s, path %S" (Meth.to_string meth) path);
@@ -319,15 +313,15 @@ module Request = struct
         meth; query; host; client; path; path_components;
         headers; cookies; http_version=(1, version); body=(); start_time;
       } in
-      Ok (Some req)
+      Some req
     with
-    | End_of_file -> Ok None
-    | Bad_req (c,s) -> Error (c,s)
-    | e -> Error (400, D.printexn e)
+    | End_of_file -> None
+    | Bad_req _ as e -> raise e
+    | e -> bad_reqf 400 "exception: %s" (D.printexn e)
 
   (* parse body, given the headers.
      @param tr_stream a transformation of the input stream. *)
-  let parse_body_ ~tr_stream ~buf (req:byte_stream t) : byte_stream t resp_result =
+  let parse_body_ ~tr_stream ~buf (req:byte_stream t) : byte_stream t =
     try
       Buffer.clear buf;
       let size =
@@ -346,27 +340,25 @@ module Request = struct
           if size>0 then limit_body_size_ ~max_size:size bs else bs
         | Some s -> bad_reqf 500 "cannot handle transfer encoding: %s" s
       in
-      Ok {req with body}
+      {req with body}
     with
-    | End_of_file -> Error (400, "unexpected end of file")
-    | Bad_req (c,s) -> Error (c,s)
-    | e ->
-      Error (400, D.printexn e)
+    | End_of_file -> bad_reqf 400 "unexpected end of file"
+    | Bad_req _ as e -> raise e
+    | e -> bad_reqf 400 "exception: %s" (D.printexn e)
 
   let read_body_full ~buf (self:byte_stream t) : string t =
     try
       let body = Byte_stream.read_all ~buf self.body in
       { self with body }
     with
-    | Bad_req _ as e -> raise e
     | e -> bad_reqf 500 "failed to read body: %s" (D.printexn e)
 
   module Internal_ = struct
     let parse_req_start ~buf ~client ~get_time_s bs =
-      parse_req_start ~client ~get_time_s ~buf bs |> unwrap_resp_result
+      parse_req_start ~client ~get_time_s ~buf bs
 
     let parse_body ~buf req bs : _ t =
-      parse_body_ ~tr_stream:(fun s->s) ~buf {req with body=bs} |> unwrap_resp_result
+      parse_body_ ~tr_stream:(fun s->s) ~buf {req with body=bs}
   end
 end
 
@@ -419,24 +411,21 @@ module Response = struct
     let headers = Headers.set_cookies cookies headers in
     { code; headers; body=`Void; }
 
-  let make_string ?cookies ?headers r = match r with
-    | Ok body -> make_raw ?cookies ?headers ~code:200 body
-    | Error (code,msg) -> make_raw ?cookies ?headers ~code msg
+  let make_string ?cookies ?headers body =
+    make_raw ?cookies ?headers ~code:200 body
 
-  let make_stream ?cookies ?headers r = match r with
-    | Ok body -> make_raw_stream ?cookies ?headers ~code:200 body
-    | Error (code,msg) -> make_raw ?cookies ?headers ~code msg
+  let make_stream ?cookies ?headers body =
+    make_raw_stream ?cookies ?headers ~code:200 body
 
   let make ?cookies ?headers r : t = match r with
-    | Ok (`String body) -> make_raw ?cookies ?headers ~code:200 body
-    | Ok (`Stream body) -> make_raw_stream ?cookies ?headers ~code:200 body
-    | Ok `Void -> make_void ?cookies ?headers ~code:200 ()
-    | Error (code,msg) -> make_raw ?cookies ?headers ~code msg
+    | `String body -> make_raw ?cookies ?headers ~code:200 body
+    | `Stream body -> make_raw_stream ?cookies ?headers ~code:200 body
+    | `Void -> make_void ?cookies ?headers ~code:200 ()
 
   let fail ?cookies ?headers ~code fmt =
     Printf.ksprintf (fun msg -> make_raw ?cookies ?headers ~code msg) fmt
   let fail_raise ~code fmt =
-    Printf.ksprintf (fun msg -> raise (Bad_req (code,msg))) fmt
+    Printf.ksprintf (fun msg -> bad_reqf code "%s" msg) fmt
 
   let pp out self : unit =
     let pp_body out = function
@@ -633,7 +622,7 @@ type t = {
   mutable middlewares_sorted : (int * Middleware.t) list lazy_t;
   (* sorted version of {!middlewares} *)
 
-  mutable path_handlers : (unit Request.t -> cb_path_handler resp_result option) list;
+  mutable path_handlers : (unit Request.t -> cb_path_handler option) list;
   (* path handlers *)
 
 }
@@ -682,29 +671,26 @@ let add_encode_response_cb self f =
 let set_top_handler self f = self.handler <- f
 
 type finaliser = Response.t -> Response.t
-type 'a accept = 'a Request.t -> (finaliser, Response_code.t * string) result
+type 'a accept = 'a Request.t -> finaliser
 
 (* route the given handler.
    @param tr_req wraps the actual concrete function returned by the route
    and makes it into a handler. *)
 let add_route_handler_
-    ?(accept=fun _req -> Ok (fun x -> x)) ?(middlewares=[])
+    ?(accept=fun _req x -> x) ?(middlewares=[])
     ?meth ~tr_req self (route:_ Route.t) f =
-  let ph req : cb_path_handler resp_result option =
+  let ph req : cb_path_handler option =
     match meth with
     | Some m when m <> req.Request.meth -> None (* ignore *)
     | _ ->
       begin match Route.eval req.Request.path_components route f with
         | Some handler ->
           (* we have a handler, do we accept the request based on its headers? *)
-          begin match accept req with
-            | Ok fn ->
-              Some (Ok (fun oc ->
-                  Middleware.apply_l middlewares @@
-                    fun req ~resp -> let resp r = resp (fn r) in
-                                     tr_req oc req ~resp handler))
-            | Error _ as e -> Some e
-          end
+           let fn = accept req in
+           Some (fun oc ->
+               Middleware.apply_l middlewares @@
+                 fun req ~resp -> let resp r = resp (fn r) in
+                                  tr_req oc req ~resp handler)
         | None ->
           None (* path didn't match *)
       end
@@ -813,20 +799,10 @@ let handle_client_ (self:t) (client:D.client) : unit =
   let continue = ref true in
   while !continue do
     match Request.parse_req_start ~client ~get_time_s:self.get_time_s ~buf is with
-    | Ok None ->
+    | None ->
       continue := false (* client is done *)
 
-    | Error (c,s) ->
-      (* connection error, close *)
-       U.debug ~lvl:1 (fun k -> k "error handling request (%s)" s);
-       let res = Response.make_raw ~code:c s in
-       begin
-         try Response.output_ oc res
-         with Sys_error _ | Unix.Unix_error _ -> ()
-       end;
-       continue := false
-
-    | Ok (Some req) ->
+    | Some req ->
       debug ~lvl:2 (fun k->k "req: %s" (Format.asprintf "@[%a@]" Request.pp_ req));
 
       if Request.close_after_req req then continue := false;
@@ -835,7 +811,7 @@ let handle_client_ (self:t) (client:D.client) : unit =
         (* is there a handler for this path? *)
         let handler =
           match find_map (fun ph -> ph req) self.path_handlers with
-          | Some f -> unwrap_resp_result f
+          | Some f -> f
           | None ->
             (fun _oc req ~resp ->
                let body_str = Request.read_body_full ~buf req in
@@ -861,7 +837,6 @@ let handle_client_ (self:t) (client:D.client) : unit =
         (* now actually read request's body into a stream *)
         let req =
           Request.parse_body_ ~tr_stream:(fun s->s) ~buf {req with body=is}
-          |> unwrap_resp_result
         in
 
         (* how to reply *)
@@ -884,16 +859,33 @@ let handle_client_ (self:t) (client:D.client) : unit =
          U.debug ~lvl:1 (fun k -> k "broken connection (%s)"
                                     (D.printexn e));
          continue := false; (* connection broken somehow *)
-      | Bad_req (code,s) ->
-         U.debug ~lvl:1 (fun k -> k "bad request (%s)" s);
-         continue := false;
-         Response.output_ oc @@ Response.make_raw ~code s
-      | e ->
-         U.debug ~lvl:1 (fun k -> k "server error (%s)"
-                                    (D.printexn e));
-         continue := false;
-         Response.output_ oc @@
-           Response.fail ~code:500 "server error: %s" (D.printexn e)
+
+    | Bad_req (c,s) when (300 <= c && c <= 303) || (307 <= c && c <= 308) ->
+       U.debug ~lvl:1 (fun k -> k "redirect request (%s)" s);
+       let res = Response.make_raw ~code:c "" in
+       let res = Response.set_header "Location" s res in
+       begin
+         try Response.output_ oc res
+         with Sys_error _ | Unix.Unix_error _ -> ()
+       end;
+
+
+    | Bad_req (c,s) ->
+      (* connection error, close *)
+       U.debug ~lvl:1 (fun k -> k "error handling request (%s)" s);
+       let res = Response.make_raw ~code:c s in
+       begin
+         try Response.output_ oc res
+         with Sys_error _ | Unix.Unix_error _ -> ()
+       end;
+       continue := false
+
+    | e ->
+       U.debug ~lvl:1 (fun k -> k "server error (%s)"
+                                  (D.printexn e));
+       continue := false;
+       Response.output_ oc @@
+         Response.fail ~code:500 "server error: %s" (D.printexn e)
   done;
   debug ~lvl:2 (fun k->k "done with client, exiting");
   ()

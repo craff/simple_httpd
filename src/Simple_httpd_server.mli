@@ -287,8 +287,8 @@ module Response : sig
   val make :
     ?cookies:Cookies.t ->
     ?headers:Headers.t ->
-    (body, Response_code.t * string) result -> t
-  (** [make r] turns a result into a response.
+    body -> t
+  (** [make r] turns a body into a response.
 
       - [make (Ok body)] replies with [200] and the body.
       - [make (Error (code,msg))] replies with the given error code
@@ -298,13 +298,13 @@ module Response : sig
   val make_string :
     ?cookies:Cookies.t ->
     ?headers:Headers.t ->
-    (string, Response_code.t * string) result -> t
+    string -> t
   (** Same as {!make} but with a string body. *)
 
   val make_stream :
     ?cookies:Cookies.t ->
     ?headers:Headers.t ->
-    (byte_stream, Response_code.t * string) result -> t
+    byte_stream -> t
   (** Same as {!make} but with a stream body. *)
 
   val fail :
@@ -506,7 +506,7 @@ val set_top_handler : t -> (string Request.t -> Response.t) -> unit
     If no top handler is installed, unhandled paths will return a [404] not found. *)
 
 type finaliser = Response.t -> Response.t
-type 'a accept = 'a Request.t -> (finaliser, Response_code.t * string) result
+type 'a accept = 'a Request.t -> finaliser
 
 val add_route_handler :
   ?accept:(unit accept) ->

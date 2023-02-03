@@ -22,7 +22,7 @@ let () =
     S.Route.(exact "echo" @/ return)
     (fun req ->
         S.Response.make_string
-          (Ok (Format.asprintf "echo:@ %a@\n@." S.Request.pp req)));
+          (Format.asprintf "echo:@ %a@\n@." S.Request.pp req));
 
   List.iter S.(fun l ->
       Printf.printf "listening on http://%s:%d\n%!" l.addr l.port) (S.listens server);

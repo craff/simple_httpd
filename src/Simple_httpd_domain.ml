@@ -70,6 +70,8 @@ and session =
   ; mutex : MutexTmp.t
   ; mutable clients : client list
   ; mutable data : session_data
+  ; mutable cleanup : session_data -> unit
+  ; mutable cookies : (string * string) list
   }
 
 let fake_client =
@@ -422,7 +424,7 @@ let loop id st listens pipe delta timeout handler () =
       | Some sess ->
          Mutex.lock sess.mutex;
          sess.clients <- List.filter (fun c' -> c != c') sess.clients;
-         Mutex.unlock sess.mutex
+         Mutex.unlock sess.mutex;
     end;
     c.connected <- false
   in
@@ -615,7 +617,7 @@ let add_close, close_all =
   in
   (add_close, close_all)
 
-let _ = Sys.(set_signal sigint (Signal_handle close_all))
+let _ = Sys.(set_signal sigint  (Signal_handle close_all))
 let _ = Sys.(set_signal sigterm (Signal_handle close_all))
 let _ = Sys.(set_signal sigquit (Signal_handle close_all))
 let _ = Sys.(set_signal sigabrt (Signal_handle close_all))
