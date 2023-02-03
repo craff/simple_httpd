@@ -395,7 +395,7 @@ module Out_buf = struct
       end
     else
       begin
-        if oc.o >= oc.s then push oc;
+        if oc.s <= 0 then push oc;
         let start, remain =
           if oc.o > 0 then
             begin
