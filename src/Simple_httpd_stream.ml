@@ -475,6 +475,7 @@ let output_chunked (oc:Out_buf.t) (self:t) : unit =
       continue := false;
     );
   done;
+  add_string oc "\r\n"; (* empty trailer required by RFC *)
   ()
 
 (* print a stream as a string of chunks: no allocation! *)

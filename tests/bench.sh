@@ -1,5 +1,8 @@
 #!/bin/bash
 
+dune exec -- ../src/bin/http_of_dir.exe --cache --maxc=800 --port=8080 /var/www/nginx &
+PID=$!
+
 if [ -f small.csv ]; then rm small.csv; fi
 
 echo nbc, apache, nginx, simple | tee -a small.csv
@@ -25,3 +28,5 @@ for c in $(seq 5 5 20; seq 30 10 50; seq 100 50 500); do
     echo | tee -a big.csv
     # curl http://localhost:8080/status
 done
+
+kill $PID
