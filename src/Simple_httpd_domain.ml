@@ -315,6 +315,7 @@ type pollResult =
   | Action of pending * socket_info
   | Yield of ((unit,unit) continuation * client * float)
   | Job of client
+  | Wait
 
 let loop id st listens pipe delta timeout handler () =
   let did = Domain.self () in
@@ -352,8 +353,10 @@ let loop id st listens pipe delta timeout handler () =
   in
 
   (* Queue for ready sockets *)
-  let ready = ref [] in
-  let add_ready e = ready := e :: !ready in
+  let ready = Queue.create () in
+  let add_ready e = Queue.add e ready in
+  add_ready Wait; (* Invariant: queue as always exactly one Wait
+                     and is never empty, except during poll. *)
 
   (* Managment of sleep *)
   let sleeps = ref [] in
@@ -470,12 +473,12 @@ let loop id st listens pipe delta timeout handler () =
       if now >= !next_timeout_check then check now;
       get_sleep now;
       let select_timeout =
-        match !ready = [], !sleeps with
+        match Queue.is_empty ready, !sleeps with
         | false, _ -> 0.0
         | _, (t,_,_)::_ -> min delta (t -. now)
         | _ -> delta
       in
-      let select_timeout = int_of_float (1e3 *. select_timeout +. 1.0) in
+      let select_timeout = int_of_float (1e3 *. select_timeout) in
       let fn _ sock evt =
         let info = find sock in
         if (Polly.Events.((err lor hup) land evt <> empty)) then
@@ -502,7 +505,8 @@ let loop id st listens pipe delta timeout handler () =
            p.pd <- NoEvent;
         | { pd = TooSoon; _ } -> ()
       in
-      ignore (Polly.wait poll_list 1000 select_timeout fn)
+      ignore (Polly.wait poll_list 1000 select_timeout fn);
+      add_ready Wait
     with
     | exn -> U.debug ~lvl:1 (fun k -> k "UNEXPECTED EXCEPTION IN POLL: %s\n%!"
                                         (printexn exn));
@@ -511,6 +515,8 @@ let loop id st listens pipe delta timeout handler () =
   let step v =
     try
       match v with
+      | Wait ->
+         poll ()
       | Accept (sock, linfo) ->
          cur_client := None;
          set_schedule delta;
@@ -611,10 +617,7 @@ let loop id st listens pipe delta timeout handler () =
     )}
   in
   while true do
-    poll ();
-    let l = List.rev !ready in
-    ready := [];
-    List.iter step_handler l
+    step_handler (Queue.take ready)
   done
 
 let add_close, close_all =
