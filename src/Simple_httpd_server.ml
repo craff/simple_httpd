@@ -204,6 +204,8 @@ module Request = struct
     query: (string*string) list;
     body: 'body;
     start_time: float;
+    trailer : (Headers.t * Cookies.t) option ref;
+    (* updated after ready chunked body *)
   }
 
   let headers self = self.headers
@@ -214,6 +216,7 @@ module Request = struct
   let body self = self.body
   let client self = self.client
   let start_time self = self.start_time
+  let trailer self = !(self.trailer)
 
   let query self = self.query
   let get_header ?f self h = Headers.get ?f h self.headers
@@ -254,8 +257,8 @@ module Request = struct
       self.path self.body pp_comp_ self.path_components pp_query self.query
 
   (* decode a "chunked" stream into a normal stream *)
-  let read_stream_chunked_ ~buf (bs:byte_stream) : byte_stream =
-    Byte_stream.read_chunked ~buf
+  let read_stream_chunked_ ~buf ~trailer (bs:byte_stream) : byte_stream =
+    Byte_stream.read_chunked ~buf ~trailer
       ~fail:(fun s -> bad_reqf 400 "%s" s)
       bs
 
@@ -312,6 +315,7 @@ module Request = struct
       let req = {
         meth; query; host; client; path; path_components;
         headers; cookies; http_version=(1, version); body=(); start_time;
+        trailer = ref None;
       } in
       Some req
     with
@@ -330,14 +334,21 @@ module Request = struct
         | exception Not_found -> 0
         | exception _ -> bad_reqf 400 "invalid Content-Length"
       in
+      let trailer bs =
+        req.trailer := Some (Headers.parse_ ~buf bs)
+      in
       let body =
         match get_header ~f:String.trim req "Transfer-Encoding" with
-        | None -> read_exactly ~size @@ tr_stream req.body
+        | None ->
+           let body = read_exactly ~size @@ tr_stream req.body in
+           body
         | Some "chunked" ->
           let bs =
-            read_stream_chunked_ ~buf @@ tr_stream req.body (* body sent by chunks *)
+            read_stream_chunked_ ~buf ~trailer @@ tr_stream req.body
+             (* body sent by chunks, with a trailer *)
           in
-          if size>0 then limit_body_size_ ~max_size:size bs else bs
+          let body = if size>0 then limit_body_size_ ~max_size:size bs else bs in
+          body
         | Some s -> bad_reqf 500 "cannot handle transfer encoding: %s" s
       in
       {req with body}

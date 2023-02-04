@@ -114,8 +114,7 @@ module Request : sig
     query: (string*string) list;
     body: 'body;
     start_time: float;
-    (** Obtained via [get_time_s] in {!create}
-        @since 0.11 *)
+    trailer: (Headers.t * Cookies.t) option ref;
   }
   (** A request with method, path, host, headers, and a body, sent by a client.
 
@@ -128,6 +127,8 @@ module Request : sig
       @since 0.6 The field [path_components] is the part of the path that precedes [query] and is split on ["/"].
       @since 0.11 the type is a private alias
       @since 0.11 the field [start_time] was added
+      @since simple_httpd: [trailer] are automatically updated when finishing
+             to read a chunker body
   *)
 
   val pp : Format.formatter -> string t -> unit
@@ -184,6 +185,10 @@ module Request : sig
   val start_time : _ t -> float
   (** time stamp (from {!Unix.gettimeofday}) after parsing the first line of the request
       @since 0.11 *)
+
+  val trailer : _ t -> (Headers.t * Cookies.t) option
+  (** trailer, read after a chunked body. Only maeningfull after the body stream
+      we fully read and closed *)
 
   val limit_body_size : max_size:int -> byte_stream t -> byte_stream t
   (** Limit the body size to [max_size] bytes, or return

@@ -303,7 +303,7 @@ let read_exactly ~close_rec ~size ~too_short (arg:t) : t =
       ()
   )
 
-let read_chunked ~buf ~fail (bs:t) : t=
+let read_chunked ~buf ~fail ~trailer (bs:t) : t=
   let first = ref true in
   let read_next_chunk_len () : int =
     if !first then (
@@ -344,6 +344,7 @@ let read_chunked ~buf ~fail (bs:t) : t=
             chunk_size := !chunk_size - to_read;
           ) else (
             refill := false; (* stream is finished *)
+            ignore (trailer bs) (* read trailer *)
           )
         );
       )
@@ -353,7 +354,7 @@ let read_chunked ~buf ~fail (bs:t) : t=
     ~close:(fun self ->
         (* close this overlay, do not close underlying stream *)
         self.len <- 0;
-        refill:= false
+        refill:= false;
       )
     ()
 

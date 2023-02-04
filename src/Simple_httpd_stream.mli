@@ -111,6 +111,7 @@ val limit_size_to :
 val read_chunked :
   buf:Buffer.t ->
   fail:(string -> exn) ->
+  trailer:(t -> unit) ->
   t -> t
 (** Convert a stream into a stream of byte chunks using
     the chunked encoding. The size of chunks is not specified.
