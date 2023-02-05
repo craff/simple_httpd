@@ -314,7 +314,6 @@ type pollResult =
   | Accept of (Unix.file_descr * listenning)
   | Action of pending * socket_info
   | Yield of ((unit,unit) continuation * client * float)
-  | Job of client
   | Wait
 
 let loop id st listens pipe delta timeout handler () =
@@ -550,15 +549,7 @@ let loop id st listens pipe delta timeout handler () =
               U.debug ~lvl:2 (fun k -> k "[%d] ssl connection established" client.id);
            | None -> ()
          end;
-         add_ready (Job client)
-      | Job client ->
-         if client.connected then
-           begin
-             U.debug ~lvl:3 (fun k -> k "[%d] start job" client.id);
-             cur_client := Some client;
-             client.acont <- N;
-             handler client; close EndHandling
-           end
+         handler client; close EndHandling
       | Action ({ fn; cont; _ }, p) ->
          p.pd <- NoEvent;
          let cl = socket_client p in
