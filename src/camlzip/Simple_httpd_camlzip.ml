@@ -204,7 +204,7 @@ let compress_resp_stream_
 
   if accept_deflate req && not_deflated resp then (
     match resp.body with
-    | `String s when String.length s > compress_above ->
+    | String s when String.length s > compress_above ->
       (* big string, we compress *)
       U.debug ~lvl:4
         (fun k->k "encode str response with deflate (size %d, threshold %d)"
@@ -214,15 +214,17 @@ let compress_resp_stream_
       in
       resp
       |> S.Response.update_headers update_headers
-      |> S.Response.set_body (`Stream body)
+      |> S.Response.set_body (Stream body)
 
-    | `Stream str ->
+    | Chunked _ -> assert false (* only used by cache, not possible to zip *)
+
+    | Stream str ->
       U.debug ~lvl:4 (fun k->k "encode stream response with deflate");
       resp
       |> S.Response.update_headers update_headers
-      |> S.Response.set_body (`Stream (encode_deflate_stream_ ~buf_size str))
+      |> S.Response.set_body (Stream (encode_deflate_stream_ ~buf_size str))
 
-    | `String _ | `Void -> resp
+    | String _ | Void -> resp
   ) else resp
 
 let middleware

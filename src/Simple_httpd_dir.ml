@@ -330,16 +330,22 @@ let add_vfs_ ?(accept=(fun _req x -> x)) ~config
               | ZlibCache {cmp; _} when deflate ->
                  let string = cmp (VFS.read_file_content path) in
                  U.debug ~lvl:2 (fun k->k "download ok %s" path);
-                 S.Response.make_raw
+                 S.Response.make_raw_chunked
                    ~headers:(mime_type@[("Etag", Lazy.force mtime)
-                                       ;("content-encoding", "deflate")])
-                   ~code:200 string
+                                       ;("content-encoding", "chunked, deflate")])
+                   ~code:200 (Simple_httpd_stream.string_to_chunk string)
               | SimpleCache | ZlibCache _ ->
                  let string = VFS.read_file_content path in
                  U.debug ~lvl:2 (fun k->k "download ok %s" path);
-                 S.Response.make_raw
-                   ~headers:(mime_type@[("Etag", Lazy.force mtime)])
-                   ~code:200 string
+                 if String.length string <= 50_000 then
+                   S.Response.make_raw
+                     ~headers:(mime_type@[("Etag", Lazy.force mtime)])
+                     ~code:200 string
+                 else
+                   S.Response.make_raw_chunked
+                     ~headers:(mime_type@[("Etag", Lazy.force mtime)
+                                         ;("content-encoding", "chunked")])
+                     ~code:200 (Simple_httpd_stream.string_to_chunk string)
               | NoCache ->
                  let stream = VFS.read_file_stream path in
                  U.debug ~lvl:2 (fun k->k "download ok %s" path);

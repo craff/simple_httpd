@@ -5,6 +5,7 @@
   (package simple_httpd_camlzip)
   (modules http_of_dir)
   (flags :standard -warn-error -3)
+  (ocamlopt_flags -O3)
   (libraries simple_httpd simple_httpd_camlzip magic-mime))
 
 (executable
@@ -13,6 +14,7 @@
   (package simple_httpd)
   (modules vfs_pack curly http)
   (libraries result unix)
-  (flags :standard -warn-error -3))
+  (flags :standard -warn-error -3)
+  (ocamlopt_flags -O3))
 
 (ocamllex http)

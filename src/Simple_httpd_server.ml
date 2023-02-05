@@ -393,7 +393,10 @@ end
 *)
 
 module Response = struct
-  type body = [`String of string | `Stream of byte_stream | `Void]
+  type body = String of string
+            | Chunked of string (* already chunked string *)
+            | Stream of byte_stream
+            | Void
   type t = {
     code: Response_code.t;
     headers: Headers.t;
@@ -410,28 +413,38 @@ module Response = struct
   let make_raw ?(cookies=[]) ?(headers=[]) ~code body : t =
     (* add content length to response *)
     let headers = Headers.set_cookies cookies headers in
-    { code; headers; body=`String body; }
+    { code; headers; body=String body; }
+
+  let make_raw_chunked ?(cookies=[]) ?(headers=[]) ~code body : t =
+    (* add content length to response *)
+    let headers = Headers.set "Transfer-Encoding" "chunked" headers in
+    let headers = Headers.set_cookies cookies headers in
+    { code; headers; body=Chunked body; }
 
   let make_raw_stream ?(cookies=[]) ?(headers=[]) ~code body : t =
     (* add content length to response *)
     let headers = Headers.set "Transfer-Encoding" "chunked" headers in
     let headers = Headers.set_cookies cookies headers in
-    { code; headers; body=`Stream body; }
+    { code; headers; body=Stream body; }
 
   let make_void ?(cookies=[]) ?(headers=[]) ~code () : t =
     let headers = Headers.set_cookies cookies headers in
-    { code; headers; body=`Void; }
+    { code; headers; body=Void; }
 
   let make_string ?cookies ?headers body =
     make_raw ?cookies ?headers ~code:200 body
+
+  let make_chunked ?cookies ?headers body =
+    make_raw_chunked ?cookies ?headers ~code:200 body
 
   let make_stream ?cookies ?headers body =
     make_raw_stream ?cookies ?headers ~code:200 body
 
   let make ?cookies ?headers r : t = match r with
-    | `String body -> make_raw ?cookies ?headers ~code:200 body
-    | `Stream body -> make_raw_stream ?cookies ?headers ~code:200 body
-    | `Void -> make_void ?cookies ?headers ~code:200 ()
+    | String body -> make_raw ?cookies ?headers ~code:200 body
+    | Chunked body -> make_raw_chunked ?cookies ?headers ~code:200 body
+    | Stream body -> make_raw_stream ?cookies ?headers ~code:200 body
+    | Void -> make_void ?cookies ?headers ~code:200 ()
 
   let fail ?cookies ?headers ~code fmt =
     Printf.ksprintf (fun msg -> make_raw ?cookies ?headers ~code msg) fmt
@@ -440,9 +453,10 @@ module Response = struct
 
   let pp out self : unit =
     let pp_body out = function
-      | `String s -> Format.fprintf out "%S" s
-      | `Stream _ -> Format.pp_print_string out "<stream>"
-      | `Void -> ()
+      | String s -> Format.fprintf out "%S" s
+      | Chunked s -> Format.fprintf out "Chunked: %S" s
+      | Stream _ -> Format.pp_print_string out "<stream>"
+      | Void -> ()
     in
     Format.fprintf out "{@[code=%d;@ headers=[@[%a@]];@ body=%a@]}"
       self.code Headers.pp self.headers pp_body self.body
@@ -453,8 +467,8 @@ module Response = struct
     let body = self.body in
     let headers, chunked =
       match body with
-      | `String "" | `Void -> self.headers, false
-      | `String s when String.length s < 50_000 ->
+      | String "" | Void -> self.headers, false
+      | String s when String.length s < 50_000 ->
          Headers.set "Content-Length" (string_of_int (String.length s))
            self.headers, false
       | _ -> Headers.set "Transfer-Encoding" "chunked" self.headers, true
@@ -462,7 +476,7 @@ module Response = struct
 
     let self = {self with headers; body} in
     debug ~lvl:2 (fun k->k "output response: %s"
-                           (Format.asprintf "%a" pp {self with body=`String "<…>"}));
+                           (Format.asprintf "%a" pp {self with body=String "<…>"}));
     List.iter (fun (k,v) ->
         Out.add_string oc k;
         Out.add_char oc ':';
@@ -472,13 +486,14 @@ module Response = struct
         Out.add_char oc '\n') headers;
     Out.add_string oc "\r\n";
     begin match body with
-    | `String "" | `Void -> ()
-    | `String s ->
+    | String "" | Void -> ()
+    | String s ->
        if chunked then
          Byte_stream.output_string_chunked oc s
        else
          Byte_stream.output_str oc s;
-    | `Stream str ->
+    | Chunked s -> Byte_stream.output_str oc s
+    | Stream str ->
        try
          Byte_stream.output_chunked oc str;
          Byte_stream.close str;

@@ -236,7 +236,11 @@ end
     the client to answer a {!Request.t}*)
 
 module Response : sig
-  type body = [`String of string | `Stream of byte_stream | `Void]
+  type body = String of string
+            | Chunked of string (* a string already encoded as chunks, with
+                                   an empty trailer *)
+            | Stream of byte_stream
+            | Void
   (** Body of a response, either as a simple string,
       or a stream of bytes, or nothing (for server-sent events). *)
 
@@ -280,6 +284,16 @@ module Response : sig
   (** Make a response from its raw components, with a string body.
       Use [""] to not send a body at all. *)
 
+  val make_raw_chunked :
+    ?cookies:Cookies.t ->
+    ?headers:Headers.t ->
+    code:Response_code.t ->
+    string ->
+    t
+  (** Same as {!make_raw} but with a stream body. The body will be sent with
+      the chunked transfer-encoding., the string argument must already
+      be chunked encoded *)
+
   val make_raw_stream :
     ?cookies:Cookies.t ->
     ?headers:Headers.t ->
@@ -305,6 +319,12 @@ module Response : sig
     ?headers:Headers.t ->
     string -> t
   (** Same as {!make} but with a string body. *)
+
+  val make_chunked :
+    ?cookies:Cookies.t ->
+    ?headers:Headers.t ->
+    string -> t
+  (** Same as {!make} but with a string that is already chunked encoded. *)
 
   val make_stream :
     ?cookies:Cookies.t ->

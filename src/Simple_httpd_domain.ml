@@ -181,7 +181,7 @@ let yield () = perform Yield
 
 let rec fread c s o l =
   try
-    let n = apply c Unix.read Ssl.read s o l in
+    let n = apply c U.read Ssl.read s o l in
     if n = 0 then clientError c NoRead; n
   with Unix.(Unix_error((EAGAIN|EWOULDBLOCK),_,_))
      | Ssl.(Read_error(Error_want_read|Error_want_accept|
@@ -199,7 +199,7 @@ and perform_read c s o l =
 
 let rec fwrite c s o l =
   try
-    let n = apply c Unix.single_write Ssl.write s o l in
+    let n = apply c U.single_write Ssl.write s o l in
     if n = 0 then clientError c NoWrite; n
   with Unix.(Unix_error((EAGAIN|EWOULDBLOCK),_,_))
      | Ssl.(Write_error(Error_want_write|Error_want_read|
@@ -264,7 +264,7 @@ module Io = struct
 
   let rec fread (io:t) s o l =
   try
-    let n = Unix.read io.sock  s o l in
+    let n = U.read io.sock  s o l in
     if n = 0 then ioError io NoRead; n
   with Unix.(Unix_error((EAGAIN|EWOULDBLOCK),_,_)) ->
         schedule_io io.sock (fun () -> fread io s o l)
@@ -275,7 +275,7 @@ module Io = struct
 
   let rec fwrite (io:t) s o l =
   try
-    let n = Unix.single_write io.sock s o l in
+    let n = U.single_write io.sock s o l in
     if n = 0 then ioError io NoWrite; n
   with Unix.(Unix_error((EAGAIN|EWOULDBLOCK),_,_)) ->
         schedule_io io.sock (fun () -> fwrite io s o l)
@@ -488,7 +488,7 @@ let loop id st listens pipe delta timeout handler () =
            begin
              try
                while true do
-                 assert (Unix.read pipe pipe_buf 0 8 = 8);
+                 assert (U.read pipe pipe_buf 0 8 = 8);
                  let sock : Unix.file_descr =
                    Obj.magic (Int32.to_int (Bytes.get_int32_ne pipe_buf 0))
                  in
@@ -671,7 +671,7 @@ let accept_loop status listens pipes maxc =
         assert (Obj.is_int (Obj.repr lsock)); (* Fails on windows *)
         Bytes.set_int32_ne pipe_buf 0 (Int32.of_int (Obj.magic (Obj.repr lsock)));
         Bytes.set_int32_ne pipe_buf 4 (Int32.of_int index);
-        assert(Unix.single_write pipe pipe_buf 0 8 = 8);
+        assert(U.single_write pipe pipe_buf 0 8 = 8);
         Atomic.incr status.nb_connections.(did);
       with
       | Full ->

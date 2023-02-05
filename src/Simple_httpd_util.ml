@@ -1,4 +1,27 @@
 
+external raw_single_write : Unix.file_descr -> Bytes.t -> int -> int -> int = "caml_fast_single_write" [@@noalloc]
+
+external write_error : unit -> 'a = "caml_write_error"
+
+let single_write fd buf ofs len =
+  if ofs < 0 || len < 0 || ofs+len > Bytes.length buf then
+    invalid_arg "single_write";
+  let ret = raw_single_write fd buf ofs len in
+  if ret == -1 then write_error();
+  ret
+
+external raw_read : Unix.file_descr -> Bytes.t -> int -> int -> int = "caml_fast_read" [@@noalloc]
+
+external read_error : unit -> 'a = "caml_read_error"
+
+let read fd buf ofs len =
+  if ofs < 0 || len < 0 || ofs+len > Bytes.length buf then
+    invalid_arg "read";
+  let ret = raw_read fd buf ofs len in
+  if ret == -1 then read_error();
+  ret
+
+
 let debug_lvl = ref (
   match int_of_string (Sys.getenv "HTTP_DBG") with
   | n -> n | exception _ -> 0

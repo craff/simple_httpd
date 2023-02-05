@@ -68,7 +68,7 @@ let of_fd_ ?(buf_size=16 * 1024) ~close ic : t =
     ~fill:(fun self ->
         if self.off >= self.len then (
           self.off <- 0;
-          self.len <- Unix.read ic self.bs 0 (Bytes.length self.bs));
+          self.len <- Simple_httpd_util.read ic self.bs 0 (Bytes.length self.bs));
         )
     ()
 
@@ -325,7 +325,7 @@ let read_chunked ~buf ~fail ~trailer (bs:t) : t=
   let refill = ref true in
   let chunk_size = ref 0 in
   make
-    ~bs:(Bytes.create (16 * 4096))
+    ~bs:(Bytes.create (16 * 4_096))
     ~fill:(fun self ->
         (* do we need to refill? *)
         if self.off >= self.len then (
@@ -478,7 +478,7 @@ let output_chunked (oc:Out_buf.t) (self:t) : unit =
   add_string oc "\r\n"; (* empty trailer required by RFC *)
   ()
 
-(* print a stream as a string of chunks: no allocation! *)
+(* print a string as a string of chunks: no allocation! *)
 let output_string_chunked (oc:Out_buf.t) (str:string) : unit =
   let open Out_buf in
   let offset = ref 0 in
@@ -494,6 +494,22 @@ let output_string_chunked (oc:Out_buf.t) (str:string) : unit =
     offset := !offset + n;
   done;
   add_string oc "0\r\n\r\n"
+
+let string_to_chunk ?(chunk_size = 16*4_096) str =
+  let offset = ref 0 in
+  let len = String.length str in
+  let buf = Buffer.create (len + len / (chunk_size / 8)) in
+  let max_chunk = chunk_size - 8 in
+  while !offset < len do
+    (* next chunk *)
+    let n = min max_chunk (len - !offset) in
+    Printf.bprintf buf "%x\r\n" n;
+    Buffer.add_substring buf str !offset n;
+    Buffer.add_string buf "\r\n";
+    offset := !offset + n;
+  done;
+  Buffer.add_string buf "0\r\n\r\n";
+  Buffer.contents buf
 
 let output_str = Out_buf.add_string
 let output_bytes = Out_buf.add_bytes

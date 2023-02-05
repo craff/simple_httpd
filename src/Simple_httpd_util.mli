@@ -3,6 +3,9 @@
     @since 0.2
 *)
 
+val single_write : Unix.file_descr -> Bytes.t -> int -> int -> int
+val read : Unix.file_descr -> Bytes.t -> int -> int -> int
+
 val set_debug : int -> unit
 val debug : ?lvl:int -> ((('a, out_channel, unit, unit) format4 -> 'a) -> unit) -> unit
 

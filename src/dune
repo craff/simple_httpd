@@ -4,6 +4,8 @@
   (public_name simple_httpd)
   (libraries unix seq ssl http-cookie polly magic-mime)
   (flags :standard -safe-string -warn-error -a+8)
+  (ocamlopt_flags -O3)
+  (foreign_stubs (language c) (names stubs))
   (wrapped false))
 
 (rule
