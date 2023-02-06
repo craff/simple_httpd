@@ -878,8 +878,7 @@ let handle_client_ (self:t) (client:D.client) : unit =
                                            (D.printexn e))
         in
         (* call handler *)
-        handler oc req ~resp;
-        D.yield ()
+        handler oc req ~resp
       with
       | Sys_error _ | Unix.Unix_error _ | D.ClosedByHandler | D.TimeOut as e ->
          U.debug ~lvl:1 (fun k -> k "broken connection (%s)"

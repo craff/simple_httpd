@@ -203,7 +203,7 @@ let add_vfs_ ?(accept=(fun _req x -> x)) ~config
         fun fn (_,filename as key) ->
         try
           let (ready, mtime, ptr) = Hashtbl.find cache key in
-          Mutex.wait_bool ready;
+          while not (Atomic.get ready) do D.sleep 0.01; done; (* FIXME *)
           let mtime' = VFS.file_mtime filename in
           if mtime' <> mtime then raise Not_found;
           !ptr

@@ -35,7 +35,7 @@ module Mutex : sig
   val unlock : t -> unit
 
   (** Wait for a boolean but do not lock anything *)
-  val wait_bool : bool Atomic.t -> unit
+                      (*val wait_bool : bool Atomic.t -> unit*)
 end
 
 type any_continuation (** internal use only *)
@@ -54,7 +54,8 @@ type client = {
     mutable session : session option; (** Session *)
     mutable acont : any_continuation; (** internal use *)
     mutable start_time : float;       (** start of request *)
-    buf : Buffer.t                    (** used to parse headers *)
+    mutable locks : Mutex.t list;     (** all lock, locked by this client *)
+    buf : Buffer.t;                   (** used to parse headers *)
   }
 
 and session = (* FIXME: force protection by mutex making the type private *)
@@ -74,6 +75,7 @@ val fake_client : client
 val read  : client -> Bytes.t -> int -> int -> int
 val write : client -> Bytes.t -> int -> int -> int
 val yield : unit -> unit
+(*val schedule : unit -> unit*)
 val sleep : float -> unit
 val close : client -> unit
 val flush : client -> unit
@@ -96,7 +98,11 @@ end
 
 module Io : Io
 
-type socket_type = Io of Io.t | Client of client | Pipe
+type socket_type =
+  | Io of Io.t
+  | Client of client
+  | Pipe
+  | Lock of client
 
 exception NoRead
 exception NoWrite

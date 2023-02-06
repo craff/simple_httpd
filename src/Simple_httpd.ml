@@ -24,6 +24,8 @@ include Simple_httpd_server
 
 let yield = Simple_httpd_domain.yield
 
+(*let schedule = Simple_httpd_domain.schedule*)
+
 let sleep = Simple_httpd_domain.sleep
 
 module Io = Simple_httpd_domain.Io

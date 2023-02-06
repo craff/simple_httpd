@@ -13,18 +13,33 @@ let max_domain = 16
 type session_data = ..
 type session_data += NoData
 
-module MutexTmp = struct
-  type t = bool Atomic.t
+module MutexTmp : sig
+    type t = Unix.file_descr
+    val create : unit -> t
+    val unlock : t -> unit
+    val try_lock : t -> bool
+  end = struct
+  external raw_eventfd  : int -> int -> Unix.file_descr = "caml_eventfd"
+  (*external raw_efd_cloexec   : unit -> int = "caml_efd_cloexec"*)
+  external raw_efd_nonblock  : unit -> int = "caml_efd_nonblock"
+  external raw_efd_semaphore : unit -> int = "caml_efd_semaphore"
 
-  let create () = Atomic.make false
+  let flags = raw_efd_nonblock() land raw_efd_semaphore()
 
-  let try_lock m =
-    Atomic.compare_and_set m false true
+  type t = Unix.file_descr
 
-  let unlock m =
-    Atomic.set m false
+  let create () = raw_eventfd 1 flags
+
+  let one = let r = Bytes.create 8 in Bytes.set_int64_ne r 0 1L; r
+
+  let unlock lk =
+    assert (Simple_httpd_util.single_write lk one 0 8 = 8)
+
+  let try_lock lk =
+    let buf = Bytes.create 8 in
+    try assert(Simple_httpd_util.read lk buf 0 8 = 8); true
+    with Unix.(Unix_error((EAGAIN | EWOULDBLOCK), _, _)) -> false
 end
-
 let new_id =
   let c = ref 0 in
   fun () -> let x = !c in c := x + 1; x
@@ -49,6 +64,7 @@ type client = {
     mutable session : session option;
     mutable acont : any_continuation;
     mutable start_time : float; (* last time request started *)
+    mutable locks : MutexTmp.t list;
     buf : Buffer.t; (* used to parse headers *)
   }
 
@@ -71,6 +87,7 @@ let fake_client =
       id = -1;
       buf = Buffer.create 16;
       start_time = 0.0;
+      locks = [];
     }
 
 type _ Effect.t +=
@@ -78,11 +95,11 @@ type _ Effect.t +=
            -> int Effect.t
    | Yield : unit Effect.t
    | Sleep : float -> unit Effect.t
-   | Lock  : bool Atomic.t * (bool Atomic.t -> bool) -> unit Effect.t
+   | Lock  : MutexTmp.t * (MutexTmp.t -> unit) -> unit Effect.t
 
-type pending =
-  { fn : unit -> int
-  ; cont : (int, unit) continuation
+type 'a pending =
+  { fn : unit -> 'a
+  ; cont : ('a, unit) continuation
   ; mutable arrival_time : float (* time it started to be pending *)
   }
 
@@ -103,7 +120,11 @@ module IoTmp = struct
            ; client : client }
 end
 
-type socket_type = Io of IoTmp.t | Client of client | Pipe
+type socket_type =
+  | Io of IoTmp.t
+  | Client of client
+  | Pipe
+  | Lock of client
 
 exception SockError of socket_type * exn
 
@@ -116,7 +137,7 @@ let clientError c exn = raise (SockError(Client c,exn))
 let ioError s exn = raise(SockError(Io s,exn))
 
 type pending_status =
-  NoEvent | Wait of pending | TooSoon
+  NoEvent | Wait : 'a pending -> pending_status | TooSoon
 
 type socket_info =
   { ty : socket_type
@@ -126,18 +147,19 @@ type socket_info =
 let socket_client s = match s.ty with
   | Client c -> c
   | Io s -> s.client
+  | Lock c -> c
   | Pipe -> assert false
 
 type domain_info =
-  { mutable schedule : float
-  ; cur_client : client option ref
+  { (*mutable schedule : float
+  ; *)cur_client : client option ref
   ; pendings : (Unix.file_descr, socket_info) Hashtbl.t
   ; poll_list : Polly.t
   }
 
 let fake_domain_info =
-  { schedule = 0.0
-  ; cur_client = ref None
+  { (*schedule = 0.0
+  ; *)cur_client = ref None
   ; pendings = Hashtbl.create 16
   ; poll_list = Polly.create ()
   }
@@ -160,24 +182,24 @@ let string_status st =
 let print_status ch st =
   output_string ch (string_status st)
 
+let yield () = perform Yield
+(*
 let schedule () =
   let id = Domain.self () in
   let time = all_domain_info.((id :> int)).schedule in
   let now = now () in
-  now >= time
-
+  if now >= time then yield ()
+ *)
 module Mutex = struct
   include MutexTmp
 
-  let lock : t -> unit = fun lk ->
-    if not (try_lock lk) then perform (Lock (lk, try_lock))
-
+  let rec lock : t -> unit = fun lk ->
+    if not (try_lock lk) then perform (Lock (lk, lock))
+(*
   let wait_bool : bool Atomic.t -> unit = fun b ->
     if not (Atomic.get b) then perform (Lock (b, Atomic.get))
-
+ *)
 end
-
-let yield () = perform Yield
 
 let rec fread c s o l =
   try
@@ -191,8 +213,7 @@ let rec fread c s o l =
         clientError c exn
 
 and read c s o l =
-  if schedule () then yield ();
-  fread c s o l
+  (*schedule ();*) fread c s o l
 
 and perform_read c s o l =
   perform (Io {sock = c.sock; fn = (fun () -> fread c s o l) })
@@ -208,8 +229,7 @@ let rec fwrite c s o l =
      | exn -> clientError c exn
 
 and write c s o l =
-  if schedule () then yield ();
-  fwrite c s o l
+  (*schedule ();*) fwrite c s o l
 
 and perform_write c s o l =
   perform (Io {sock = c.sock; fn = (fun () -> fwrite c s o l) })
@@ -271,7 +291,7 @@ module Io = struct
      | exn -> ioError io exn
 
   and read sock io o l =
-    if schedule () then yield (); fread sock io o l
+    (*schedule ();*) fread sock io o l
 
   let rec fwrite (io:t) s o l =
   try
@@ -282,7 +302,7 @@ module Io = struct
      | exn -> ioError io exn
 
   and write sock s o l =
-    if schedule () then yield (); fwrite sock s o l
+    (*schedule ();*) fwrite sock s o l
 end
 
 let is_ipv6 addr = String.contains addr ':'
@@ -312,25 +332,25 @@ type listenning = {
 
 type pollResult =
   | Accept of (Unix.file_descr * listenning)
-  | Action of pending * socket_info
+  | Action : 'a pending * socket_info -> pollResult
   | Yield of ((unit,unit) continuation * client * float)
   | Wait
 
-let loop id st listens pipe delta timeout handler () =
+let loop id st listens pipe _delta timeout handler () =
   let did = Domain.self () in
-
+(*
   let set_schedule delta =
     let now = now () in
     all_domain_info.((did :> int)).schedule <- now +. delta
   in
-
+ *)
   let poll_list = Polly.create () in
   Polly.(add poll_list pipe Events.(inp lor et));
   (* size for two ints *)
   let pipe_buf = Bytes.create 8 in
   (* table of all sockets *)
   let pendings : (Unix.file_descr, socket_info) Hashtbl.t
-    = Hashtbl.create 32
+    = Hashtbl.create 16384
   in
   let pipe_info = { ty = Pipe; pd = NoEvent } in
   Hashtbl.add pendings pipe pipe_info;
@@ -342,7 +362,7 @@ let loop id st listens pipe delta timeout handler () =
     | None -> assert false
   in
   all_domain_info.((did :> int)) <-
-    { schedule = now (); cur_client; pendings ; poll_list };
+    { (*schedule = now ();*) cur_client; pendings ; poll_list };
 
   let unregister s =
     Hashtbl.remove pendings s;
@@ -387,24 +407,26 @@ let loop id st listens pipe delta timeout handler () =
   in
 
   (* Managment of lock *)
-  let locks = U.LinkedList.create () in
   (* O(1) *)
-  let add_lock lk fn cont =
+  let add_lock : Mutex.t -> (Mutex.t -> unit) -> (unit, unit) continuation -> unit =
+    fun lk fn cont ->
     let cl = get_client () in
     cl.acont <- C cont;
-    U.LinkedList.add_last (lk, fn, cont, cl) locks in
-  (* O(N) when N is the number of waiting lock *)
-  let get_lock now =
-    let fn (lk, f, _, cl) = not cl.connected || f lk in
-    let gn (_, _, cont, cl) =
-      if cl.connected then
-        begin
-          U.debug ~lvl:3 (fun k -> k "[%d] got lock" cl.id);
-          add_ready (Yield(cont,cl,now))
-        end
+    cl.locks <- lk :: cl.locks;
+    let fn () =
+      Hashtbl.remove pendings lk;
+      Polly.(del poll_list lk);
+      cl.locks <- List.filter (fun x -> x <> lk) cl.locks;
+      fn lk
     in
-    U.LinkedList.search_and_remove fn gn locks
+    let info = { ty = Lock cl
+               ; pd = Wait { fn; cont; arrival_time = now ()}
+               }
+    in
+    Hashtbl.add pendings lk info;
+    Polly.(add poll_list lk Events.(inp lor et));
   in
+
   let find s =
     try Hashtbl.find pendings s with _ -> assert false
   in
@@ -432,50 +454,28 @@ let loop id st listens pipe delta timeout handler () =
          sess.clients <- List.filter (fun c' -> c != c') sess.clients;
          Mutex.unlock sess.mutex;
     end;
+    begin
+      let fn lk =
+        Mutex.unlock lk;
+        Hashtbl.remove pendings lk;
+        try Polly.(del poll_list lk) with Unix.Unix_error _ -> ();
+      in
+      List.iter fn c.locks;
+      c.locks <- []
+    end;
     c.connected <- false
-  in
-
-  (* managment of timeout and "bad" sockets *)
-  (* O(N) but not run every "timeout" *)
-  let next_timeout_check =
-    ref (if timeout > 0.0 then now () +. timeout
-         else infinity)
-  in
-  let client_timeout cl = match cl.acont with
-  | N -> ()
-  | C c ->
-     cur_client := Some cl;
-     cl.acont <- N;
-     discontinue c TimeOut
-  in
-  let check now =
-    Hashtbl.iter (fun s c ->
-        match c.ty with
-        | Pipe -> ()
-        | Client client ->
-           let closing = timeout > 0.0 && now -. client.start_time > timeout in
-           if closing then
-             begin
-               client_timeout client;
-               assert (not client.connected)
-             end
-        | Io io ->
-           let closing = timeout > 0.0 && now -. io.client.start_time > timeout in
-           if closing then Hashtbl.remove pendings s) pendings
   in
 
   let rec poll () =
     let now = now () in
     try
       (* O(n) when n is the number of waiting lock *)
-      get_lock now;
-      if now >= !next_timeout_check then check now;
       get_sleep now;
       let select_timeout =
         match Queue.is_empty ready, !sleeps with
         | false, _ -> 0.0
-        | _, (t,_,_)::_ -> min delta (t -. now)
-        | _ -> delta
+        | _, (t,_,_)::_ -> (t -. now)
+        | _ -> -1.0
       in
       let select_timeout = int_of_float (1e3 *. select_timeout) in
       let fn _ sock evt =
@@ -509,7 +509,7 @@ let loop id st listens pipe delta timeout handler () =
     with
     | exn -> U.debug ~lvl:1 (fun k -> k "UNEXPECTED EXCEPTION IN POLL: %s\n%!"
                                         (printexn exn));
-             check now; poll () (* FIXME: which exception *)
+             (*check now;*) poll () (* FIXME: which exception *)
   in
   let step v =
     try
@@ -518,10 +518,10 @@ let loop id st listens pipe delta timeout handler () =
          poll ()
       | Accept (sock, linfo) ->
          cur_client := None;
-         set_schedule delta;
+         (*set_schedule delta;*)
          let client = { sock; ssl = None; id = new_id ();
                         connected = true; session = None;
-                        start_time = now ();
+                        start_time = now (); locks = [];
                         acont = N; buf = Buffer.create 4_096
                       } in
          cur_client := Some client;
@@ -531,6 +531,8 @@ let loop id st listens pipe delta timeout handler () =
          in
          U.debug ~lvl:2 (fun k -> k "[%d] accept connection (%a)" client.id print_status st);
          Unix.set_nonblock sock;
+         Unix.(setsockopt_float sock SO_RCVTIMEO timeout);
+         Unix.(setsockopt_float sock SO_SNDTIMEO timeout);
          Hashtbl.add pendings sock info;
          Polly.(add poll_list sock Events.(inp lor out lor et));
          begin
@@ -558,7 +560,7 @@ let loop id st listens pipe delta timeout handler () =
              cur_client := Some cl;
              cl.acont <- N;
              U.debug ~lvl:3 (fun k -> k "[%d] continue io" cl.id);
-             set_schedule delta;
+             (*set_schedule delta;*)
              let n = fn () in
              continue cont n;
            end
@@ -568,7 +570,7 @@ let loop id st listens pipe delta timeout handler () =
              cur_client := Some cl;
              cl.acont <- N;
              U.debug ~lvl:3 (fun k -> k "[%d] continue yield" cl.id);
-             set_schedule delta;
+             (*set_schedule delta;*)
              continue cont ();
            end
     with e -> close e

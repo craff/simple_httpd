@@ -141,6 +141,10 @@ val yield : unit -> unit
     Other solutions exists for instance for database request.
 *)
 
+(*val schedule : unit -> unit*)
+(** same a yield, but only let other job run if we are running for more
+    than delta seconds (a parameter of the server *)
+
 val sleep : float -> unit
 (** Same as above, but with a minimum sleeping time in second *)
 

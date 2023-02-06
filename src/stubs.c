@@ -9,6 +9,32 @@
 #include <caml/version.h>
 #include <caml/unixsupport.h>
 #include "stdlib.h"
+#include <sys/eventfd.h>
+
+CAMLprim value caml_eventfd(value initval, value flags)
+{
+  CAMLparam0();
+  int sock = eventfd(Int_val(initval),Int_val(flags));
+  CAMLreturn(Val_int(sock));
+}
+
+CAMLprim value caml_efd_cloexec()
+{
+  CAMLparam0();
+  CAMLreturn(Val_int(EFD_CLOEXEC));
+}
+
+CAMLprim value caml_efd_nonblock()
+{
+  CAMLparam0();
+  CAMLreturn(Val_int(EFD_NONBLOCK));
+}
+
+CAMLprim value caml_efd_semaphore()
+{
+  CAMLparam0();
+  CAMLreturn(Val_int(EFD_SEMAPHORE));
+}
 
 CAMLprim value caml_fast_single_write(value fd, value buf, value vofs,
                                       value vlen)
