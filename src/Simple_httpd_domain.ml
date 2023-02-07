@@ -13,33 +13,6 @@ let max_domain = 16
 type session_data = ..
 type session_data += NoData
 
-module MutexTmp : sig
-    type t = Unix.file_descr
-    val create : unit -> t
-    val unlock : t -> unit
-    val try_lock : t -> bool
-  end = struct
-  external raw_eventfd  : int -> int -> Unix.file_descr = "caml_eventfd"
-  (*external raw_efd_cloexec   : unit -> int = "caml_efd_cloexec"*)
-  external raw_efd_nonblock  : unit -> int = "caml_efd_nonblock"
-  external raw_efd_semaphore : unit -> int = "caml_efd_semaphore"
-
-  let flags = raw_efd_nonblock() land raw_efd_semaphore()
-
-  type t = Unix.file_descr
-
-  let create () = raw_eventfd 1 flags
-
-  let one = let r = Bytes.create 8 in Bytes.set_int64_ne r 0 1L; r
-
-  let unlock lk =
-    assert (Simple_httpd_util.single_write lk one 0 8 = 8)
-
-  let try_lock lk =
-    let buf = Bytes.create 8 in
-    try assert(Simple_httpd_util.read lk buf 0 8 = 8); true
-    with Unix.(Unix_error((EAGAIN | EWOULDBLOCK), _, _)) -> false
-end
 let new_id =
   let c = ref 0 in
   fun () -> let x = !c in c := x + 1; x
@@ -56,22 +29,27 @@ type any_continuation =
     N : any_continuation
   | C : ('a,unit) continuation -> any_continuation
 
-type client = {
-    id : int;
-    mutable connected : bool;
-    sock : Unix.file_descr;
-    mutable ssl : Ssl.socket option;
-    mutable session : session option;
-    mutable acont : any_continuation;
-    mutable start_time : float; (* last time request started *)
-    mutable locks : MutexTmp.t list;
-    buf : Buffer.t; (* used to parse headers *)
+type client =
+  { id : int
+  ; mutable connected : bool
+  ; sock : Unix.file_descr
+  ; mutable ssl : Ssl.socket option
+  ; mutable session : session option
+  ; mutable acont : any_continuation
+  ; mutable start_time : float (* last time request started *)
+  ; mutable locks : mutex list
+  ; buf : Buffer.t (* used to parse headers *)
+  }
+
+and mutex =
+  { mutable eventfd : Unix.file_descr
+  ; mutable owner   : client option
   }
 
 and session =
   { addr : string
   ; key : string
-  ; mutex : MutexTmp.t
+  ; mutex : mutex
   ; mutable clients : client list
   ; mutable data : session_data
   ; mutable cleanup : session_data -> unit
@@ -95,12 +73,11 @@ type _ Effect.t +=
            -> int Effect.t
    | Yield : unit Effect.t
    | Sleep : float -> unit Effect.t
-   | Lock  : MutexTmp.t * (MutexTmp.t -> unit) -> unit Effect.t
+   | Lock  : mutex * (mutex -> unit) -> unit Effect.t
 
 type 'a pending =
   { fn : unit -> 'a
   ; cont : ('a, unit) continuation
-  ; mutable arrival_time : float (* time it started to be pending *)
   }
 
 let apply c f1 f2 =
@@ -137,7 +114,7 @@ let clientError c exn = raise (SockError(Client c,exn))
 let ioError s exn = raise(SockError(Io s,exn))
 
 type pending_status =
-  NoEvent | Wait : 'a pending -> pending_status | TooSoon
+  NoEvent | Wait : 'a pending -> pending_status | TooSoon of bool
 
 type socket_info =
   { ty : socket_type
@@ -151,20 +128,23 @@ let socket_client s = match s.ty with
   | Pipe -> assert false
 
 type domain_info =
-  { (*mutable schedule : float
-  ; *)cur_client : client option ref
+  {  mutable cur_client : client
   ; pendings : (Unix.file_descr, socket_info) Hashtbl.t
   ; poll_list : Polly.t
   }
 
 let fake_domain_info =
   { (*schedule = 0.0
-  ; *)cur_client = ref None
+  ; *)cur_client = fake_client
   ; pendings = Hashtbl.create 16
   ; poll_list = Polly.create ()
   }
 
 let all_domain_info = Array.make max_domain fake_domain_info
+
+let global_get_client () =
+  let id = Domain.self () in
+  all_domain_info.((id :> int)).cur_client
 
 let string_status st =
   let b = Buffer.create 128 in
@@ -190,21 +170,63 @@ let schedule () =
   let now = now () in
   if now >= time then yield ()
  *)
-module Mutex = struct
-  include MutexTmp
+module Mutex : sig
+    type t = mutex
+    val create : unit -> t
+    val unlock : t -> unit
+    val try_lock : t -> bool
+    val lock : t -> unit
+  end = struct
+  external raw_eventfd  : int -> int -> Unix.file_descr = "caml_eventfd"
+  (*external raw_efd_cloexec   : unit -> int = "caml_efd_cloexec"*)
+  external raw_efd_nonblock  : unit -> int = "caml_efd_nonblock"
+  external raw_efd_semaphore : unit -> int = "caml_efd_semaphore"
+
+  let flags = raw_efd_nonblock() land raw_efd_semaphore()
+
+  type t = mutex
+
+  let create () =
+    let r =
+      { eventfd = raw_eventfd 1 flags
+      ; owner = None }
+    in
+    let finalise r =
+      if r.owner <> None then
+        U.debug ~lvl:1 (fun k -> k "Mutex collected before unlock!");
+      Unix.close r.eventfd
+    in
+    Gc.finalise finalise r;
+    r
+
+  let one = let r = Bytes.create 8 in Bytes.set_int64_ne r 0 1L; r
+
+  let unlock lk =
+    begin
+      match lk.owner with
+      | Some cl ->
+         if cl != global_get_client () then
+           failwith "unlock by a client that did not lock the mutex"
+      | None ->
+         failwith "unlock a not locked mutex"
+    end;
+    lk.owner <- None;
+    assert (Simple_httpd_util.single_write lk.eventfd one 0 8 = 8)
+
+  let try_lock lk =
+    let buf = Bytes.create 8 in
+    try assert(Simple_httpd_util.read lk.eventfd buf 0 8 = 8);
+        lk.owner <- Some (global_get_client ());
+        true
+    with Unix.(Unix_error((EAGAIN | EWOULDBLOCK), _, _)) -> false
 
   let rec lock : t -> unit = fun lk ->
     if not (try_lock lk) then perform (Lock (lk, lock))
-(*
-  let wait_bool : bool Atomic.t -> unit = fun b ->
-    if not (Atomic.get b) then perform (Lock (b, Atomic.get))
- *)
 end
 
-let rec fread c s o l =
+let rec read c s o l =
   try
-    let n = apply c U.read Ssl.read s o l in
-    if n = 0 then clientError c NoRead; n
+    apply c U.read Ssl.read s o l
   with Unix.(Unix_error((EAGAIN|EWOULDBLOCK),_,_))
      | Ssl.(Read_error(Error_want_read|Error_want_accept|
                        Error_want_connect|Error_want_write|Error_zero_return)) ->
@@ -212,34 +234,27 @@ let rec fread c s o l =
      | exn ->
         clientError c exn
 
-and read c s o l =
-  (*schedule ();*) fread c s o l
-
 and perform_read c s o l =
-  perform (Io {sock = c.sock; fn = (fun () -> fread c s o l) })
+  perform (Io {sock = c.sock; fn = (fun () -> read c s o l) })
 
-let rec fwrite c s o l =
+let rec write c s o l =
   try
-    let n = apply c U.single_write Ssl.write s o l in
-    if n = 0 then clientError c NoWrite; n
+    apply c U.single_write Ssl.write s o l
   with Unix.(Unix_error((EAGAIN|EWOULDBLOCK),_,_))
      | Ssl.(Write_error(Error_want_write|Error_want_read|
                         Error_want_accept|Error_want_connect|Error_zero_return)) ->
         perform_write c s o l
      | exn -> clientError c exn
 
-and write c s o l =
-  (*schedule ();*) fwrite c s o l
-
 and perform_write c s o l =
-  perform (Io {sock = c.sock; fn = (fun () -> fwrite c s o l) })
+  perform (Io {sock = c.sock; fn = (fun () -> write c s o l) })
 
 let schedule_io sock fn =
   perform (Io {sock; fn })
 
 let cur_client () =
   let i = all_domain_info.((Domain.self () :> int)) in
-  match !(i.cur_client) with Some c -> c | None -> assert false
+  i.cur_client
 
 let register_starttime cl =
   cl.start_time <- now ()
@@ -282,27 +297,20 @@ module Io = struct
     register sock r;
     r
 
-  let rec fread (io:t) s o l =
+  let rec read (io:t) s o l =
   try
-    let n = U.read io.sock  s o l in
-    if n = 0 then ioError io NoRead; n
+    U.read io.sock  s o l
   with Unix.(Unix_error((EAGAIN|EWOULDBLOCK),_,_)) ->
-        schedule_io io.sock (fun () -> fread io s o l)
+        schedule_io io.sock (fun () -> read io s o l)
      | exn -> ioError io exn
 
-  and read sock io o l =
-    (*schedule ();*) fread sock io o l
-
-  let rec fwrite (io:t) s o l =
+  let rec write (io:t) s o l =
   try
-    let n = U.single_write io.sock s o l in
-    if n = 0 then ioError io NoWrite; n
+    U.single_write io.sock s o l
   with Unix.(Unix_error((EAGAIN|EWOULDBLOCK),_,_)) ->
-        schedule_io io.sock (fun () -> fwrite io s o l)
+        schedule_io io.sock (fun () -> write io s o l)
      | exn -> ioError io exn
 
-  and write sock s o l =
-    (*schedule ();*) fwrite sock s o l
 end
 
 let is_ipv6 addr = String.contains addr ':'
@@ -332,18 +340,13 @@ type listenning = {
 
 type pollResult =
   | Accept of (Unix.file_descr * listenning)
-  | Action : 'a pending * socket_info -> pollResult
+  | Action : 'a pending * socket_info * bool -> pollResult
   | Yield of ((unit,unit) continuation * client * float)
   | Wait
 
 let loop id st listens pipe _delta timeout handler () =
   let did = Domain.self () in
-(*
-  let set_schedule delta =
-    let now = now () in
-    all_domain_info.((did :> int)).schedule <- now +. delta
-  in
- *)
+
   let poll_list = Polly.create () in
   Polly.(add poll_list pipe Events.(inp lor et));
   (* size for two ints *)
@@ -355,14 +358,10 @@ let loop id st listens pipe _delta timeout handler () =
   let pipe_info = { ty = Pipe; pd = NoEvent } in
   Hashtbl.add pendings pipe pipe_info;
 
-  let cur_client = ref None in
-  let get_client () =
-    match !cur_client with
-    | Some c -> c
-    | None -> assert false
-  in
-  all_domain_info.((did :> int)) <-
-    { (*schedule = now ();*) cur_client; pendings ; poll_list };
+  let dinfo = { cur_client = fake_client; pendings ; poll_list } in
+  let get_client () = dinfo.cur_client in
+  all_domain_info.((did :> int)) <- dinfo;
+
 
   let unregister s =
     Hashtbl.remove pendings s;
@@ -414,17 +413,17 @@ let loop id st listens pipe _delta timeout handler () =
     cl.acont <- C cont;
     cl.locks <- lk :: cl.locks;
     let fn () =
-      Hashtbl.remove pendings lk;
-      Polly.(del poll_list lk);
-      cl.locks <- List.filter (fun x -> x <> lk) cl.locks;
+      Hashtbl.remove pendings lk.eventfd;
+      Polly.(del poll_list lk.eventfd);
+      cl.locks <- List.filter (fun x -> x != lk) cl.locks;
       fn lk
     in
     let info = { ty = Lock cl
-               ; pd = Wait { fn; cont; arrival_time = now ()}
+               ; pd = Wait { fn; cont }
                }
     in
-    Hashtbl.add pendings lk info;
-    Polly.(add poll_list lk Events.(inp lor et));
+    Hashtbl.add pendings lk.eventfd info;
+    Polly.(add poll_list lk.eventfd Events.(inp lor et));
   in
 
   let find s =
@@ -457,8 +456,8 @@ let loop id st listens pipe _delta timeout handler () =
     begin
       let fn lk =
         Mutex.unlock lk;
-        Hashtbl.remove pendings lk;
-        try Polly.(del poll_list lk) with Unix.Unix_error _ -> ();
+        Hashtbl.remove pendings lk.eventfd;
+        try Polly.(del poll_list lk.eventfd) with Unix.Unix_error _ -> ();
       in
       List.iter fn c.locks;
       c.locks <- []
@@ -480,9 +479,7 @@ let loop id st listens pipe _delta timeout handler () =
       let select_timeout = int_of_float (1e3 *. select_timeout) in
       let fn _ sock evt =
         let info = find sock in
-        if (Polly.Events.((err lor hup) land evt <> empty)) then
-          close ~client:(socket_client info) Exit
-        else match info with
+        match info with
         | { ty = Pipe; _ } ->
            begin
              try
@@ -498,11 +495,15 @@ let loop id st listens pipe _delta timeout handler () =
              with Unix.Unix_error((EAGAIN|EWOULDBLOCK),_,_) -> ()
            end
         | { pd = NoEvent ; _ } as r ->
-           r.pd <- TooSoon
+           let e = Polly.Events.((err lor hup) land evt <> empty) in
+           r.pd <- TooSoon e
         | { pd = Wait a ; _ } as p ->
-           add_ready (Action(a,p));
+           let e = Polly.Events.((err lor hup) land evt <> empty) in
+           add_ready (Action(a,p,e));
            p.pd <- NoEvent;
-        | { pd = TooSoon; _ } -> ()
+        | { pd = TooSoon b ; _ } as p ->
+           let e = Polly.Events.((err lor hup) land evt <> empty) in
+           p.pd <- TooSoon (b || e)
       in
       ignore (Polly.wait poll_list 1000 select_timeout fn);
       add_ready Wait
@@ -517,14 +518,12 @@ let loop id st listens pipe _delta timeout handler () =
       | Wait ->
          poll ()
       | Accept (sock, linfo) ->
-         cur_client := None;
-         (*set_schedule delta;*)
          let client = { sock; ssl = None; id = new_id ();
                         connected = true; session = None;
                         start_time = now (); locks = [];
                         acont = N; buf = Buffer.create 4_096
                       } in
-         cur_client := Some client;
+         dinfo.cur_client <- client;
          let info = { ty = Client client
                     ; pd = NoEvent
                     }
@@ -533,6 +532,7 @@ let loop id st listens pipe _delta timeout handler () =
          Unix.set_nonblock sock;
          Unix.(setsockopt_float sock SO_RCVTIMEO timeout);
          Unix.(setsockopt_float sock SO_SNDTIMEO timeout);
+         Unix.(setsockopt sock TCP_NODELAY true);
          Hashtbl.add pendings sock info;
          Polly.(add poll_list sock Events.(inp lor out lor et));
          begin
@@ -550,24 +550,33 @@ let loop id st listens pipe _delta timeout handler () =
               client.ssl <- Some chan;
               U.debug ~lvl:2 (fun k -> k "[%d] ssl connection established" client.id);
            | None -> ()
+
          end;
          handler client; close EndHandling
-      | Action ({ fn; cont; _ }, p) ->
+      | Action ({ fn; cont; _ }, p, e) ->
          p.pd <- NoEvent;
          let cl = socket_client p in
          if cl.connected then
            begin
-             cur_client := Some cl;
+             dinfo.cur_client <-cl;
              cl.acont <- N;
-             U.debug ~lvl:3 (fun k -> k "[%d] continue io" cl.id);
-             (*set_schedule delta;*)
-             let n = fn () in
-             continue cont n;
+             if e then
+               begin
+                 U.debug ~lvl:3 (fun k -> k "[%d] discontinue io" cl.id);
+                 discontinue cont (Unix.Unix_error(EPIPE, "error_in_poll", ""))
+               end
+             else
+               begin
+                 U.debug ~lvl:3 (fun k -> k "[%d] continue io" cl.id);
+                 (*set_schedule delta;*)
+                 let n = fn () in
+                 continue cont n;
+               end
            end
       | Yield(cont,cl,_) ->
          if cl.connected then
            begin
-             cur_client := Some cl;
+             dinfo.cur_client <- cl;
              cl.acont <- N;
              U.debug ~lvl:3 (fun k -> k "[%d] continue yield" cl.id);
              (*set_schedule delta;*)
@@ -593,17 +602,14 @@ let loop id st listens pipe _delta timeout handler () =
                add_lock lk fn cont)
         | Io {sock; fn; _} ->
            Some (fun (cont : (c,_) continuation) ->
-               let now = now () in
                let info = find sock in
                (get_client ()).acont <- C cont;
                begin
                  match info.pd with
                  | NoEvent ->
-                    info.pd <- Wait { fn; cont
-                                      ; arrival_time = now}
-                 | TooSoon ->
-                    add_ready (Action({ fn; cont
-                                 ; arrival_time = now}, info))
+                    info.pd <- Wait { fn; cont }
+                 | TooSoon e ->
+                    add_ready (Action({ fn; cont }, info, e))
                  | Wait _ -> assert false
                end)
         | _ -> None
@@ -661,7 +667,6 @@ let accept_loop status listens pipes maxc =
         let (did, pipe) = get_best () in
         let (lsock, _) = Unix.accept sock in
         to_close := Some lsock;
-        assert (Obj.is_int (Obj.repr lsock)); (* Fails on windows *)
         Bytes.set_int32_ne pipe_buf 0 (Int32.of_int (Obj.magic (Obj.repr lsock)));
         Bytes.set_int32_ne pipe_buf 4 (Int32.of_int index);
         assert(U.single_write pipe pipe_buf 0 8 = 8);

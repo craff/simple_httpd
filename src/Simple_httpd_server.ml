@@ -878,39 +878,39 @@ let handle_client_ (self:t) (client:D.client) : unit =
                                            (D.printexn e))
         in
         (* call handler *)
-        handler oc req ~resp
+        handler oc req ~resp; if !continue then D.yield ()
       with
       | Sys_error _ | Unix.Unix_error _ | D.ClosedByHandler | D.TimeOut as e ->
          U.debug ~lvl:1 (fun k -> k "broken connection (%s)"
                                     (D.printexn e));
          continue := false; (* connection broken somehow *)
 
-    | Bad_req (c,s) when (300 <= c && c <= 303) || (307 <= c && c <= 308) ->
-       U.debug ~lvl:1 (fun k -> k "redirect request (%s)" s);
-       let res = Response.make_raw ~code:c "" in
-       let res = Response.set_header "Location" s res in
-       begin
-         try Response.output_ oc res
+      | Bad_req (c,s) when (300 <= c && c <= 303) || (307 <= c && c <= 308) ->
+         U.debug ~lvl:1 (fun k -> k "redirect request (%s)" s);
+         let res = Response.make_raw ~code:c "" in
+         let res = Response.set_header "Location" s res in
+         begin
+           try Response.output_ oc res
+           with Sys_error _ | Unix.Unix_error _ -> ()
+         end;
+         D.yield ()
+
+      | Bad_req (c,s) ->
+         (* connection error, close *)
+         U.debug ~lvl:1 (fun k -> k "error handling request (%s)" s);
+         let res = Response.make_raw ~code:c s in
+         begin
+           try Response.output_ oc res
          with Sys_error _ | Unix.Unix_error _ -> ()
-       end;
+         end;
+         if not (c < 500) then continue := false else D.yield ()
 
-
-    | Bad_req (c,s) ->
-      (* connection error, close *)
-       U.debug ~lvl:1 (fun k -> k "error handling request (%s)" s);
-       let res = Response.make_raw ~code:c s in
-       begin
-         try Response.output_ oc res
-         with Sys_error _ | Unix.Unix_error _ -> ()
-       end;
-       if not (c < 500) then continue := false
-
-    | e ->
-       U.debug ~lvl:1 (fun k -> k "server error (%s)"
-                                  (D.printexn e));
-       continue := false;
-       Response.output_ oc @@
-         Response.fail ~code:500 "server error: %s" (D.printexn e)
+      | e ->
+         U.debug ~lvl:1 (fun k -> k "server error (%s)"
+                                    (D.printexn e));
+         continue := false;
+         Response.output_ oc @@
+           Response.fail ~code:500 "server error: %s" (D.printexn e)
   done;
   debug ~lvl:2 (fun k->k "done with client, exiting");
   ()
