@@ -1,6 +1,7 @@
 module S = Simple_httpd_server
 module U = Simple_httpd_util
 module D = Simple_httpd_domain
+module H = Simple_httpd_headers
 module Html = Simple_httpd_html
 module Pf = Printf
 module Mutex = D.Mutex
@@ -62,7 +63,7 @@ let human_size (x:int) : string =
   else if x >= 1_000 then Printf.sprintf "%d.%dk" (x/1000) ((x/100) mod 100)
   else Printf.sprintf "%db" x
 
-let header_html = "Content-Type", "text/html"
+let header_html = H.Content_Type, "text/html"
 let (//) = Filename.concat
 
 let encode_path s = U.percent_encode ~skip:(function '/' -> true|_->false) s
@@ -252,7 +253,7 @@ let add_vfs_ ?(accept=(fun _req x -> x)) ~config
   if config.upload then (
     S.add_route_handler_stream server ~meth:`PUT (route())
       ~accept:(fun req ->
-          match S.Request.get_header_int req "Content-Length" with
+          match S.Request.get_header_int req H.Content_Length with
           | Some n when n > config.max_upload_size ->
              S.Response.fail_raise ~code:403
                "max upload size is %d" config.max_upload_size
@@ -294,7 +295,7 @@ let add_vfs_ ?(accept=(fun _req x -> x)) ~config
         ) else if not (VFS.contains path) then (
           U.debug ~lvl:2 (fun k->k "download fails %s (not found)" path);
           S.Response.fail ~code:404 "File not found";
-        ) else if S.Request.get_header req "If-None-Match" = Some (Lazy.force mtime) then (
+        ) else if S.Request.get_header req H.If_None_Match = Some (Lazy.force mtime) then (
           S.Response.make_raw ~code:304 ""
         ) else if VFS.is_directory path then (
           let parent = Filename.(dirname path) in
@@ -305,13 +306,13 @@ let add_vfs_ ?(accept=(fun _req x -> x)) ~config
                let new_path = "/" // prefix // path // "index.html" in
                U.debug ~lvl:2 (fun k->k "download redirect %s" path);
                S.Response.make_raw ~code:301 ""
-                 ~headers:S.Headers.(empty |> set "location" new_path)
+                 ~headers:S.Headers.(empty |> set H.Location new_path)
             | Lists | Index_or_lists ->
                let body = html_list_dir ~prefix vfs path ~parent
                           |> Html.to_string_top in
                U.debug ~lvl:2 (fun k->k "download index %s" path);
                S.Response.make_string
-                 ~headers:[header_html; "ETag", Lazy.force mtime]
+                 ~headers:[header_html; H.ETag, Lazy.force mtime]
                  body
             | Forbidden | Index ->
                U.debug ~lvl:2 (fun k->k "download index fails %s (forbidden)" path);
@@ -324,33 +325,33 @@ let add_vfs_ ?(accept=(fun _req x -> x)) ~config
           let fn (deflate,path) =
             try
               let mime_type =
-                ["Content-Type", Magic_mime.lookup path]
+                [H.Content_Type, Magic_mime.lookup path]
               in
               match config.cache with
               | ZlibCache {cmp; _} when deflate ->
                  let string = cmp (VFS.read_file_content path) in
                  U.debug ~lvl:2 (fun k->k "download ok %s" path);
                  S.Response.make_raw_chunked
-                   ~headers:(mime_type@[("Etag", Lazy.force mtime)
-                                       ;("content-encoding", "chunked, deflate")])
+                   ~headers:(mime_type@[(H.ETag, Lazy.force mtime)
+                                       ;(H.Content_Encoding, "chunked, deflate")])
                    ~code:200 (Simple_httpd_stream.string_to_chunk string)
               | SimpleCache | ZlibCache _ ->
                  let string = VFS.read_file_content path in
                  U.debug ~lvl:2 (fun k->k "download ok %s" path);
                  if String.length string <= 50_000 then
                    S.Response.make_raw
-                     ~headers:(mime_type@[("Etag", Lazy.force mtime)])
+                     ~headers:(mime_type@[(H.ETag, Lazy.force mtime)])
                      ~code:200 string
                  else
                    S.Response.make_raw_chunked
-                     ~headers:(mime_type@[("Etag", Lazy.force mtime)
-                                         ;("content-encoding", "chunked")])
+                     ~headers:(mime_type@[(H.ETag, Lazy.force mtime)
+                                         ;(H.Content_Encoding, "chunked")])
                      ~code:200 (Simple_httpd_stream.string_to_chunk string)
               | NoCache ->
                  let stream = VFS.read_file_stream path in
                  U.debug ~lvl:2 (fun k->k "download ok %s" path);
                  S.Response.make_raw_stream
-                   ~headers:(mime_type@[("Etag", Lazy.force mtime)])
+                   ~headers:(mime_type@[(H.ETag, Lazy.force mtime)])
                    ~code:200 stream
             with e ->
               U.debug ~lvl:2 (fun k->k "download fails %s (%s)" path (D.printexn e));

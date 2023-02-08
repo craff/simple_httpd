@@ -12,3 +12,13 @@
   (targets Simple_httpd_html_.ml)
   (deps (:bin ./gen/gentags.exe))
   (action (with-stdout-to %{targets} (run %{bin}))))
+
+(rule
+  (targets Simple_httpd_headers.ml)
+  (deps (:bin ./gen/compile_headers_tbl.exe) field-names.csv)
+  (action (with-stdout-to %{targets} (run %{bin} field-names.csv))))
+
+(rule
+  (targets Simple_httpd_headers.mli)
+  (deps (:bin ./gen/compile_headers_mli.exe) field-names.csv)
+  (action (with-stdout-to %{targets} (run %{bin} field-names.csv))))

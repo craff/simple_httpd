@@ -87,12 +87,10 @@ val with_file : ?buf_size:int -> string -> (t -> 'a) -> 'a
 (** Open a file with given name, and obtain an input stream
     on its content. When the function returns, the stream (and file) are closed. *)
 
+val read_char : t -> char
+
 val read_line : buf:Buffer.t -> t -> string
 (** Read a line from the stream.
-    @param buf a buffer to (re)use. Its content will be cleared. *)
-
-val read_until : buf:Buffer.t -> char -> t -> string
-(** Read until given char from the stream.
     @param buf a buffer to (re)use. Its content will be cleared. *)
 
 val read_all : buf:Buffer.t -> t -> string

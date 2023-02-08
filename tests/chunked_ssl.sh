@@ -12,21 +12,21 @@ sleep 0.1
 
 echo download1 1>&2
 curl -k -N "https://localhost:${PORT}/foo_50" -o data \
-  -H 'Tranfer-encoding: chunked' --max-time 10
+  -H 'Accept-Encoding: chunked' --max-time 10
 
 wc -c data
 rm data
 
 echo download2 1>&2
 curl -k -N "https://localhost:${PORT}/foo_50" -o data \
-  -H 'Tranfer-encoding: chunked' --max-time 10
+  -H 'Accept-Encoding: chunked' --max-time 10
 
 wc -c data
 rm data
 
 echo download3 1>&2
 curl -k -N "https://localhost:${PORT}/foo_50" -o data \
-  -H 'Tranfer-encoding: chunked' --max-time 10
+  -H 'Accept-encoding: chunked' --max-time 10
 
 wc -c data
 rm data
@@ -47,7 +47,7 @@ rm data
 
 echo upload3 1>&2
 cat foo_50 | curl -k -N -X PUT https://localhost:$PORT/data --data-binary @- \
-  -H 'Transfer-Encoding: chunked' --max-time 10 >\dev\null
+  -H 'Transfer-encoding: chunked' --max-time 10 >\dev\null
 
 wc -c data
 rm data

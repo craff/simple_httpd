@@ -178,6 +178,13 @@ let read_all ~buf (self:t) : string =
   Buffer.clear buf;
   r
 
+let read_char (self:t) : char =
+  self.fill_buf();
+  if self.len <= 0 then raise End_of_file;
+  let c = Bytes.get self.bs self.off in
+  self.consume 1;
+  c
+
 (* put [n] bytes from the input into bytes *)
 let read_exactly_ ~too_short (self:t) (bytes:bytes) (n:int) : unit =
   assert (Bytes.length bytes >= n);
@@ -192,12 +199,9 @@ let read_exactly_ ~too_short (self:t) (bytes:bytes) (n:int) : unit =
   done
 
 (* read a line into the buffer, after clearing it. *)
-let read_line_into ?stop (self:t) ~buf : unit =
+let read_line_into (self:t) ~buf : unit =
   Buffer.clear buf;
   let continue = ref true in
-  let stop = match stop with None -> (fun c -> c <> '\n')
-                           | Some c' -> (fun c -> c <> '\n' && c <> c')
-  in
   while !continue do
     self.fill_buf();
     if self.len=0 then (
@@ -205,7 +209,7 @@ let read_line_into ?stop (self:t) ~buf : unit =
       if Buffer.length buf = 0 then raise End_of_file;
     );
     let j = ref self.off in
-    while !j < self.off + self.len && stop (Bytes.get self.bs !j) do
+    while !j < self.off + self.len && Bytes.get self.bs !j <> '\n' do
       incr j
     done;
     if !j-self.off < self.len then (
@@ -226,10 +230,6 @@ let read_line ~buf self : string =
   let end_ = ref (len - 1) in
   while !end_ > !start && Buffer.nth buf !end_ <= ' ' do decr end_ done;
   Buffer.sub buf !start (!end_ - !start + 1)
-
-let read_until ~buf ch self : string =
-  read_line_into ~stop:ch self ~buf;
-  Buffer.contents buf
 
 (* new stream with maximum size [max_size].
    @param close_rec if true, closing this will also close the input stream

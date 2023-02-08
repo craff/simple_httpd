@@ -2,6 +2,7 @@
 (* serves some streams of events *)
 
 module S = Simple_httpd
+module H = Simple_httpd_headers
 
 let addr = ref "127.0.0.1"
 let port = ref 8080
@@ -18,8 +19,8 @@ Arg.parse (Arg.align [
   let server = S.create ~num_thread:!t ~listens () in
 
   let extra_headers = [
-    "Access-Control-Allow-Origin", "*";
-    "Access-Control-Allow-Methods", "POST, GET, OPTIONS";
+    H.Access_Control_Allow_Origin, "*";
+    H.Access_Control_Allow_Methods, "POST, GET, OPTIONS";
   ] in
 
   (* tick/tock goes the clock *)

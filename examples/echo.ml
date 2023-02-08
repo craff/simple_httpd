@@ -1,6 +1,7 @@
 
 module S = Simple_httpd
 module U = Simple_httpd_util
+module H = Simple_httpd_headers
 
 let now_ = Unix.gettimeofday
 
@@ -70,7 +71,7 @@ let () =
           try
             let p = Unix.open_process_in (Printf.sprintf "file -i -b %S" path) in
             try
-              let s = ["Content-Type", String.trim (input_line p)] in
+              let s = [H.Content_Type, String.trim (input_line p)] in
               ignore @@ Unix.close_process_in p;
               s
             with _ -> ignore @@ Unix.close_process_in p; []
@@ -138,7 +139,7 @@ let () =
            ]
          ] in
        let s = to_string_top h in
-       S.Response.make_string ~headers:["content-type", "text/html"] s);
+       S.Response.make_string ~headers:[H.Content_Type, "text/html"] s);
 
   List.iter S.(fun l ->
       Printf.printf "listening on http://%s:%d\n%!" l.addr l.port) (S.listens server);

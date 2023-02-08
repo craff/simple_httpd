@@ -1,6 +1,7 @@
 
 module U = Simple_httpd_util
 module S = Simple_httpd_server
+module H = Simple_httpd_headers
 module BS = Simple_httpd_stream
 
 (* zlib string compression *)
@@ -156,7 +157,7 @@ let split_on_char ?(f=fun x->x) c s : string list =
 
 let has_deflate headers =
   match
-    S.Headers.get "Accept-Encoding" headers
+    S.Headers.get H.Accept_Encoding headers
   with
   | Some s -> List.mem "deflate" @@ split_on_char ~f:String.trim ',' s
   | None -> false
@@ -165,7 +166,7 @@ let accept_deflate (req:_ S.Request.t) =
   has_deflate (S.Request.headers req)
 
 let not_deflated (resp: S.Response.t) =
-  not (S.Headers.contains "Content-Encoding" (S.Response.headers resp))
+  not (S.Headers.contains H.Content_Encoding (S.Response.headers resp))
 
 let has_deflate s =
   try Scanf.sscanf s "deflate, %s" (fun _ -> true)
@@ -173,7 +174,7 @@ let has_deflate s =
 
 (* decompress [req]'s body if needed *)
 let decompress_req_stream_ ~buf_size (req:BS.t S.Request.t) : _ S.Request.t =
-  match S.Request.get_header ~f:String.trim req "Transfer-Encoding" with
+  match S.Request.get_header ~f:String.trim req H.Transfer_Encoding with
   (* TODO
     | Some "gzip" ->
       let req' = S.Request.set_header req "Transfer-Encoding" "chunked" in
@@ -184,7 +185,7 @@ let decompress_req_stream_ ~buf_size (req:BS.t S.Request.t) : _ S.Request.t =
       | tr' ->
         let body' = S.Request.body req |> decode_deflate_stream_ ~buf_size in
         req
-        |> S.Request.set_header "Transfer-Encoding" tr'
+        |> S.Request.set_header H.Transfer_Encoding tr'
         |> S.Request.set_body body'
       | exception _ -> req
     end
@@ -198,8 +199,8 @@ let compress_resp_stream_
   (* headers for compressed stream *)
   let update_headers h =
     h
-    |> S.Headers.remove "Content-Length"
-    |> S.Headers.set "Content-Encoding" "deflate"
+    |> S.Headers.remove H.Content_Length
+    |> S.Headers.set H.Content_Encoding "deflate"
   in
 
   if accept_deflate req && not_deflated resp then (

@@ -3,5 +3,13 @@
   (modules gentags))
 
 (executable
-  (name compile_headers)
-  (modules compile_headers))
+  (name compile_headers_fun)
+  (modules compile_headers_fun))
+
+(executable
+  (name compile_headers_tbl)
+  (modules compile_headers_tbl))
+
+(executable
+  (name compile_headers_mli)
+  (modules compile_headers_mli))

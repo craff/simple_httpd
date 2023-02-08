@@ -64,7 +64,8 @@ end
     Headers are metadata associated with a request or response. *)
 
 module Headers : sig
-  type t = (string * string) list
+  type header = Simple_httpd_headers.t
+  type t = (header * string) list
   (** The header files of a request or response.
 
       Neither the key nor the value can contain ['\r'] or ['\n'].
@@ -74,21 +75,21 @@ module Headers : sig
   (** Empty list of headers
       @since 0.5 *)
 
-  val get : ?f:(string->string) -> string -> t -> string option
+  val get : ?f:(string->string) -> header -> t -> string option
   (** [get k headers] looks for the header field with key [k].
       @param f if provided, will transform the value before it is returned. *)
 
-  val set : string -> string -> t -> t
+  val set : header -> string -> t -> t
   (** [set k v headers] sets the key [k] to value [v].
       It erases any previous entry for [k] *)
 
   val set_cookies : Cookies.t -> t -> t
   (** Encode all the cookies in the header *)
 
-  val remove : string -> t -> t
+  val remove : header -> t -> t
   (** Remove the key from the headers, if present. *)
 
-  val contains : string -> t -> bool
+  val contains : header -> t -> bool
   (** Is there a header with the given key? *)
 
   val pp : Format.formatter -> t -> unit
@@ -140,11 +141,11 @@ module Request : sig
   val headers : _ t -> Headers.t
   (** List of headers of the request, including ["Host"] *)
 
-  val get_header : ?f:(string->string) -> _ t -> string -> string option
+  val get_header : ?f:(string->string) -> _ t -> Headers.header -> string option
 
-  val get_header_int : _ t -> string -> int option
+  val get_header_int : _ t -> Headers.header -> int option
 
-  val set_header : string -> string -> 'a t -> 'a t
+  val set_header : Headers.header -> string -> 'a t -> 'a t
   (** [set_header k v req] sets [k: v] in the request [req]'s headers. *)
 
   val update_headers : (Headers.t -> Headers.t) -> 'a t -> 'a t
@@ -255,7 +256,7 @@ module Response : sig
   (** Set the body of the response.
       @since 0.11 *)
 
-  val set_header : string -> string -> t -> t
+  val set_header : Headers.header -> string -> t -> t
   (** Set a header.
       @since 0.11 *)
 

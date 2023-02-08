@@ -4,6 +4,7 @@ type byte_stream = Simple_httpd_stream.t
 
 module U   = Simple_httpd_util
 module D   = Simple_httpd_domain
+module H   = Simple_httpd_headers
 
 module Out = Simple_httpd_stream.Out_buf
 
@@ -122,70 +123,54 @@ module Cookies = struct
 end
 
 module Headers = struct
-  type t = (string * string) list
+  type header = H.t
+  type t = (H.t * string) list
   let empty = []
-  let lower_eq s1 s2 =
-    let len = String.length s1 in
-    len = String.length s2 &&
-      (try
-        for i = 0 to len - 1 do
-          if Char.lowercase_ascii s1.[i] <> Char.lowercase_ascii s2.[i] then
-            raise Exit
-        done;
-        true
-       with Exit -> false)
   let contains name headers =
-    List.exists (fun (n, _) -> lower_eq name n) headers
+    List.exists (fun (n, _) -> H.eq name n) headers
   let get_exn ?(f=fun x->x) x h =
-    snd (List.find (fun (x',_) -> lower_eq x x') h) |> f
+    snd (List.find (fun (x',_) -> H.eq x x') h) |> f
   let get ?(f=fun x -> x) x h =
     try Some (get_exn ~f x h) with Not_found -> None
   let remove x h =
-    List.filter (fun (k,_) -> not (lower_eq k x)) h
+    List.filter (fun (k,_) -> not (H.eq k x)) h
   let set x y h =
     (x,y) :: remove x h
   let pp out l =
-    let pp_pair out (k,v) = Format.fprintf out "@[<h>%s: %s@]" k v in
+    let pp_pair out (k,v) = Format.fprintf out "@[<h>%s: %s@]" (H.to_string k) v in
     Format.fprintf out "@[<v>%a@]" (Format.pp_print_list pp_pair) l
   let set_cookies cookies h =
     List.fold_left (fun h (_, c) ->
-        ("Set-Cookie", Http_cookie.to_set_cookie c) :: h) h cookies
+        (H.Set_Cookie, Http_cookie.to_set_cookie c) :: h) h cookies
 
   (*  token = 1*tchar
   tchar = "!" / "#" / "$" / "%" / "&" / "'" / "*" / "+" / "-" / "." / "^" / "_"
            / "`" / "|" / "~" / DIGIT / ALPHA ; any VCHAR, except delimiters
   Reference: https://datatracker.ietf.org/doc/html/rfc7230#section-3.2 *)
-  let is_tchar = function
-    | '0' .. '9' | 'a' .. 'z' | 'A' .. 'Z'
-    | '!' | '#' | '$' | '%' | '&' | '\'' | '*' | '+' | '-' | '.' | '^'
-    | '_' | '`'  | '|' | '~' -> true
-    | _ -> false
-
   let parse_ ~buf (bs:byte_stream) : t * Cookies.t =
     let rec loop headers cookies =
-      let k = Byte_stream.read_until ~buf  ':' bs in
-      if k = "\r" then (
-        (headers, cookies)
-      ) else (
+      (try
+        let k = H.parse ~buf bs in
         let v =
           try
-            if not (String.for_all is_tchar k) then (
-              invalid_arg (Printf.sprintf "Invalid header key: %S" k));
             Byte_stream.read_line ~buf bs
-          with _ -> bad_reqf 400 "invalid header key: %S" k
+          with _ -> bad_reqf 400 "invalid header value: %S" (H.to_string k)
         in
         let headers, cookies =
-          if lower_eq k "Cookie" then
+          if k = H.Cookie then
             begin
               let new_cookies = Cookies.parse v in
               (headers, List.fold_left (fun acc (name, c) ->
-                  Cookies.add name c acc) cookies new_cookies)
+                            Cookies.add name c acc) cookies new_cookies)
             end
           else
             ((k,v)::headers, cookies)
         in
-        loop headers cookies
-      )
+        fun () -> loop headers cookies
+      with
+      | H.End_of_headers -> (fun () -> (headers,cookies))
+      | H.Invalid_header s ->
+         (fun () -> bad_reqf 400 "invalid header value: %S" s)) ()
     in
     loop [] []
 
@@ -234,8 +219,8 @@ module Request = struct
   (** Should we close the connection after this request? *)
   let close_after_req (self:_ t) : bool =
     match self.http_version with
-    | 1, 1 -> get_header self "connection" =Some"close"
-    | 1, 0 -> not (get_header self "connection"=Some"keep-alive")
+    | 1, 1 -> get_header self H.Connection = Some"close"
+    | 1, 0 -> not (get_header self H.Connection = Some"keep-alive")
     | _ -> false
 
   let pp_comp_ out comp =
@@ -293,15 +278,15 @@ module Request = struct
           let meth, path, version = Scanf.sscanf line "%s %s HTTP/1.%d" (fun x y z->x,y,z) in
           if version != 0 && version != 1 then raise Exit;
           meth, path, version
-        with _ ->
-          debug ~lvl:1 (fun k->k "INVALID REQUEST LINE: `%s`" line);
+        with e ->
+          debug ~lvl:1 (fun k->k "INVALID REQUEST LINE: `%s` (%s)" line (Printexc.to_string e));
           raise (bad_reqf 400 "Invalid request line")
       in
       let meth = Meth.of_string meth in
       debug ~lvl:2 (fun k->k "got meth: %s, path %S" (Meth.to_string meth) path);
       let (headers, cookies) = Headers.parse_ ~buf bs in
       let host =
-        match Headers.get "Host" headers with
+        match Headers.get H.Host headers with
         | None -> bad_reqf 400 "No 'Host' header in request"
         | Some h -> h
       in
@@ -329,7 +314,7 @@ module Request = struct
     try
       Buffer.clear buf;
       let size =
-        match Headers.get_exn "Content-Length" req.headers |> int_of_string with
+        match Headers.get_exn H.Content_Length req.headers |> int_of_string with
         | n -> n (* body of fixed size *)
         | exception Not_found -> 0
         | exception _ -> bad_reqf 400 "invalid Content-Length"
@@ -338,7 +323,7 @@ module Request = struct
         req.trailer := Some (Headers.parse_ ~buf bs)
       in
       let body =
-        match get_header ~f:String.trim req "Transfer-Encoding" with
+        match get_header ~f:String.trim req H.Transfer_Encoding with
         | None ->
            let body = read_exactly ~size @@ tr_stream req.body in
            body
@@ -382,9 +367,9 @@ end
   match r with
   | None -> assert_failure "should parse"
   | Some req ->
-    assert_equal (Some "coucou") (Headers.get "Host" req.Request.headers);
-    assert_equal (Some "coucou") (Headers.get "host" req.Request.headers);
-    assert_equal (Some "11") (Headers.get "Content-Length" req.Request.headers);
+    let module H = Simple_httpd_headers in
+    assert_equal (Some "coucou") (Headers.get H.Host req.Request.headers);
+    assert_equal (Some "11") (Headers.get H.Content_Length req.Request.headers);
     assert_equal "hello" req.Request.path;
     let req = Request.Internal_.parse_body ~buf req str
       |> Request.read_body_full ~buf in
@@ -417,13 +402,13 @@ module Response = struct
 
   let make_raw_chunked ?(cookies=[]) ?(headers=[]) ~code body : t =
     (* add content length to response *)
-    let headers = Headers.set "Transfer-Encoding" "chunked" headers in
+    let headers = Headers.set H.Transfer_Encoding "chunked" headers in
     let headers = Headers.set_cookies cookies headers in
     { code; headers; body=Chunked body; }
 
   let make_raw_stream ?(cookies=[]) ?(headers=[]) ~code body : t =
     (* add content length to response *)
-    let headers = Headers.set "Transfer-Encoding" "chunked" headers in
+    let headers = Headers.set H.Transfer_Encoding "chunked" headers in
     let headers = Headers.set_cookies cookies headers in
     { code; headers; body=Stream body; }
 
@@ -469,16 +454,16 @@ module Response = struct
       match body with
       | String "" | Void -> self.headers, false
       | String s when String.length s < 50_000 ->
-         Headers.set "Content-Length" (string_of_int (String.length s))
+         Headers.set H.Content_Length (string_of_int (String.length s))
            self.headers, false
-      | _ -> Headers.set "Transfer-Encoding" "chunked" self.headers, true
+      | _ -> Headers.set H.Transfer_Encoding "chunked" self.headers, true
     in
 
     let self = {self with headers; body} in
     debug ~lvl:2 (fun k->k "output response: %s"
                            (Format.asprintf "%a" pp {self with body=String "<…>"}));
     List.iter (fun (k,v) ->
-        Out.add_string oc k;
+        Out.add_string oc (H.to_string k);
         Out.add_char oc ':';
         Out.add_char oc ' ';
         Out.add_string oc v;
@@ -742,7 +727,7 @@ let add_route_server_sent_handler ?accept self route f =
   let tr_req oc req ~resp f =
     let buf = (Request.client req).buf in
     let req = Request.read_body_full ~buf req in
-    let headers = ref Headers.(empty |> set "Content-Type" "text/event-stream") in
+    let headers = ref Headers.(empty |> set H.Content_Type "text/event-stream") in
 
     (* send response once *)
     let resp_sent = ref false in
@@ -845,7 +830,7 @@ let handle_client_ (self:t) (client:D.client) : unit =
         in
 
         (* handle expect/continue *)
-        begin match Request.get_header ~f:String.trim req "Expect" with
+        begin match Request.get_header ~f:String.trim req H.Expect with
           | Some "100-continue" ->
             debug ~lvl:2 (fun k->k "send back: 100 CONTINUE");
             Response.output_ oc (Response.make_raw ~code:100 "");
@@ -868,7 +853,7 @@ let handle_client_ (self:t) (client:D.client) : unit =
         (* how to reply *)
         let resp r =
           try
-            if Headers.get "Connection" r.Response.headers = Some"close" then
+            if Headers.get H.Connection r.Response.headers = Some"close" then
               continue := false;
             Response.output_ oc r;
           with Sys_error _
@@ -888,7 +873,7 @@ let handle_client_ (self:t) (client:D.client) : unit =
       | Bad_req (c,s) when (300 <= c && c <= 303) || (307 <= c && c <= 308) ->
          U.debug ~lvl:1 (fun k -> k "redirect request (%s)" s);
          let res = Response.make_raw ~code:c "" in
-         let res = Response.set_header "Location" s res in
+         let res = Response.set_header H.Location s res in
          begin
            try Response.output_ oc res
            with Sys_error _ | Unix.Unix_error _ -> ()
