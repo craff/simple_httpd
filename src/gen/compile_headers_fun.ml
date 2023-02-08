@@ -31,7 +31,7 @@ let lines = List.rev (fn [])
 let fields = List.map (function [] -> assert false | (h::_) -> h) lines
 
 let _ =
-  Printf.printf "type t =\n  | Other of string\n";
+  Printf.printf "type t =\n";
   List.iter (fun h -> Printf.printf "  | %s\n" (to_cstr h)) fields;
   Printf.printf "\n%!"
 
@@ -65,25 +65,12 @@ let tree : tree =
   sort (gn empty fields)
 
 let _ = Printf.printf "
-let lower_eq s1 s2 =
-    let len = String.length s1 in
-    len = String.length s2 &&
-      (try
-        for i = 0 to len - 1 do
-          if Char.lowercase_ascii s1.[i] <> Char.lowercase_ascii s2.[i] then
-            raise Exit
-        done;
-        true
-       with Exit -> false)
-let eq h1 h2 = match (h1, h2) with
-  | Other h1, Other h2 -> lower_eq h1 h2
-  | _ -> h1 == h2
+let eq (h1:t) (h2:t) = h1 = h2
 "
 
 let _ =
   Printf.printf {|
 let to_string = function
-  | Other s -> s
 |};
   List.iter (fun h -> Printf.printf "  | %s -> %S\n" (to_cstr h) h) fields;
   Printf.printf "\n%!"
@@ -93,20 +80,13 @@ exception Invalid_header of string
 exception End_of_headers
 
 let parse ~buf is =
-  let is_tchar = function
-    | '0' .. '9' | 'a' .. 'z' | 'A' .. 'Z'
-    | '!' | '#' | '$' | '%' | '&' | '\'' | '*' | '+' | '-' | '.' | '^'
-    | '_' | '`'  | '|' | '~' -> ()
-    | _ -> raise (Invalid_header (Buffer.contents buf))
-  in
   let getc () = Simple_httpd_stream.read_char is in
   let rec finish_loop () =
     let c = getc () in
-    if c = ':' then Other(Buffer.contents buf)
-    else (is_tchar c; finish_loop ())
+    if c = ':' then raise (Invalid_header (Buffer.contents buf))
+    else finish_loop ()
   in
   let finish k c =
-    is_tchar c;
     Buffer.clear buf;
     Buffer.add_string buf k;
     Buffer.add_char buf c;
@@ -134,7 +114,7 @@ let rec fn first tree k =
   (if first then "\nif c = '\\r' then (assert (getc () = '\\n'); raise End_of_headers);"
             else "")
   (match tree.leaf with
-   | None -> Printf.sprintf "    Other(Buffer.contents buf)"
+   | None -> Printf.sprintf "    raise (Invalid_header %S)" k
    | Some h -> Printf.sprintf "    %s" (to_cstr h)) cases
 
 let _ = Printf.printf "%s\n%!" (fn true tree "")

@@ -15,7 +15,7 @@
 
 (rule
   (targets Simple_httpd_headers.ml)
-  (deps (:bin ./gen/compile_headers_tbl.exe) field-names.csv)
+  (deps (:bin ./gen/compile_headers_fun.exe) field-names.csv)
   (action (with-stdout-to %{targets} (run %{bin} field-names.csv))))
 
 (rule

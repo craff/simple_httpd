@@ -31,7 +31,7 @@ let lines = List.rev (fn [])
 let fields = List.map (function [] -> assert false | (h::_) -> h) lines
 
 let _ =
-  Printf.printf "type t =\n  | Other of string\n";
+  Printf.printf "type t =\n";
   List.iter (fun h -> Printf.printf "  | %s\n" (to_cstr h)) fields;
   Printf.printf "\n%!"
 

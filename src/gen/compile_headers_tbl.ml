@@ -31,30 +31,17 @@ let lines = List.rev (fn [])
 let fields = List.map (function [] -> assert false | (h::_) -> h) lines
 
 let _ =
-  Printf.printf "type t =\n  | Other of string\n";
+  Printf.printf "type t =\n";
   List.iter (fun h -> Printf.printf "  | %s\n" (to_cstr h)) fields;
   Printf.printf "\n%!"
 
 let _ = Printf.printf "
-let lower_eq s1 s2 =
-    let len = String.length s1 in
-    len = String.length s2 &&
-      (try
-        for i = 0 to len - 1 do
-          if Char.lowercase_ascii s1.[i] <> Char.lowercase_ascii s2.[i] then
-            raise Exit
-        done;
-        true
-       with Exit -> false)
-let eq h1 h2 = match (h1, h2) with
-  | Other h1, Other h2 -> lower_eq h1 h2
-  | _ -> h1 == h2
+let eq (h1:t) (h2:t) = h1 = h2
 "
 
 let _ =
   Printf.printf {|
 let to_string = function
-  | Other s -> s
 |};
   List.iter (fun h -> Printf.printf "  | %s -> %S\n" (to_cstr h) h) fields;
   Printf.printf "\n%!"
@@ -124,55 +111,50 @@ let rec output_nodes r =
       | None -> ()
       | Some r -> output_nodes r) r.nodes2;
   Printf.printf "let leaf_%d = %s\n"
-    r.id2 (match r.leaf2 with None -> Printf.sprintf "Other %S" r.acc2
-                            | Some c -> to_cstr c);
+    r.id2 (match r.leaf2 with None -> Printf.sprintf "Bad %S" r.acc2
+                            | Some c -> Printf.sprintf "Good %s" (to_cstr c));
   Printf.printf "let offset_%d = %d\n"
     r.id2 r.offset2;
   Printf.printf "let tbl_%d = [|%s|]\n" r.id2
     (String.concat ";" (Array.to_list
        (Array.mapi (fun i -> function
-            | None -> Printf.sprintf "{leaf=Other %S;tbl=[||];offset=0}" (r.acc2 ^ String.make 1 (Char.chr (i + r.offset2)))
+            | None -> Printf.sprintf "{leaf=Bad %S;tbl=[||];offset=0}" (r.acc2 ^ String.make 1 (Char.chr (i + r.offset2)))
             | Some r -> Printf.sprintf "{leaf=leaf_%d;tbl=tbl_%d;offset=offset_%d}" r.id2 r.id2 r.id2)
           r.nodes2)))
 
 let _ =
-  Printf.printf "type cell = { leaf : t; tbl : cell array; offset: int }\n";
+  Printf.printf "type leaf = Good of t | Bad of string\n
+                 type cell = { leaf : leaf; tbl : cell array; offset: int }\n";
   output_nodes ctree
 
   let _ = Printf.printf "%s" {|
 exception Invalid_header of string
 exception End_of_headers
 
-let is_tchar fn = function
-  | '0' .. '9' | 'a' .. 'z' | 'A' .. 'Z'
-  | '!' | '#' | '$' | '%' | '&' | '\'' | '*' | '+' | '-' | '.' | '^'
-  | '_' | '`'  | '|' | '~' -> ()
-  | _ -> raise (Invalid_header (fn ()))
-
 let parse ~buf is =
   let getc () = Simple_httpd_stream.read_char is in
   let rec finish_loop () =
     let c = getc () in
-    if c = ':' then Other(Buffer.contents buf)
+    if c = ':' then raise (Invalid_header (Buffer.contents buf))
     else (Buffer.add_char buf c;
-          is_tchar (fun () -> Buffer.contents buf) c;
           finish_loop ())
   in
   let finish str c =
-    is_tchar (fun () -> str) c;
     Buffer.clear buf;
     Buffer.add_string buf str;
     Buffer.add_char buf c;
     finish_loop ()
   in
   let rec fn leaf tbl offset c =
-    if c = ':' then leaf else
+    if c = ':' then (match leaf with Good h -> h
+                     | Bad s -> raise (Invalid_header s)) else
     let i = Char.code (Char.uppercase_ascii c) - offset in
     if i >= 0 && i < Array.length tbl then
       (let c = getc () in
        let {leaf;tbl;offset} = tbl.(i) in fn leaf tbl offset c)
     else
-      finish (to_string leaf) c
+      finish (match leaf with Good h -> to_string h
+                            | Bad s -> s) c
   in
   let c = getc () in
   if c = '\r' then (assert (getc () = '\n'); raise End_of_headers);
