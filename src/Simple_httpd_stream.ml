@@ -396,7 +396,6 @@ module Out_buf = struct
       end
     else
       begin
-        if oc.s <= 0 then push oc;
         let start, remain =
           if oc.o > 0 then
             begin
@@ -433,6 +432,20 @@ module Out_buf = struct
     if oc.o >= oc.s then push oc;
     Bytes.set oc.b oc.o c;
     oc.o <- oc.o + 1
+
+  let add_decimal oc n =
+    let b = ref 1 in
+    while n / !b >= 10 do
+      b := 10 * !b
+    done;
+    let n = ref n in
+    while !b > 0 do
+      let d = (!n / !b) mod 10 in
+      let c = Char.chr (d + Char.code '0') in
+      add_char oc c;
+      n := !n mod !b;
+      b := !b / 10
+    done
 
   let add_hexa oc n =
     let b = ref 0 in

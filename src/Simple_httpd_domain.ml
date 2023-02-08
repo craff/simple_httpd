@@ -532,7 +532,7 @@ let loop id st listens pipe _delta timeout handler () =
          Unix.set_nonblock sock;
          Unix.(setsockopt_float sock SO_RCVTIMEO timeout);
          Unix.(setsockopt_float sock SO_SNDTIMEO timeout);
-         Unix.(setsockopt sock TCP_NODELAY true);
+         Unix.(setsockopt sock TCP_NODELAY true); (* not clearly usefull *)
          Hashtbl.add pendings sock info;
          Polly.(add poll_list sock Events.(inp lor out lor et));
          begin

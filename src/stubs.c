@@ -10,6 +10,24 @@
 #include <caml/unixsupport.h>
 #include "stdlib.h"
 #include <sys/eventfd.h>
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <netinet/tcp.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+
+CAMLprim void caml_setsockopt_cork(value socket, value val)
+{
+  CAMLparam1(socket);
+  int optval;
+  socklen_t optsize;
+  optsize = sizeof(optval);
+  optval = Int_val(val);
+
+  if (setsockopt(Int_val(socket), IPPROTO_TCP, TCP_CORK, &optval, optsize))
+     caml_uerror("setsocketopt_cork", Nothing);
+  CAMLreturn0;
+}
 
 CAMLprim value caml_eventfd(value initval, value flags)
 {

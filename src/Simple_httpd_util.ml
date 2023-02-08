@@ -14,6 +14,8 @@ external raw_read : Unix.file_descr -> Bytes.t -> int -> int -> int = "caml_fast
 
 external read_error : unit -> 'a = "caml_read_error"
 
+external setsockopt_cork : Unix.file_descr -> bool -> unit = "caml_setsockopt_cork"
+
 let read fd buf ofs len =
   if ofs < 0 || len < 0 || ofs+len > Bytes.length buf then
     invalid_arg "read";

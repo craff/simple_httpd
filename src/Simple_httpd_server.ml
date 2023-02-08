@@ -447,8 +447,12 @@ module Response = struct
       self.code Headers.pp self.headers pp_body self.body
 
   let output_ (oc:Out.t) (self:t) : unit =
-    Out.printf oc "HTTP/1.1 %d %s\r\n" self.code
-      (Response_code.descr self.code);
+    Out.add_string oc "HTTP/1.1 ";
+    Out.add_decimal oc self.code;
+    Out.add_char oc ' ';
+    Out.add_string oc (Response_code.descr self.code);
+    Out.add_char oc '\r';
+    Out.add_char oc '\n';
     let body = self.body in
     let headers, chunked =
       match body with

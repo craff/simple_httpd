@@ -129,10 +129,13 @@ val read_exactly :
 
 module Out_buf : sig
   type t
+  val fd : t -> Unix.file_descr
   val create : ?buf_size:int -> Simple_httpd_domain.client -> t
   val flush : t -> unit
   val close : t -> unit
   val add_char : t -> char -> unit
+  val add_decimal : t -> int -> unit
+  val add_hexa : t -> int -> unit
   val add_string : t -> string -> unit
   val add_substring : t -> string -> int -> int -> unit
   val add_bytes : t -> bytes -> unit
