@@ -131,32 +131,21 @@ let _ =
 exception Invalid_header of string
 exception End_of_headers
 
-let parse ~buf is =
-  let getc () = Simple_httpd_stream.read_char is in
-  let rec finish_loop () =
-    let c = getc () in
-    if c = ':' then raise (Invalid_header (Buffer.contents buf))
-    else (Buffer.add_char buf c;
-          finish_loop ())
-  in
-  let finish str c =
-    Buffer.clear buf;
-    Buffer.add_string buf str;
-    Buffer.add_char buf c;
-    finish_loop ()
-  in
-  let rec fn leaf tbl offset c =
-    if c = ':' then (match leaf with Good h -> h
-                     | Bad s -> raise (Invalid_header s)) else
-    let i = Char.code (Char.uppercase_ascii c) - offset in
-    if i >= 0 && i < Array.length tbl then
-      (let c = getc () in
-       let {leaf;tbl;offset} = tbl.(i) in fn leaf tbl offset c)
-    else
-      finish (match leaf with Good h -> to_string h
-                            | Bad s -> s) c
-  in
-  let c = getc () in
-  if c = '\r' then (assert (getc () = '\n'); raise End_of_headers);
-  fn leaf_0 tbl_0 offset_0 c
+let cell0 = {leaf=leaf_0; tbl=tbl_0; offset=offset_0}
+
+let fin_fn {leaf; _} =
+  match leaf with Good h -> h
+                | Bad s -> raise (Invalid_header s)
+
+let fold_fn ({leaf; tbl; offset} as acc) c =
+  if c = '\r' && acc == cell0 then raise End_of_headers;
+  if c = ':' then raise Exit else
+  let i = Char.code (Char.uppercase_ascii c) - offset in
+  if i >= 0 && i < Array.length tbl then
+    tbl.(i)
+  else
+    raise (Invalid_header (
+      (match leaf with Good h -> to_string h
+                     | Bad s -> s) ^ String.make 1 c))
+
 |}

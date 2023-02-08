@@ -35,8 +35,14 @@ let _ =
   List.iter (fun h -> Printf.printf "  | %s\n" (to_cstr h)) fields;
   Printf.printf "\n%!"
 
-type tree = { leaf : string option; nodes : (char * (char * tree)) list }
-let empty = { leaf = None; nodes = [] }
+type tree = { leaf : string option; nodes : (char * (char * tree)) list; id : int }
+
+let count = ref 0
+
+let empty () =
+  let id = !count in
+  incr count;
+  { leaf = None; nodes = []; id}
 
 let rec sort tree =
   let nodes = List.sort (fun (c1,_) (c2,_) -> compare c1 c2) tree.nodes in
@@ -46,23 +52,21 @@ let rec sort tree =
 let tree : tree =
   let rec fn tree h0 h =
     let len = String.length h in
-    if len = 0 then
-      { tree with leaf = Some h0 }
-    else
-      let c = Char.uppercase_ascii h.[0] in
-      let h' = String.sub h 1 (len - 1) in
-      let son = try snd (List.assoc c tree.nodes)
-                with Not_found -> empty
-      in
-      let nodes = List.filter (fun (c',_) -> c <> c') tree.nodes in
-      let son = fn son h0 h' in
-      { tree with nodes = (c,(h.[0], son)) :: nodes }
+    if len = 0 then { tree with leaf = Some h0 } else
+    let c = Char.uppercase_ascii h.[0] in
+    let h' = String.sub h 1 (len - 1) in
+    let son = try snd (List.assoc c tree.nodes)
+              with Not_found -> empty ()
+    in
+    let nodes = List.filter (fun (c',_) -> c <> c') tree.nodes in
+    let son = fn son h0 h' in
+    { tree with nodes = (c,(h.[0], son)) :: nodes }
   in
   let rec gn tree = function
     | [] -> tree
     | h :: l -> gn (fn tree h h) l
   in
-  sort (gn empty fields)
+  sort (gn (empty ()) fields)
 
 let _ = Printf.printf "
 let eq (h1:t) (h2:t) = h1 = h2
@@ -78,21 +82,9 @@ let to_string = function
 let _ = Printf.printf "%s" {|
 exception Invalid_header of string
 exception End_of_headers
+exception Found of t
 
-let parse ~buf is =
-  let getc () = Simple_httpd_stream.read_char is in
-  let rec finish_loop () =
-    let c = getc () in
-    if c = ':' then raise (Invalid_header (Buffer.contents buf))
-    else finish_loop ()
-  in
-  let finish k c =
-    Buffer.clear buf;
-    Buffer.add_string buf k;
-    Buffer.add_char buf c;
-    finish_loop ()
-  in
-
+type fn = Cell of (char -> fn) [@unboxed]
 |}
 
 let both c1 =
@@ -101,20 +93,37 @@ let both c1 =
     Printf.sprintf "%C|%C" c1 c2
 
 let rec fn first tree k =
-  let cases = List.map (fun (c,(c0,t)) ->
-                  let k = k ^ String.make 1 c0 in
-                  Printf.sprintf "    | %s -> (%s)" (both c) (fn false t k)) tree.nodes
+  List.iter (fun (_,(c0,t)) ->
+      let k = k ^ String.make 1 c0 in
+      fn false t k) tree.nodes;
+  let cases = List.map (fun (c,(_,t)) ->
+                  Printf.sprintf "    | %s -> cell_%d" (both c) t.id) tree.nodes
   in
-  let default = Printf.sprintf "    | c -> finish %S c" k in
+  let default = Printf.sprintf "    | c -> raise (Invalid_header (%S ^ String.make 1 c))" k in
   let cases = String.concat "\n" (cases @ [default]) in
-  Printf.sprintf "
-  let c = getc () in %s
-  match c with ':' -> %s\n%s
-  "
-  (if first then "\nif c = '\\r' then (assert (getc () = '\\n'); raise End_of_headers);"
+  Printf.printf "let cell_%d = Cell (fun c -> %smatch c with ':' -> %s\n%s)\n"
+  tree.id
+  (if first then "if c = '\\r' then raise End_of_headers;\n"
             else "")
   (match tree.leaf with
    | None -> Printf.sprintf "    raise (Invalid_header %S)" k
-   | Some h -> Printf.sprintf "    %s" (to_cstr h)) cases
+   | Some h -> Printf.sprintf "    raise (Found %s)" (to_cstr h)) cases
 
-let _ = Printf.printf "%s\n%!" (fn true tree "")
+let _ = fn true tree ""
+
+let _ = Printf.printf "%s\n%!"
+"let parse self =
+  let open Simple_httpd_stream in
+  let acc = ref cell_0 in
+  try
+    while true do
+      for j = self.off to self.off + self.len - 1 do
+        self.consume 1;
+        let Cell f = !acc in
+        acc := f (Bytes.get self.bs j);
+      done;
+      self.fill_buf();
+      if self.len = 0 then raise End_of_file
+    done;
+    assert false
+  with Found k -> k"

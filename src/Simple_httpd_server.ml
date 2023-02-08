@@ -150,7 +150,7 @@ module Headers = struct
   let parse_ ~buf (bs:byte_stream) : t * Cookies.t =
     let rec loop headers cookies =
       (try
-        let k = H.parse ~buf bs in
+        let k = H.parse bs in
         let v =
           try
             Byte_stream.read_line ~buf bs
@@ -168,7 +168,9 @@ module Headers = struct
         in
         fun () -> loop headers cookies
       with
-      | H.End_of_headers -> (fun () -> (headers,cookies))
+      | H.End_of_headers ->
+         assert (Byte_stream.read_char bs = '\n');
+         (fun () -> (headers,cookies))
       | H.Invalid_header s ->
          (fun () -> bad_reqf 400 "invalid header value: %S" s)) ()
     in

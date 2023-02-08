@@ -40,5 +40,6 @@ val eq : t -> t -> bool
 val to_string : t -> string
 exception Invalid_header of string
 exception End_of_headers
-val parse : buf:Buffer.t -> Simple_httpd_stream.t -> t
+
+val parse : Simple_httpd_stream.t -> t
 "
