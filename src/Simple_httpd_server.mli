@@ -64,7 +64,7 @@ end
     Headers are metadata associated with a request or response. *)
 
 module Headers : sig
-  type header = Simple_httpd_headers.t
+  type header = Simple_httpd_header.t
   type t = (header * string) list
   (** The header files of a request or response.
 

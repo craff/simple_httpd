@@ -14,11 +14,11 @@
   (action (with-stdout-to %{targets} (run %{bin}))))
 
 (rule
-  (targets Simple_httpd_headers.ml)
+  (targets Simple_httpd_header.ml)
   (deps (:bin ./gen/compile_headers_fun.exe) field-names.csv)
   (action (with-stdout-to %{targets} (run %{bin} field-names.csv))))
 
 (rule
-  (targets Simple_httpd_headers.mli)
+  (targets Simple_httpd_header.mli)
   (deps (:bin ./gen/compile_headers_mli.exe) field-names.csv)
   (action (with-stdout-to %{targets} (run %{bin} field-names.csv))))

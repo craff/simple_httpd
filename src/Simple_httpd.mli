@@ -102,6 +102,8 @@ module Domain = Simple_httpd_domain
 
 module Session = Simple_httpd_session
 
+module Header = Simple_httpd_header
+
 (** Type describing addresses we want to listen too, provided
     here to avoid module opening *)
 type listenning = Simple_httpd_domain.listenning =

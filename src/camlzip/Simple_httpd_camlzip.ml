@@ -1,7 +1,7 @@
 
 module U = Simple_httpd_util
 module S = Simple_httpd_server
-module H = Simple_httpd_headers
+module H = Simple_httpd_header
 module BS = Simple_httpd_stream
 
 (* zlib string compression *)

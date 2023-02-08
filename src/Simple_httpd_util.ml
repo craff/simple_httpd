@@ -243,6 +243,25 @@ module LinkedList = struct
 
   let create () = { head = Nil; tail = Nil }
 
+  let is_cell = function
+    | Nil -> false
+    | Cons _ -> true
+
+  let is_empty l = not (is_cell l.head)
+
+  let get = function
+    | Nil -> raise Not_found
+    | Cons { v; _ } -> v
+
+  let head l = l.head
+  let tail l = l.tail
+  let next l = match l with
+    | Nil -> raise Not_found
+    | Cons r -> r.next
+  let prev l = match l with
+    | Nil -> raise Not_found
+    | Cons r -> r.prev
+
   let size l =
     let rec fn acc = function
       | Nil -> acc
@@ -252,17 +271,63 @@ module LinkedList = struct
 
   let add_first v l =
     let cell = Cons { v; next = l.head; prev = Nil } in
-    match l.head with
+    (match l.head with
     | Nil    -> assert (l.tail = Nil);
                 l.head <- cell; l.tail <- cell
-    | Cons r -> r.prev <- cell; l.head <- cell
+    | Cons r -> r.prev <- cell; l.head <- cell);
+    cell
 
   let add_last v l =
     let cell = Cons { v; next = Nil; prev = l.tail } in
-    match l.tail with
+    (match l.tail with
     | Nil    -> assert (l.head = Nil);
                 l.head <- cell; l.tail <- cell
-    | Cons r -> r.next <- cell; l.tail <- cell
+    | Cons r -> r.next <- cell; l.tail <- cell);
+    cell
+
+  let remove_cell : 'a cell -> 'a t -> unit =
+    fun c l ->
+      match c with
+      | Nil -> invalid_arg "LinkedList.remove_cell"
+      | Cons r ->
+         (match r.prev with
+          | Nil -> assert (l.head == c); l.head <- r.next
+          | Cons p -> p.next <- r.next; r.next <- Nil);
+         (match r.next with
+          | Nil -> assert (l.tail == c); l.tail <- r.prev
+          | Cons n -> n.prev <- r.prev; r.prev <- Nil)
+
+  let insert_first : 'a cell -> 'a t -> unit =
+    fun c l ->
+          match c with
+      | Nil -> invalid_arg "LinkedList.insert_first"
+      | Cons r ->
+         assert (r.next = Nil);
+         assert (r.prev = Nil);
+         r.next <- l.head;
+         (match l.head with
+          | Nil -> l.tail <- c
+          | Cons r' -> r'.prev <- c);
+         l.head <- c
+
+  let move_first : 'a cell -> 'a t -> unit =
+    fun c l -> remove_cell c l; insert_first c l
+
+  let insert_last : 'a cell -> 'a t -> unit =
+    fun c l ->
+          match c with
+      | Nil -> invalid_arg "LinkedList.insert_first"
+      | Cons r ->
+         assert (r.next = Nil);
+         assert (r.prev = Nil);
+         r.prev <- l.tail;
+         (match l.tail with
+          | Nil -> l.head <- c
+          | Cons r' -> r'.next <- c);
+         l.tail <- c
+
+  let move_last : 'a cell -> 'a t -> unit =
+    fun c l -> remove_cell c l; insert_last c l
 
   type 'a prev = Cell of 'a cell | Root of 'a t
 

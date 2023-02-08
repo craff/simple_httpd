@@ -4,7 +4,7 @@ type byte_stream = Simple_httpd_stream.t
 
 module U   = Simple_httpd_util
 module D   = Simple_httpd_domain
-module H   = Simple_httpd_headers
+module H   = Simple_httpd_header
 
 module Out = Simple_httpd_stream.Out_buf
 
@@ -369,7 +369,7 @@ end
   match r with
   | None -> assert_failure "should parse"
   | Some req ->
-    let module H = Simple_httpd_headers in
+    let module H = Simple_httpd_header in
     assert_equal (Some "coucou") (Headers.get H.Host req.Request.headers);
     assert_equal (Some "11") (Headers.get H.Content_Length req.Request.headers);
     assert_equal "hello" req.Request.path;

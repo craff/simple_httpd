@@ -1,7 +1,7 @@
 
 module S = Simple_httpd
-module U = Simple_httpd_util
-module H = Simple_httpd_headers
+module U = Simple_httpd.Util
+module H = Simple_httpd.Header
 
 let now_ = Unix.gettimeofday
 

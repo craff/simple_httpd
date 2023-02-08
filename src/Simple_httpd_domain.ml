@@ -46,15 +46,19 @@ and mutex =
   ; mutable owner   : client option
   }
 
-and session =
+and session_info =
   { addr : string
   ; key : string
   ; mutex : mutex
+  ; life_time : float
+  ; mutable last_refresh : float
   ; mutable clients : client list
   ; mutable data : session_data
   ; mutable cleanup : session_data -> unit
   ; mutable cookies : (string * string) list
   }
+
+and session = session_info U.LinkedList.cell
 
 let fake_client =
     { sock = Unix.stdout;
@@ -449,6 +453,7 @@ let loop id st listens pipe _delta timeout handler () =
       match c.session with
       | None -> ()
       | Some sess ->
+         let sess = U.LinkedList.get sess in
          Mutex.lock sess.mutex;
          sess.clients <- List.filter (fun c' -> c != c') sess.clients;
          Mutex.unlock sess.mutex;

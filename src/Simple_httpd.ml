@@ -43,3 +43,5 @@ module Html = Simple_httpd_html
 module Domain = Simple_httpd_domain
 
 module Session = Simple_httpd_session
+
+module Header = Simple_httpd_header

@@ -1,6 +1,8 @@
 open Simple_httpd_domain
 
 module S = Simple_httpd_server
+module D = Simple_httpd_domain
+module LinkedList = Simple_httpd_util.LinkedList
 
 let addr_of_sock sock =
   match Unix.getsockname sock
@@ -8,96 +10,141 @@ let addr_of_sock sock =
      | ADDR_INET (addr, _) -> Unix.string_of_inet_addr addr
 
 let get_session, delete_session =
-  let all_sessions = Hashtbl.create 1024 in
-  let mutex = Mutex.create () in
-  let get_session client key init =
-    Mutex.lock mutex;
+  (* table to search session by key *)
+  let sessions_tbl = Hashtbl.create 1024 in
+  let mutex_tbl = Mutex.create () in
+  (* session orderer by expiration data *)
+  let sessions_list = Simple_httpd_util.LinkedList.create () in
+  let mutex_list = Mutex.create () in
+  let delete_session sess =
+    let session = LinkedList.get sess in
+    Mutex.lock mutex_tbl;
+    Hashtbl.remove sessions_tbl session.key;
+    Mutex.unlock mutex_tbl;
+    Mutex.lock mutex_list;
+    (try LinkedList.remove_cell sess sessions_list;
+         Mutex.unlock mutex_list
+     with e -> Mutex.unlock mutex_list; raise e);
+    List.iter D.close session.clients;
+    List.iter (fun cl -> cl.session <- None) session.clients;
+    session.cleanup session.data;
+  in
+  let refresh session =
+    let now = Unix.gettimeofday () in
+    Mutex.lock mutex_list;
+    try
+      LinkedList.move_first session sessions_list;
+      (LinkedList.get session).last_refresh <- now;
+      while  let l = LinkedList.tail sessions_list in
+             let sess = LinkedList.get l in
+             LinkedList.is_cell l && now -. sess.last_refresh > sess.life_time do
+        let l = LinkedList.tail sessions_list in
+        LinkedList.remove_cell l sessions_list;
+      done;
+      Mutex.unlock mutex_list
+    with e ->
+      Mutex.unlock mutex_list; raise e
+  in
+  let get_session ?(session_life_time=3600.0) client key init =
+    Mutex.lock mutex_tbl;
     try
       match client.session with
       | Some s ->
-         Mutex.unlock mutex;
+         Mutex.unlock mutex_tbl;
+         refresh s;
          (s, true)
       | None ->
          let session = match key with
            | None -> None
-           | Some key -> Hashtbl.find_opt all_sessions key
+           | Some key -> Hashtbl.find_opt sessions_tbl key
          in
          match session with
          | Some s ->
+            Mutex.unlock mutex_tbl;
             client.session <- Some s;
-            s.clients <- client :: s.clients;
-            Mutex.unlock mutex;
+            let sc = LinkedList.get s in
+            sc.clients <- client :: sc.clients;
+            refresh s;
             (s, true)
          | None ->
             let addr = addr_of_sock client.sock in
             let key = Digest.to_hex
                         (Digest.string (addr ^ string_of_int (Random.int 1_000_000_000))) in
-            let data = match init with
-              | None -> NoData
-              | Some f -> f ()
-            in
+            let data = init () in
             let cleanup _ = () in
-            let session = { addr; key; clients=[client]; mutex = Mutex.create ();
-                            data; cleanup; cookies = [] } in
+            let now = Unix.gettimeofday () in
+            let session_info =
+              { addr; key; clients=[client]; mutex = Mutex.create ()
+              ; data; cleanup; cookies = []; life_time = session_life_time
+              ; last_refresh = now }
+            in
+            Mutex.lock mutex_list;
+            let session = LinkedList.add_first session_info sessions_list in
+            Mutex.unlock mutex_list;
             client.session <- Some session;
-            Hashtbl.add all_sessions key session;
-            Mutex.unlock mutex;
+            Hashtbl.add sessions_tbl key session;
+            Mutex.unlock mutex_tbl;
             (session, false)
-    with e -> Mutex.unlock mutex; raise e
-  in
-  let delete_session sess =
-    Mutex.lock mutex;
-    List.iter (fun cl -> cl.session <- None) sess.clients;
-    Hashtbl.remove all_sessions sess.key;
-    sess.cleanup sess.data;
-    Mutex.unlock mutex
+    with e -> Mutex.unlock mutex_tbl; raise e
   in
   (get_session, delete_session)
 
-let do_session_data fn sess =
-  Mutex.lock sess.mutex;
+let do_session_data fn (sess : D.session) =
+  let session = LinkedList.get sess in
+  Mutex.lock session.mutex;
   try
-    let r = fn sess.data in
-    Mutex.unlock sess.mutex;
+    let r = fn session.data in
+    Mutex.unlock session.mutex;
     r
   with e ->
-    Mutex.unlock sess.mutex;
+    Mutex.unlock session.mutex;
     raise e
 
-let set_session_data sess data cleanup =
-  Mutex.lock sess.mutex;
-  sess.cleanup sess.data;
-  sess.data <- data;
-  sess.cleanup <- cleanup;
-  Mutex.unlock sess.mutex
+let set_session_data (sess : D.session) data cleanup =
+  let session = LinkedList.get sess in
+  Mutex.lock session.mutex;
+  session.cleanup session.data;
+  session.data <- data;
+  session.cleanup <- cleanup;
+  Mutex.unlock session.mutex
 
-let set_session_cookie sess cname value =
-  Mutex.lock sess.mutex;
-  let cs = List.filter (fun (n,_) -> n <> cname) sess.cookies in
-  sess.cookies <- (cname, value) :: cs;
-  Mutex.unlock sess.mutex
+let set_session_cookie (sess : D.session) cname value =
+  let session = LinkedList.get sess in
+  Mutex.lock session.mutex;
+  let cs = List.filter (fun (n,_) -> n <> cname) session.cookies in
+  session.cookies <- (cname, value) :: cs;
+  Mutex.unlock session.mutex
 
-let mk_cookies sess c =
-  let c = S.Cookies.create ~name:"SESSION_KEY" ~max_age:3600L (* FIXME *)
-            ~same_site:`Strict sess.key c in
-  let c = S.Cookies.create ~name:"SESSION_ADDR" ~max_age:3600L
-            ~same_site:`Strict sess.addr c in
+let mk_cookies (sess : D.session) c =
+  let session = LinkedList.get sess in
+  let max_age = Int64.of_float session.life_time in
+  Mutex.lock session.mutex;
+  let c = S.Cookies.create ~name:"SESSION_KEY" ~max_age
+            ~same_site:`Strict session.key c in
+  let c = S.Cookies.create ~name:"SESSION_ADDR" ~max_age
+            ~same_site:`Strict session.addr c in
   let c = List.fold_left (fun c (name, value) ->
-               S.Cookies.create ~name ~max_age:3600L
-            ~same_site:`Strict ~http_only:false value c) c sess.cookies in
+               S.Cookies.create ~name ~max_age
+                 ~same_site:`Strict ~http_only:false value c) c session.cookies in
+  Mutex.unlock session.mutex;
   c
 
-let check ?init ?(remove=false) ?(error=(302,"index.html")) req =
+let check
+      ?(session_life_time=3600.0)
+      ?(init=fun () -> NoData)
+      ?(check=fun _ -> true)
+      ?(error=(302,"index.html")) req =
   let cookies = S.Request.cookies req in
   let client = S.Request.client req in
   let key = Option.map Http_cookie.value
               (S.Request.get_cookie req "SESSION_KEY")
   in
-  let (session, old) = get_session client key init in
+  let (sess, old) = get_session ~session_life_time client key init in
+  let session = LinkedList.get sess in
   try
-    if remove then
+    if not (check sess) then
       begin
-        delete_session session;
+        delete_session sess;
         let cookies = S.Cookies.delete_all cookies in
         let gn = S.Response.update_headers
                    (fun h -> S.Headers.set_cookies cookies h) in
@@ -122,12 +169,12 @@ let check ?init ?(remove=false) ?(error=(302,"index.html")) req =
           else
             S.Cookies.delete_all cookies
         in
-        let cookies = mk_cookies session cookies in
+        let cookies = mk_cookies sess cookies in
         let gn = S.Response.update_headers
                      (fun h -> S.Headers.set_cookies cookies h) in
         gn
         end
   with Exit ->
-    delete_session session;
+    delete_session sess;
     let (code, msg) = error in
     S.Response.fail_raise ~code "session error: %S" msg

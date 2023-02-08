@@ -50,9 +50,22 @@ val pp_date : Format.formatter -> Unix.tm -> unit
 
 module LinkedList : sig
   type 'a t
+  type 'a cell
+
   val create : unit -> 'a t
+  val is_empty : 'a t -> bool
   val size : 'a t -> int
-  val add_first : 'a -> 'a t -> unit
-  val add_last : 'a -> 'a t -> unit
+  val add_first : 'a -> 'a t -> 'a cell
+  val add_last : 'a -> 'a t -> 'a cell
   val search_and_remove : ('a -> bool) -> ('a -> unit) -> 'a t -> unit
+
+  val is_cell : 'a cell -> bool
+  val get : 'a cell -> 'a
+  val head : 'a t -> 'a cell
+  val tail : 'a t -> 'a cell
+  val next : 'a cell -> 'a cell
+  val prev : 'a cell -> 'a cell
+  val remove_cell : 'a cell -> 'a t -> unit
+  val move_first : 'a cell -> 'a t -> unit
+  val move_last : 'a cell -> 'a t -> unit
 end

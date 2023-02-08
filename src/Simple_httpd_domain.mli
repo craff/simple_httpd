@@ -58,15 +58,19 @@ type client = {
     buf : Buffer.t;                   (** used to parse headers *)
   }
 
-and session = (* FIXME: force protection by mutex making the type private *)
+and session_info = (* FIXME: force protection by mutex making the type private *)
   { addr : string
   ; key : string
   ; mutex : Mutex.t
+  ; life_time : float
+  ; mutable last_refresh : float
   ; mutable clients : client list
   ; mutable data : session_data
   ; mutable cleanup : session_data -> unit
   ; mutable cookies : (string * string) list
   }
+
+and session = session_info Simple_httpd_util.LinkedList.cell
 
 (** only to please qtest *)
 val fake_client : client
