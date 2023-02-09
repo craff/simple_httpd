@@ -1,3 +1,5 @@
+{0 Simple_httpd library to write web server and application}
+
 This library implements a HTTP/1.1 server for Linux using domains and
 algebraic effect. It uses [epoll] and [eventfd] to schedule the treatment of
 clients efficiently, with one domain used only to accept request and several

@@ -281,10 +281,7 @@ let prelude = {|
 (** Output for HTML combinators.
 
     This output type is used to produce a string reasonably efficiently from
-    a tree of combinators.
-
-    @since 0.12
-    @open *)
+    a tree of combinators. *)
 module Out : sig
   type t
   val create : unit -> t
@@ -326,8 +323,7 @@ type nary = ?if_:bool -> attribute list -> elt list -> elt
 (** Element with children, represented as a list.
     @param if_ if false, do not print anything (default true) *)
 
-(** A chunk of sub-elements, possibly empty.
-    @inline *)
+(** A chunk of sub-elements, possibly empty. *)
 type sub_elt = [ `E of elt | `L of elt list | `S of elt Seq.t | `Nil]
 
 type nary' = ?if_:bool -> attribute list -> sub_elt list -> elt
@@ -396,10 +392,10 @@ let[@inline] sub_e (elt:elt) : sub_elt = `E elt
 (** Sub-element with a list of items inside. *)
 let[@inline] sub_l (l:elt list) : sub_elt = `L l
 
-(** Sub-element with a sequence ({!Seq.t}) of items inside. *)
+(** Sub-element with a sequence ([!Seq.t]) of items inside. *)
 let[@inline] sub_seq (l:elt Seq.t) : sub_elt = `S l
 
-(** Helper to build a {!Seq.t} from an array. *)
+(** Helper to build a [Seq.t] from an array. *)
 let seq_of_array (a:_ array) : _ Seq.t =
   let rec loop i () =
     if i=Array.length a then Seq.Nil
@@ -498,4 +494,3 @@ let () =
   List.iter emit_attr attrs;
   pf "end\n";
   ()
-

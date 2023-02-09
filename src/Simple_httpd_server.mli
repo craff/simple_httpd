@@ -1,13 +1,6 @@
+(* included in main module Simple_httpd *)
 
-(** HTTP server.
-
-    This module implements a very simple, basic HTTP/1.1 server using blocking
-    IOs and threads.
-
-    @since NEXT_RELEASE
-*)
-
-(** {2 Methods}
+(** {1 Methods}
 
     A short module defining the various HTTP methods (GET,PUT,...)*)
 
@@ -27,7 +20,7 @@ module Meth : sig
   val to_string : t -> string
 end
 
-(** {2 Cookies}
+(** {1 Cookies}
 
     Cookies are data that are maintend both on server and clients.
     This is a module to get and set cookies in the headers. *)
@@ -59,7 +52,7 @@ module Cookies : sig
   val delete_all : t -> t
 end
 
-(** {2 Headers}
+(** {1 Headers}
 
     Headers are metadata associated with a request or response. This module provide
     the necessary function to read and modify headers *)
@@ -77,8 +70,7 @@ module Headers : sig
       See https://tools.ietf.org/html/rfc7230#section-3.2 *)
 
   val empty : t
-  (** Empty list of headers
-      @since 0.5 *)
+  (** Empty list of headers *)
 
   val get : ?f:(string->string) -> header -> t -> string option
   (** [get k headers] looks for the header field with key [k].
@@ -101,7 +93,7 @@ module Headers : sig
   (** Pretty print the headers. *)
 end
 
-(** {2 Requests}
+(** {1 Requests}
 
     Requests are sent by a client, e.g. a web browser, curl or wget. *)
 
@@ -110,33 +102,28 @@ type buf = Buffer.t                     (** type alias needed below *)
 type byte_stream = Simple_httpd_input.t (** type alias needed below *)
 
 module Request : sig
-  type 'body t = private {
-    meth: Meth.t;
-    host: string;
-    client: Simple_httpd_domain.client;
-    headers: Headers.t;
-    cookies: Cookies.t;
-    http_version: int*int;
-    path: string;
-    path_components: string list;
-    query: (string*string) list;
-    body: 'body;
-    start_time: float;
-    trailer: (Headers.t * Cookies.t) option ref;
+  type 'body t = private
+    { meth: Meth.t (** The method of this request *)
+    ; host: string (** The host header *)
+    ; client: Simple_httpd_domain.client
+                (** information about the client used by the scheduler *)
+    ; headers: Headers.t (** Request headers *)
+    ; cookies: Cookies.t (** Request cookies *)
+    ; http_version: int*int (** protocol set in the request *)
+    ; path: string (** full path of the request *)
+    ; path_components: string list  (** the part of the path that precedes [query] and is split on ["/"]. *)
+    ; query: (string*string) list (** the query parameters in ["?foo=bar,x=y"] *)
+    ; body: 'body (** The body (its current state, depending on the stage of treatment *)
+    ; start_time: float (** unix time when the request was started *)
+    ; trailer: (Headers.t * Cookies.t) option ref (** trailer after a chunked body.
+      this is only updated after the body was fully parsed. *)
   }
   (** A request with method, path, host, headers, and a body, sent by a client.
 
-      The body is polymorphic because the request goes through
-      several transformations. First it has no body, as only the request
-      and headers are read; then it has a stream body; then the body might be
-      entirely read as a string via {!read_body_full}.
-
-      @since 0.6 The field [query] was added and contains the query parameters in ["?foo=bar,x=y"]
-      @since 0.6 The field [path_components] is the part of the path that precedes [query] and is split on ["/"].
-      @since 0.11 the type is a private alias
-      @since 0.11 the field [start_time] was added
-      @since simple_httpd: [trailer] are automatically updated when finishing to read a chunker body
-  *)
+      The body is polymorphic because the request goes through several
+      transformations. First it a body with a unread {!Simple_httpd.Input.t}
+      stream, as only the request and headers are read; while the body might
+      be entirely read as a string via {!read_body_full}.  *)
 
   val pp : Format.formatter -> string t -> unit
   (** Pretty print the request and its body *)
@@ -155,20 +142,16 @@ module Request : sig
   (** [set_header k v req] sets [k: v] in the request [req]'s headers. *)
 
   val update_headers : (Headers.t -> Headers.t) -> 'a t -> 'a t
-  (** Modify headers
-      @since 0.11 *)
+  (** Modify headers *)
 
   val set_body : 'a -> _ t -> 'a t
-  (** [set_body b req] returns a new query whose body is [b].
-      @since 0.11 *)
+  (** [set_body b req] returns a new query whose body is [b]. *)
 
   val cookies : _ t -> Cookies.t
-  (** List of cookies of the request
-      @since 0.12 *)
+  (** List of cookies of the request *)
 
   val get_cookie : _ t -> string -> Http_cookie.t option
-  (** get a cookie
-      @since 0.12 *)
+  (** get a cookie *)
 
   val host : _ t -> string
   (** Host field of the request. It also appears in the headers. *)
@@ -183,30 +166,26 @@ module Request : sig
   (** Request client *)
 
   val query : _ t -> (string*string) list
-  (** Decode the query part of the {!field-path} field
-      @since 0.4 *)
+  (** Decode the query part of the {!field-path} field *)
 
   val body : 'b t -> 'b
   (** Request body, possibly empty. *)
 
   val start_time : _ t -> float
-  (** time stamp (from [Unix.gettimeofday]) after parsing the first line of the request
-      @since 0.11 *)
+  (** time stamp (from [Unix.gettimeofday]) after parsing the first line of
+      the request *)
 
   val trailer : _ t -> (Headers.t * Cookies.t) option
   (** trailer, read after a chunked body. Only maeningfull after the body stream
       we fully read and closed *)
 
   val limit_body_size : max_size:int -> byte_stream t -> byte_stream t
-  (** Limit the body size to [max_size] bytes, or return
-      a [413] error.
-      @since 0.3
-  *)
+  (** Limit the body size to [max_size] bytes, or return a [413] error. *)
 
   val read_body_full : buf:Buffer.t -> byte_stream t -> string t
   (** Read the whole body into a string. Potentially blocking.
 
-      @param buf_size initial size of underlying buffer (since 0.11) *)
+      @param buf_size initial size of underlying buffer *)
 
   (**/**)
   (* for testing purpose, do not use *)
@@ -218,7 +197,7 @@ module Request : sig
   (**/**)
 end
 
-(** {2 Response Codes}
+(** {1 Response Codes}
 
     Response code allows client to know if a request failed and give a reason.
     This module is not complete (yet). *)
@@ -240,7 +219,7 @@ module Response_code : sig
       NOTE: this is not complete (yet). *)
 end
 
-(** {2 Responses}
+(** {1 Responses}
 
     Responses are what a http server, such as {!Simple_httpd}, send back to
     the client to answer a {!Request.t}*)
@@ -260,28 +239,22 @@ module Response : sig
   (** A response to send back to a client. *)
 
   val set_body : body -> t -> t
-  (** Set the body of the response.
-      @since 0.11 *)
+  (** Set the body of the response. *)
 
   val set_header : Headers.header -> string -> t -> t
-  (** Set a header.
-      @since 0.11 *)
+  (** Set a header. *)
 
   val update_headers : (Headers.t -> Headers.t) -> t -> t
-  (** Modify headers
-      @since 0.11 *)
+  (** Modify headers *)
 
   val set_headers : Headers.t -> t -> t
-  (** Set all headers.
-      @since 0.11 *)
+  (** Set all headers. *)
 
   val headers : t -> Headers.t
-  (** Get headers
-      @since Simple_httpd *)
+  (** Get headers *)
 
   val set_code : Response_code.t -> t -> t
-  (** Set the response code.
-      @since 0.11 *)
+  (** Set the response code. *)
 
   val make_raw :
     ?cookies:Cookies.t ->
@@ -342,10 +315,9 @@ module Response : sig
   (** Pretty print the response. *)
 end
 
-(** {2 Routing}
+(** {1 Routing}
 
-    Basic type-safe routing.
-    @since 0.6 *)
+    Basic type-safe routing. *)
 module Route : sig
   type ('a, 'b) comp
   (** An atomic component of a path *)
@@ -367,8 +339,7 @@ module Route : sig
 
   val rest : (string list -> 'a, 'a) t
   (** Matches a string, even containing ['/']. This will match
-      the entirety of the remaining route.
-      @since 0.7 *)
+      the entirety of the remaining route. *)
 
   val (@/) : ('a, 'b) comp -> ('b, 'c) t -> ('a, 'c) t
   (** [comp / route] matches ["foo/bar/…"] iff [comp] matches ["foo"],
@@ -376,24 +347,20 @@ module Route : sig
 
   val exact_path : string -> ('a,'b) t -> ('a,'b) t
   (** [exact_path "foo/bar/..." r] is equivalent to
-      [exact "foo" @/ exact "bar" @/ ... @/ r]
-      @since 0.11 **)
+      [exact "foo" @/ exact "bar" @/ ... @/ r] **)
 
   val pp : Format.formatter -> _ t -> unit
-  (** Print the route.
-      @since 0.7 *)
+  (** Print the route. 0.7 *)
 
   val to_string : _ t -> string
-  (** Print the route.
-      @since 0.7 *)
+  (** Print the route. 0.7 *)
 end
 
-(** {2 Main Server type} *)
+(** {1 Main Server type} *)
 
 type t
 (** A HTTP server. See {!create} for more details. *)
 
-(** @inline *)
 type listenning = Simple_httpd_domain.listenning =
   {
     addr : string;
@@ -444,7 +411,7 @@ val status : t -> Simple_httpd_domain.status
 val active_connections : t -> int
 (** Number of active connections *)
 
-(** {2 Filters} *)
+(** {1 Filters} *)
 
 (** Type of request filters. These filters may transform both the request and
     the response. Several method may share filter passed as optional parameters
@@ -452,8 +419,9 @@ val active_connections : t -> int
 
     The transformation of the response may depend on the request, Hence the
     type. For instance the filter provided by the optional module
-    {!Simple_httpd_camlzip} uses this to compress the response only if
-    [deflate] is allowed using the header named {!Headers.Accept_Encoding}. *)
+    {{:../../simple_httpd_camlzip/Simple_httpd_camlzip/index.html}Simple_httpd_camlzip} uses this to compress the
+    response only if [deflate] is allowed using the header named
+    {!Headers.Accept_Encoding}. *)
 type filter = byte_stream Request.t -> byte_stream Request.t *
                                          (Response.t -> Response.t)
 
@@ -475,7 +443,7 @@ val compose_cross : filter -> filter -> filter
     the request will be passed first to [f2], then to [f1],
     the response will be passed first to [f1], then to [f2] **)
 
-(** {2 Route handlers}
+(** {1 Route handlers}
 
     Here are the main function to explain what you server should to depending
     on the url send by the client.
@@ -496,7 +464,7 @@ val add_route_handler :
 
     Note that the handlers are called in the following precision order:
     - {!Route.return}, accepting only the empty url is the most precide
-    - {!Route.exact s}, is the second, tried
+    - [{!Route.exact} s], is the second, tried
     - {!Route.int}
     - {!Route.string}
     - {!Route.rest} is tried last.
@@ -520,7 +488,7 @@ val add_route_handler_stream :
     This is useful when one wants to stream the body directly into a parser,
     json decoder (such as [Jsonm]) or into a file. *)
 
-(** {2 Server-sent events}
+(** {1 Server-sent events}
 
     {b EXPERIMENTAL}: this API is not stable yet. *)
 
@@ -529,8 +497,6 @@ val add_route_handler_stream :
     See {{: https://html.spec.whatwg.org/multipage/server-sent-events.html} the w3c page}
     and {{: https://jvns.ca/blog/2021/01/12/day-36--server-sent-events-are-cool--and-a-fun-bug/}
     this blog post}.
-
-    @since 0.9
   *)
 module type SERVER_SENT_GENERATOR = sig
   val set_headers : Headers.t -> unit
@@ -549,8 +515,7 @@ module type SERVER_SENT_GENERATOR = sig
       If data is a multiline string, it will be sent on separate "data:" lines. *)
 
   val close : unit -> unit
-  (** Close connection.
-      @since 0.11 *)
+  (** Close connection. *)
 end
 
 type server_sent_generator = (module SERVER_SENT_GENERATOR)
@@ -570,11 +535,9 @@ val add_route_server_sent_handler :
     and reply with a 200 immediately.
     See {!server_sent_generator} for more details.
 
-    This handler stays on the original thread (it is synchronous).
+    This handler stays on the original thread (it is synchronous). *)
 
-    @since 0.9 *)
-
-(** {2 Run the server} *)
+(** {1 Run the server} *)
 
 val run : t -> (unit, exn) result
 (** Run the main loop of the server, listening on a socket
@@ -584,7 +547,7 @@ val run : t -> (unit, exn) result
     This returns [Ok ()] if the server exits gracefully, or [Error e] if
     it exits with an error. *)
 
-(** {2 Debuggin/logging} *)
+(** {1 Debuggin/logging} *)
 
 val debug : ?lvl:int ->
             ((('a, out_channel, unit, unit) format4 -> 'a) -> unit) -> unit

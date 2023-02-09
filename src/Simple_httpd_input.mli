@@ -1,10 +1,8 @@
-(** Byte streams.
-
-    These used to live in {!Simple_httpd} but are now in their own module.
-    @since 0.12 *)
+(** Input byte streams. *)
 
 type hidden
-(** Type used to make {!t} unbuildable via a record literal. Use {!make} instead. *)
+(** Type used to make {!t} unbuildable via a record literal, but still gives
+    access to its mutable field (for camlzip only). Use {!make} instead. *)
 
 type t = {
   mutable bs: bytes;
@@ -15,7 +13,7 @@ type t = {
 
   mutable len : int;
   (** Length of valid slice in {!bs}. If [len = 0] after
-      a call to {!fill}, then the stream is finished. *)
+      a call to {!fill_buf}, then the stream is finished. *)
 
   fill_buf: unit -> unit;
   (** See the current slice of the internal buffer as [bytes, i, len],
@@ -34,8 +32,7 @@ type t = {
   (** Use {!make} to build a stream. *)
 }
 (** A buffered stream, with a view into the current buffer (or refill if empty),
-    and a function to consume [n] bytes.
-    See {!Byte_stream} for more details. *)
+    and a function to consume [n] bytes. *)
 
 val close : t -> unit
 (** Close stream *)
@@ -63,12 +60,10 @@ val of_bytes : ?i:int -> ?len:int -> bytes -> t
 val of_string : string -> t
 
 val iter : (bytes -> int -> int -> unit) -> t -> unit
-(** Iterate on the chunks of the stream
-    @since 0.3 *)
+(** Iterate on the chunks of the stream. *)
 
 val to_chan : out_channel -> t -> unit
-(** Write the stream to the channel.
-    @since 0.3 *)
+(** Write the stream to the channel. *)
 
 val make :
   ?bs:bytes ->

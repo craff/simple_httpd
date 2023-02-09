@@ -4,7 +4,6 @@
     This module provides combinators to produce html. It doesn't enforce
     the well-formedness of the html, unlike Tyxml, but it's simple and should
     be reasonably efficient.
-    @since 0.12
 *)
 
 (** @inline *)

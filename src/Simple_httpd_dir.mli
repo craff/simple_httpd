@@ -3,9 +3,7 @@
 
     This module provides the same functionality as the "http_of_dir" tool.
     It exposes a directory (and its subdirectories), with the optional ability
-    to delete or upload files.
-
-    @since 0.11 *)
+    to delete or upload files. *)
 
 (** behavior of static directory.
 
@@ -25,7 +23,7 @@ type dir_behavior =
 
 type hidden
 (** Type used to prevent users from building a config directly.
-    Use {!default_config} or {!config} instead. *)
+    Use {!default_config} or {!val-config} instead. *)
 
 (** configuration for static file handlers. This might get
     more fields over time. *)
@@ -106,7 +104,7 @@ module type VFS = sig
 
   val list_dir : string -> string array
   (** List directory. This only returns basenames, the files need
-      to be put in the directory path using {!Filename.concat}. *)
+      to be put in the directory path using [Filename.concat]. *)
 
   val delete : string -> unit
   (** Delete path *)
