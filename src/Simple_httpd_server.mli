@@ -7,10 +7,9 @@
     @since NEXT_RELEASE
 *)
 
-type buf = Buffer.t
-type byte_stream = Simple_httpd_stream.t
+(** {2 Methods}
 
-(** {2 Methods} *)
+    A short module defining the various HTTP methods (GET,PUT,...)*)
 
 module Meth : sig
   type t =
@@ -28,9 +27,11 @@ module Meth : sig
   val to_string : t -> string
 end
 
-(** {2 Set Cookie}
+(** {2 Cookies}
 
-    A module to set new cookies in the header *)
+    Cookies are data that are maintend both on server and clients.
+    This is a module to get and set cookies in the headers. *)
+
 module Cookies : sig
   type t
 
@@ -60,10 +61,15 @@ end
 
 (** {2 Headers}
 
-    Headers are metadata associated with a request or response. *)
+    Headers are metadata associated with a request or response. This module provide
+    the necessary function to read and modify headers *)
+
+(** A module defining all the legal header names *)
 
 module Headers : sig
-  type header = Simple_httpd_header.t
+  (** @inline *)
+  include module type of Simple_httpd_header
+
   type t = (header * string) list
   (** The header files of a request or response.
 
@@ -93,13 +99,15 @@ module Headers : sig
 
   val pp : Format.formatter -> t -> unit
   (** Pretty print the headers. *)
-
-
 end
 
 (** {2 Requests}
 
-    Requests are sent by a client, e.g. a web browser or cURL. *)
+    Requests are sent by a client, e.g. a web browser, curl or wget. *)
+
+type buf = Buffer.t                     (** type alias needed below *)
+
+type byte_stream = Simple_httpd_input.t (** type alias needed below *)
 
 module Request : sig
   type 'body t = private {
@@ -127,8 +135,7 @@ module Request : sig
       @since 0.6 The field [path_components] is the part of the path that precedes [query] and is split on ["/"].
       @since 0.11 the type is a private alias
       @since 0.11 the field [start_time] was added
-      @since simple_httpd: [trailer] are automatically updated when finishing
-             to read a chunker body
+      @since simple_httpd: [trailer] are automatically updated when finishing to read a chunker body
   *)
 
   val pp : Format.formatter -> string t -> unit
@@ -176,14 +183,14 @@ module Request : sig
   (** Request client *)
 
   val query : _ t -> (string*string) list
-  (** Decode the query part of the {!path} field
+  (** Decode the query part of the {!field-path} field
       @since 0.4 *)
 
   val body : 'b t -> 'b
   (** Request body, possibly empty. *)
 
   val start_time : _ t -> float
-  (** time stamp (from {!Unix.gettimeofday}) after parsing the first line of the request
+  (** time stamp (from [Unix.gettimeofday]) after parsing the first line of the request
       @since 0.11 *)
 
   val trailer : _ t -> (Headers.t * Cookies.t) option
@@ -211,7 +218,10 @@ module Request : sig
   (**/**)
 end
 
-(** {2 Response Codes} *)
+(** {2 Response Codes}
+
+    Response code allows client to know if a request failed and give a reason.
+    This module is not complete (yet). *)
 
 module Response_code : sig
   type t = int
@@ -242,10 +252,10 @@ module Response : sig
   (** Body of a response, either as a simple string,
       or a stream of bytes, or nothing (for server-sent events). *)
 
-  type t = private {
-    code: Response_code.t; (** HTTP response code. See {!Response_code}. *)
-    headers: Headers.t; (** Headers of the reply. Some will be set by [Simple_httpd] automatically. *)
-    body: body; (** Body of the response. Can be empty. *)
+  type t = private
+    { code: Response_code.t (** HTTP response code. See {!Response_code}. *)
+    ; headers: Headers.t    (** Headers of the reply. Some will be set by [Simple_httpd] automatically. *)
+    ; body: body            (** Body of the response. Can be empty. *)
   }
   (** A response to send back to a client. *)
 
@@ -383,32 +393,34 @@ end
 type t
 (** A HTTP server. See {!create} for more details. *)
 
+(** @inline *)
+type listenning = Simple_httpd_domain.listenning =
+  {
+    addr : string;
+    port : int;
+    ssl  : Ssl.context option ;
+  }
+(** Type describing addresses we want to listen too, provided
+    here to avoid module opening *)
+
 val create :
   ?masksigpipe:bool ->
   ?max_connections:int ->
   ?num_thread:int ->
-  ?delta:float ->
   ?timeout:float ->
   ?buf_size:int ->
   ?get_time_s:(unit -> float) ->
-  ?listens:Simple_httpd_domain.listenning list ->
+  ?listens:listenning list ->
   unit ->
   t
 (** Create a new webserver.
 
-    The server will not do anything until {!run} is called on it.
-    Before starting the server, one can use {!add_path_handler} and
-    {!set_top_handler} to specify how to handle incoming requests.
+    The server will not do anything until {!run} is called on it. Before starting the server, one can use {!add_route_handler} to specify how to handle incoming requests.
 
-    @param masksigpipe if true, block the signal {!Sys.sigpipe} which otherwise
-    tends to kill client threads when they try to write on broken sockets. Default: [true].
-
+    @param masksigpipe if true, block the signal [Sys.sigpipe] which otherwise tends to kill client threads when they try to write on broken sockets. Default: [true].
     @param buf_size size for buffers (since 0.11)
-
     @param max_connections maximum number of simultaneous connections.
     @param num_thread number of thread to treat client.
-    @param delta one each domain context switching will occur the first time
-      a read/write/lock will happends after delta seconds. Default: 0.030s (30ms)
     @param timeout connection is closed if the socket does not do read or
       write for the amount of second. Default: 300s, (< 0.0 means no timeout).
       timeout is not recommended when using proxy.
@@ -432,30 +444,42 @@ val status : t -> Simple_httpd_domain.status
 val active_connections : t -> int
 (** Number of active connections *)
 
-(** {2 Request handlers} *)
+(** {2 Filters} *)
 
-(** type of request filter: several method may share filter that may
-    transform the resquest and response *)
+(** Type of request filters. These filters may transform both the request and
+    the response. Several method may share filter passed as optional parameters
+    to function like {!add_route_handler}.
+
+    The transformation of the response may depend on the request, Hence the
+    type. For instance the filter provided by the optional module
+    {!Simple_httpd_camlzip} uses this to compress the response only if
+    [deflate] is allowed using the header named {!Headers.Accept_Encoding}. *)
 type filter = byte_stream Request.t -> byte_stream Request.t *
                                          (Response.t -> Response.t)
 
 val decode_request : (byte_stream -> byte_stream) -> (Headers.t -> Headers.t)
                      -> filter
-(** helper to create filters *)
+(** helper to create a filter transforming only the request. *)
 
 val encode_response : (Response.body -> Response.body) -> (Headers.t -> Headers.t)
                       -> filter
-(** helper to create filters *)
+(** helper to create a filter transforming only the resposne. *)
 
 val compose_embrace : filter -> filter -> filter
 (** [compose_embrace f1 f2] compose two filters:
-    the request will be passed first to f2, then to f1,
-    res response will be passed first to f2, then to f1 **)
+    the request will be passed first to [f2], then to [f1],
+    the response will be passed first to [f2], then to [f1] **)
 
 val compose_cross : filter -> filter -> filter
 (** [compose_cross f1 f2] compose two filters:
-    the request will be passed first to f2, then to f1,
-    res response will be passed first to f1, then to f2 **)
+    the request will be passed first to [f2], then to [f1],
+    the response will be passed first to [f1], then to [f2] **)
+
+(** {2 Route handlers}
+
+    Here are the main function to explain what you server should to depending
+    on the url send by the client.
+*)
 
 val add_route_handler :
   ?filter:filter ->
@@ -463,24 +487,26 @@ val add_route_handler :
   t ->
   ('a, string Request.t -> Response.t) Route.t -> 'a ->
   unit
-(** [add_route_handler server Route.(exact "path" @/ string @/ int @/ return) f]
-    calls [f "foo" 42 request] when a [request] with path "path/foo/42/"
-    is received.
+(** [add_route_handler server route f] add a route to give a [string] as
+    response.
 
-    Note that the handlers are called in the reverse order of their addition,
-    so the last registered handler can override previously registered ones.
+    For instance, [add_route_handler serverRoute.(exact "path" @/ string @/
+    int @/ return) f] calls [f "foo" 42 request] when a [request] with path
+    "path/foo/42/" is received.
+
+    Note that the handlers are called in the following precision order:
+    - {!Route.return}, accepting only the empty url is the most precide
+    - {!Route.exact s}, is the second, tried
+    - {!Route.int}
+    - {!Route.string}
+    - {!Route.rest} is tried last.
+    - In case of ambiguity, the first added route is tried first.
 
     @param meth if provided, only accept requests with the given method.
     Typically one could react to [`GET] or [`PUT].
-    @param accept should return [Ok fn] if the given request (before its body
-    is read) should be accepted, [Error (code,message)] if it's to be rejected
-    (e.g. because. [fn: finaliser] is used to transform the response.
-    its content is too big, or for some permission error).
-    See the {!http_of_dir} program for an example of how to use [accept] to
-    filter uploads that are too large before the upload even starts.
-    The default always returns [Ok()], i.e. it accepts all requests.
-
-    @since 0.6
+    @param filter can be used to modify the request and response and also
+    to reject some request using {!Response.fail_raise}. The default filter
+    accept all requests and does not do any transformation.
 *)
 
 val add_route_handler_stream :
@@ -492,8 +518,7 @@ val add_route_handler_stream :
 (** Similar to {!add_route_handler}, but where the body of the request
     is a stream of bytes that has not been read yet.
     This is useful when one wants to stream the body directly into a parser,
-    json decoder (such as [Jsonm]) or into a file.
-    @since 0.6 *)
+    json decoder (such as [Jsonm]) or into a file. *)
 
 (** {2 Server-sent events}
 
@@ -529,8 +554,7 @@ module type SERVER_SENT_GENERATOR = sig
 end
 
 type server_sent_generator = (module SERVER_SENT_GENERATOR)
-(** Server-sent event generator
-    @since 0.9 *)
+(** Server-sent event generator *)
 
 val add_route_server_sent_handler :
   ?filter:filter ->
@@ -560,9 +584,17 @@ val run : t -> (unit, exn) result
     This returns [Ok ()] if the server exits gracefully, or [Error e] if
     it exits with an error. *)
 
-(**/**)
+(** {2 Debuggin/logging} *)
 
-val debug : ?lvl:int -> ((('a, out_channel, unit, unit) format4 -> 'a) -> unit) -> unit
+val debug : ?lvl:int ->
+            ((('a, out_channel, unit, unit) format4 -> 'a) -> unit) -> unit
+(** call [debug ~lvl (fun k -> k "format" args)] will output a debugging message
+    on stdout. We currently use the following convention for levels:
+
+    - [0]: normal unused
+    - [1]: errors or very important events (the recommended production level)
+    - [2]: give details of request or response
+    - [>=3]: for debugging *)
+
 val set_debug: int -> unit
-
-(**/**)
+(** Set the current debug level *)

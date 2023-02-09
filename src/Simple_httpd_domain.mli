@@ -126,7 +126,7 @@ type listenning = {
   }
 
 val run : nb_threads:int -> listens:listenning list -> maxc:int ->
-          delta:float -> timeout:float -> status:status ->
+          timeout:float -> status:status ->
             (client -> unit) -> unit Domain.t array
 
 val printexn : exn -> string

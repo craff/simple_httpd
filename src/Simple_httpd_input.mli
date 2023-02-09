@@ -1,4 +1,3 @@
-
 (** Byte streams.
 
     These used to live in {!Simple_httpd} but are now in their own module.
@@ -126,25 +125,3 @@ val read_exactly :
     [bs]
     @param too_short is called if [bs] closes with still [n] bytes remaining
 *)
-
-module Out_buf : sig
-  type t
-  val create : ?buf_size:int -> Simple_httpd_domain.client -> t
-  val flush : t -> unit
-  val close : t -> unit
-  val add_char : t -> char -> unit
-  val add_decimal : t -> int -> unit
-  val add_hexa : t -> int -> unit
-  val add_string : t -> string -> unit
-  val add_substring : t -> string -> int -> int -> unit
-  val add_bytes : t -> bytes -> unit
-  val add_subbytes : t -> bytes -> int -> int -> unit
-  val printf : t -> ('a, unit, string, unit) format4 -> 'a
-end
-
-val output_chunked : Out_buf.t -> t -> unit
-(** Write the stream into the channel, using the chunked encoding. *)
-
-val output_str   : Out_buf.t -> string -> unit
-val output_bytes : Out_buf.t -> bytes  -> unit
-(** Write the content of a string/bytes to a fd *)

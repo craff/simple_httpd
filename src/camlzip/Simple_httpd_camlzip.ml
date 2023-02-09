@@ -1,8 +1,8 @@
 
-module U = Simple_httpd_util
-module S = Simple_httpd_server
-module H = Simple_httpd_header
-module BS = Simple_httpd_stream
+module S = Simple_httpd
+module U = S.Util
+module H = S.Headers
+module BS = S.Input
 
 (* zlib string compression *)
 let deflate_string ?(buf_size=16 * 4096) str =
@@ -157,7 +157,7 @@ let split_on_char ?(f=fun x->x) c s : string list =
 
 let has_deflate headers =
   match
-    S.Headers.get H.Accept_Encoding headers
+    H.get H.Accept_Encoding headers
   with
   | Some s -> List.mem "deflate" @@ split_on_char ~f:String.trim ',' s
   | None -> false

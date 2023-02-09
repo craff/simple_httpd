@@ -31,7 +31,7 @@ let lines = List.rev (fn [])
 let fields = List.map (function [] -> assert false | (h::_) -> h) lines
 
 let _ =
-  Printf.printf "type t =\n";
+  Printf.printf "type header =\n";
   List.iter (fun h -> Printf.printf "  | %s\n" (to_cstr h)) fields;
   Printf.printf "\n%!"
 
@@ -69,7 +69,7 @@ let tree : tree =
   sort (gn (empty ()) fields)
 
 let _ = Printf.printf "
-let eq (h1:t) (h2:t) = h1 = h2
+let eq (h1:header) (h2:header) = h1 = h2
 "
 
 let _ =
@@ -82,7 +82,7 @@ let to_string = function
 let _ = Printf.printf "%s" {|
 exception Invalid_header of string
 exception End_of_headers
-exception Found of t
+exception Found of header
 
 type fn = Cell of (char -> fn) [@unboxed]
 |}
@@ -113,7 +113,7 @@ let _ = fn true tree ""
 
 let _ = Printf.printf "%s\n%!"
 "let parse self =
-  let open Simple_httpd_stream in
+  let open Simple_httpd_input in
   let acc = ref cell_0 in
   try
     while true do

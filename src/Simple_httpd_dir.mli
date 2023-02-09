@@ -117,7 +117,7 @@ module type VFS = sig
   val read_file_content : string -> string
   (** Read content of a file *)
 
-  val read_file_stream : string -> Simple_httpd_stream.t
+  val read_file_stream : string -> Simple_httpd_input.t
   (** Read content of a file as a stream *)
 
   val file_size : string -> int option

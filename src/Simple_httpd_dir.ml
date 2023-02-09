@@ -1,10 +1,11 @@
 module S = Simple_httpd_server
 module U = Simple_httpd_util
 module D = Simple_httpd_domain
-module H = Simple_httpd_header
+module H = S.Headers
 module Html = Simple_httpd_html
 module Pf = Printf
 module Mutex = D.Mutex
+module Input = Simple_httpd_input
 
 type dir_behavior =
   | Index | Lists | Index_or_lists | Forbidden
@@ -78,7 +79,7 @@ module type VFS = sig
   val delete : string -> unit
   val create : string -> (bytes -> int -> int -> unit) * (unit -> unit)
   val read_file_content : string -> string
-  val read_file_stream : string -> Simple_httpd_stream.t
+  val read_file_stream : string -> Simple_httpd_input.t
   val file_size : string -> int option
   val file_mtime : string -> float option
 end
@@ -109,7 +110,7 @@ let vfs_of_dir (top:string) : vfs =
       let ic = Unix.(openfile (top // f) [O_RDONLY] 0) in
       (* Remark: epoll is illegal on regular file, can not
          use of_client_fd*)
-      Simple_httpd_stream.of_fd ic
+      Input.of_fd ic
     let create f =
       let oc = open_out_bin (top // f) in
       let write = output oc in
@@ -272,7 +273,7 @@ let add_vfs_ ?(filter=(fun x -> (x, fun r -> r))) ~config
                path (D.printexn e)
          in
          let req = S.Request.limit_body_size ~max_size:config.max_upload_size req in
-         Simple_httpd_stream.iter write req.S.Request.body;
+         Input.iter write req.S.Request.body;
          close ();
          U.debug ~lvl:2 (fun k->k "done uploading %s" path);
          S.Response.make_raw ~code:201 "upload successful"
@@ -461,7 +462,7 @@ module Embedded_fs = struct
         | _ -> failwith (Printf.sprintf "no such file: %S" p)
 
       let read_file_stream p = match find_ self p with
-        | Some (File {content;_}) -> Simple_httpd_stream.of_string content
+        | Some (File {content;_}) -> Input.of_string content
         | _ -> failwith (Printf.sprintf "no such file: %S" p)
 
       let list_dir p = match find_ self p with

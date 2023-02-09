@@ -1,93 +1,17 @@
-
-(** {1 Http Server}
-
-    This library implements a very simple, basic HTTP/1.1 server using blocking
-    IOs and threads. Basic routing based on {!Scanf} is provided for convenience,
-    so that several handlers can be registered.
-
-    It is possible to use a thread pool, see {!create}'s argument [new_thread].
-
-    The [echo] example (see [src/examples/echo.ml]) demonstrates some of the
-    features by declaring a few endpoints, including one for uploading files:
-
-    {[
-module S = Simple_httpd
-
-let () =
-  let server = S.create () in
-
-  (* say hello *)
-  S.add_route_handler ~meth:`GET server
-    S.Route.(exact "hello" @/ string @/ return)
-    (fun name _req -> S.Response.make_string (Ok ("hello " ^name ^"!\n")));
-
-  (* echo request *)
-  S.add_route_handler server
-    S.Route.(exact "echo" @/ return)
-    (fun req -> S.Response.make_string
-        (Ok (Format.asprintf "echo:@ %a@." S.Request.pp req)));
-
-  (* file upload *)
-  S.add_route_handler ~meth:`PUT server
-    S.Route.(exact "upload" @/ string_urlencoded @/ return)
-    (fun path req ->
-        try
-          let oc = open_out @@ "/tmp/" ^ path in
-          output_string oc req.S.Request.body;
-          flush oc;
-          S.Response.make_string (Ok "uploaded file")
-        with e ->
-          S.Response.fail ~code:500 "couldn't upload file: %s"
-            (Printexc.to_string e)
-      );
-
-  (* run the server *)
-  Printf.printf "listening on http://%s:%d\n%!" (S.addr server) (S.port server);
-  match S.run server with
-  | Ok () -> ()
-  | Error e -> raise e
-    ]}
-
-    It is then possible to query it using curl:
-
-    {[
-$ dune exec src/examples/echo.exe &
-listening on http://127.0.0.1:8080
-
-# the path "hello/name" greets you.
-$ curl -X GET http://localhost:8080/hello/quadrarotaphile
-hello quadrarotaphile!
-
-# the path "echo" just prints the request.
-$ curl -X GET http://localhost:8080/echo --data "howdy y'all"
-echo:
-{meth=GET;
- headers=Host: localhost:8080
-         User-Agent: curl/7.66.0
-         Accept: */*
-         Content-Length: 10
-         Content-Type: application/x-www-form-urlencoded;
- path="/echo"; body="howdy y'all"}
-
-
-    ]}
-
-*)
-
-
-(** {2 Generic stream of data}
-
-    Streams are used to represent a series of bytes that can arrive progressively.
-    For example, an uploaded file will be sent as a series of chunks. *)
-
-module Byte_stream = Simple_httpd_stream
-
-(** {2 Main Server Type} *)
+(** {1 Main module for Simple_httpd} *)
 
 (** @inline *)
 include module type of struct include Simple_httpd_server end
 
-(** {2 Utils} *)
+(** {2 Generic stream of data}
+
+    Streams are used to represent a series of bytes that can arrive progressively.
+    For example, an uploaded file will be sent as a series of chunks and also
+    for output streams. *)
+
+module Input = Simple_httpd_input
+
+module Output = Simple_httpd_output
 
 module Util = Simple_httpd_util
 
@@ -102,18 +26,7 @@ module Domain = Simple_httpd_domain
 
 module Session = Simple_httpd_session
 
-module Header = Simple_httpd_header
-
-(** Type describing addresses we want to listen too, provided
-    here to avoid module opening *)
-type listenning = Simple_httpd_domain.listenning =
-  {
-    addr : string;
-    port : int;
-    ssl  : Ssl.context option ;
-  }
-
-(** {2 cooperative threading *)
+(** {2 cooperative threading} *)
 
 (** The following functions deals with cooperative multi-tasking on each
     domain.  First, recall that the OS will choose via [select] on which

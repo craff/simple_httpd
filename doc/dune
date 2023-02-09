@@ -1,0 +1,3 @@
+(documentation
+	(package simple_httpd)
+	(mld_files index))

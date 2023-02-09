@@ -1,14 +1,14 @@
 module S = Simple_httpd
-module U = Simple_httpd_util
-module D = Simple_httpd_dir
+module U = S.Util
+module D = S.Dir
 module Pf = Printf
 
 let send_status status _req =
   let open Simple_httpd_domain in
   S.Response.make_string (string_status status ^ "\n")
 
-let serve ~config ~delta ~timeout ~maxc (dir:string) listens t : _ result =
-  let server = S.create ~delta ~timeout ~max_connections:maxc ~num_thread:t ~listens () in
+let serve ~config ~timeout ~maxc (dir:string) listens t : _ result =
+  let server = S.create ~timeout ~max_connections:maxc ~num_thread:t ~listens () in
   List.iter S.(fun l ->
       Printf.printf "serve directory %s on http://%s:%d\n%!"
         dir l.addr l.port) (S.listens server);
@@ -78,10 +78,10 @@ let main () =
     else None
   in
   let listens = S.[{addr = !addr;port = !port;ssl}] in
-  let timeout = !timeout and delta = !delta in
+  let timeout = !timeout in
   let maxc = !maxc in
 
-  match serve ~config ~delta ~timeout ~maxc !dir_ listens !t with
+  match serve ~config ~timeout ~maxc !dir_ listens !t with
   | Ok () -> ()
   | Error e ->
     raise e

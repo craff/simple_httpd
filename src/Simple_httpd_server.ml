@@ -1,14 +1,13 @@
 
 type buf = Buffer.t
-type byte_stream = Simple_httpd_stream.t
+type byte_stream = Simple_httpd_input.t
 
 module U   = Simple_httpd_util
 module D   = Simple_httpd_domain
-module H   = Simple_httpd_header
 
-module Out = Simple_httpd_stream.Out_buf
+module Out = Simple_httpd_output
 
-module Byte_stream = Simple_httpd_stream
+module Input = Simple_httpd_input
 
 let debug     = U.debug
 let set_debug = U.set_debug
@@ -122,25 +121,25 @@ module Cookies = struct
 end
 
 module Headers = struct
-  type header = H.t
-  type t = (H.t * string) list
+  include Simple_httpd_header
+  type t = (header * string) list
   let empty = []
   let contains name headers =
-    List.exists (fun (n, _) -> H.eq name n) headers
+    List.exists (fun (n, _) -> eq name n) headers
   let get_exn ?(f=fun x->x) x h =
-    snd (List.find (fun (x',_) -> H.eq x x') h) |> f
+    snd (List.find (fun (x',_) -> eq x x') h) |> f
   let get ?(f=fun x -> x) x h =
     try Some (get_exn ~f x h) with Not_found -> None
   let remove x h =
-    List.filter (fun (k,_) -> not (H.eq k x)) h
+    List.filter (fun (k,_) -> not (eq k x)) h
   let set x y h =
     (x,y) :: remove x h
   let pp out l =
-    let pp_pair out (k,v) = Format.fprintf out "@[<h>%s: %s@]" (H.to_string k) v in
+    let pp_pair out (k,v) = Format.fprintf out "@[<h>%s: %s@]" (to_string k) v in
     Format.fprintf out "@[<v>%a@]" (Format.pp_print_list pp_pair) l
   let set_cookies cookies h =
     List.fold_left (fun h (_, c) ->
-        (H.Set_Cookie, Http_cookie.to_set_cookie c) :: h) h cookies
+        (Set_Cookie, Http_cookie.to_set_cookie c) :: h) h cookies
 
   (*  token = 1*tchar
   tchar = "!" / "#" / "$" / "%" / "&" / "'" / "*" / "+" / "-" / "." / "^" / "_"
@@ -149,14 +148,14 @@ module Headers = struct
   let parse_ ~buf (bs:byte_stream) : t * Cookies.t =
     let rec loop headers cookies =
       (try
-        let k = H.parse bs in
+        let k = parse bs in
         let v =
           try
-            Byte_stream.read_line ~buf bs
-          with _ -> bad_reqf 400 "invalid header value: %S" (H.to_string k)
+            Input.read_line ~buf bs
+          with _ -> bad_reqf 400 "invalid header value: %S" (to_string k)
         in
         let headers, cookies =
-          if k = H.Cookie then
+          if k = Cookie then
             begin
               let new_cookies = Cookies.parse v in
               (headers, List.fold_left (fun acc (name, c) ->
@@ -167,10 +166,10 @@ module Headers = struct
         in
         fun () -> loop headers cookies
       with
-      | H.End_of_headers ->
-         assert (Byte_stream.read_char bs = '\n');
+      | End_of_headers ->
+         assert (Input.read_char bs = '\n');
          (fun () -> (headers,cookies))
-      | H.Invalid_header s ->
+      | Invalid_header s ->
          (fun () -> bad_reqf 400 "invalid header value: %S" s)) ()
     in
     loop [] []
@@ -220,8 +219,8 @@ module Request = struct
   (** Should we close the connection after this request? *)
   let close_after_req (self:_ t) : bool =
     match self.http_version with
-    | 1, 1 -> get_header self H.Connection = Some"close"
-    | 1, 0 -> not (get_header self H.Connection = Some"keep-alive")
+    | 1, 1 -> get_header self Headers.Connection = Some"close"
+    | 1, 0 -> not (get_header self Headers.Connection = Some"keep-alive")
     | _ -> false
 
   let pp_comp_ out comp =
@@ -244,12 +243,12 @@ module Request = struct
 
   (* decode a "chunked" stream into a normal stream *)
   let read_stream_chunked_ ~buf ~trailer (bs:byte_stream) : byte_stream =
-    Byte_stream.read_chunked ~buf ~trailer
+    Input.read_chunked ~buf ~trailer
       ~fail:(fun s -> bad_reqf 400 "%s" s)
       bs
 
   let limit_body_size_ ~max_size (bs:byte_stream) : byte_stream =
-    Byte_stream.limit_size_to ~max_size ~close_rec:false bs
+    Input.limit_size_to ~max_size ~close_rec:false bs
       ~too_big:(fun size ->
           (* read too much *)
           bad_reqf 413
@@ -262,7 +261,7 @@ module Request = struct
 
   (* read exactly [size] bytes from the stream *)
   let read_exactly ~size (bs:byte_stream) : byte_stream =
-    Byte_stream.read_exactly bs ~close_rec:false
+    Input.read_exactly bs ~close_rec:false
       ~size ~too_short:(fun size ->
         bad_reqf 400 "body is too short by %d bytes" size)
 
@@ -272,7 +271,7 @@ module Request = struct
     try
       debug ~lvl:2 (fun k -> k "start reading request");
       D.register_starttime client;
-      let line = Byte_stream.read_line ~buf bs in
+      let line = Input.read_line ~buf bs in
       let start_time = get_time_s() in
       let meth, path, version =
         try
@@ -287,7 +286,7 @@ module Request = struct
       debug ~lvl:2 (fun k->k "got meth: %s, path %S" (Meth.to_string meth) path);
       let (headers, cookies) = Headers.parse_ ~buf bs in
       let host =
-        match Headers.get H.Host headers with
+        match Headers.get Headers.Host headers with
         | None -> bad_reqf 400 "No 'Host' header in request"
         | Some h -> h
       in
@@ -317,7 +316,8 @@ module Request = struct
     try
       Buffer.clear buf;
       let size =
-        match Headers.get_exn H.Content_Length req.headers |> int_of_string with
+        match Headers.get_exn Headers.Content_Length req.headers
+              |> int_of_string with
         | n -> n (* body of fixed size *)
         | exception Not_found -> 0
         | exception _ -> bad_reqf 400 "invalid Content-Length"
@@ -326,7 +326,7 @@ module Request = struct
         req.trailer := Some (Headers.parse_ ~buf bs)
       in
       let body =
-        match get_header ~f:String.trim req H.Transfer_Encoding with
+        match get_header ~f:String.trim req Headers.Transfer_Encoding with
         | None ->
            let body = read_exactly ~size @@ tr_stream req.body in
            body
@@ -347,7 +347,7 @@ module Request = struct
 
   let read_body_full ~buf (self:byte_stream t) : string t =
     try
-      let body = Byte_stream.read_all ~buf self.body in
+      let body = Input.read_all ~buf self.body in
       { self with body }
     with
     | e -> bad_reqf 500 "failed to read body: %s" (D.printexn e)
@@ -363,7 +363,7 @@ end
 
 (*$R
   let q = "GET hello HTTP/1.1\r\nHost: coucou\r\nContent-Length: 11\r\n\r\nsalutationsSOMEJUNK" in
-  let str = Simple_httpd.Byte_stream.of_string q in
+  let str = Simple_httpd.Input.of_string q in
   let buf = Buffer.create 256 in
   let r = Request.Internal_.parse_req_start ~buf ~client:Simple_httpd_domain.fake_client
              ~get_time_s:(fun _ -> 0.) str in
@@ -371,8 +371,8 @@ end
   | None -> assert_failure "should parse"
   | Some req ->
     let module H = Simple_httpd_header in
-    assert_equal (Some "coucou") (Headers.get H.Host req.Request.headers);
-    assert_equal (Some "11") (Headers.get H.Content_Length req.Request.headers);
+    assert_equal (Some "coucou") (Headers.get Headers.Host req.Request.headers);
+    assert_equal (Some "11") (Headers.get Headers.Content_Length req.Request.headers);
     assert_equal "hello" req.Request.path;
     let req = Request.Internal_.parse_body ~buf req
       |> Request.read_body_full ~buf in
@@ -404,7 +404,7 @@ module Response = struct
 
   let make_raw_stream ?(cookies=[]) ?(headers=[]) ~code body : t =
     (* add content length to response *)
-    let headers = Headers.set H.Transfer_Encoding "chunked" headers in
+    let headers = Headers.set Headers.Transfer_Encoding "chunked" headers in
     let headers = Headers.set_cookies cookies headers in
     { code; headers; body=Stream body; }
 
@@ -449,16 +449,16 @@ module Response = struct
       match body with
       | String "" | Void -> self.headers
       | String s ->
-         Headers.set H.Content_Length (string_of_int (String.length s))
+         Headers.set Headers.Content_Length (string_of_int (String.length s))
            self.headers
-      | Stream _ -> Headers.set H.Transfer_Encoding "chunked" self.headers
+      | Stream _ -> Headers.set Headers.Transfer_Encoding "chunked" self.headers
     in
 
     let self = {self with headers; body} in
     debug ~lvl:2 (fun k->k "output response: %s"
                            (Format.asprintf "%a" pp {self with body=String "<…>"}));
     List.iter (fun (k,v) ->
-        Out.add_string oc (H.to_string k);
+        Out.add_string oc (Headers.to_string k);
         Out.add_char oc ':';
         Out.add_char oc ' ';
         Out.add_string oc v;
@@ -468,12 +468,12 @@ module Response = struct
     begin match body with
     | String "" | Void -> ()
     | String s ->
-         Byte_stream.output_str oc s;
+         Out.output_str oc s;
     | Stream str ->
        try
-         Byte_stream.output_chunked oc str;
-         Byte_stream.close str;
-       with e -> Byte_stream.close str; raise e
+         Out.output_chunked oc str;
+         Input.close str;
+       with e -> Input.close str; raise e
     end;
     Out.flush oc
 
@@ -655,10 +655,17 @@ module type SERVER_SENT_GENERATOR = sig
 end
 type server_sent_generator = (module SERVER_SENT_GENERATOR)
 
-type t = {
-  listens : D.listenning list;
+type listenning = Simple_httpd_domain.listenning =
+  {
+    addr : string;
+    port : int;
+    ssl  : Ssl.context option ;
+  }
+(** Type describing addresses we want to listen too, provided
+    here to avoid module opening *)
 
-  delta: float;
+type t = {
+  listens : listenning list;
 
   timeout: float;
 
@@ -717,11 +724,6 @@ let add_route_handler_
     ?(filter=(fun x -> (x, fun x -> x)))
     ?meth ~tr_req self route f =
   let fn route =
-    let filter req =
-      match meth with
-      | Some m when m <> req.Request.meth -> raise Pass
-      | _ -> filter req
-    in
     let ph path =
       let f = Route.eval path route f in
       fun oc req ~resp -> tr_req oc req ~resp f
@@ -755,7 +757,7 @@ let add_route_server_sent_handler ?filter self route f =
   let tr_req oc req ~resp f =
     let buf = (Request.client req).buf in
     let req = Request.read_body_full ~buf req in
-    let headers = ref Headers.(empty |> set H.Content_Type "text/event-stream") in
+    let headers = ref Headers.(empty |> set Headers.Content_Type "text/event-stream") in
 
     (* send response once *)
     let resp_sent = ref false in
@@ -796,7 +798,6 @@ let create
     ?(masksigpipe=true)
     ?(max_connections=32)
     ?(num_thread=Domain.recommended_domain_count () - 1)
-    ?(delta=0.030)
     ?(timeout=300.0)
     ?(buf_size=16 * 2048)
     ?(get_time_s=Unix.gettimeofday)
@@ -811,7 +812,7 @@ let create
   in
   let self = {
     listens; masksigpipe; buf_size;
-    max_connections; delta;
+    max_connections;
     handlers=Route.empty_tree (); timeout; get_time_s; num_thread;
     status
     }
@@ -821,7 +822,7 @@ let create
 let handle_client_ (self:t) (client:D.client) : unit =
   let buf = client.buf in
   let oc  = Out.create ~buf_size:self.buf_size client in
-  let is = Byte_stream.of_client ~buf_size:self.buf_size client in
+  let is = Input.of_client ~buf_size:self.buf_size client in
   let continue = ref true in
   while !continue do
     match Request.parse_req_start ~client ~get_time_s:self.get_time_s ~buf is with
@@ -851,7 +852,7 @@ let handle_client_ (self:t) (client:D.client) : unit =
           fn l
         in
         (* handle expect/continue *)
-        begin match Request.get_header ~f:String.trim req H.Expect with
+        begin match Request.get_header ~f:String.trim req Headers.Expect with
           | Some "100-continue" ->
             debug ~lvl:2 (fun k->k "send back: 100 CONTINUE");
             Response.output_ oc (Response.make_raw ~code:100 "");
@@ -868,7 +869,7 @@ let handle_client_ (self:t) (client:D.client) : unit =
         let resp r =
           let r = filter r in
           try
-            if Headers.get H.Connection r.Response.headers = Some"close" then
+            if Headers.get Headers.Connection r.Response.headers = Some"close" then
               continue := false;
             Response.output_ oc r;
           with Sys_error _
@@ -888,7 +889,7 @@ let handle_client_ (self:t) (client:D.client) : unit =
       | Bad_req (c,s) when (300 <= c && c <= 303) || (307 <= c && c <= 308) ->
          U.debug ~lvl:1 (fun k -> k "redirect request (%s)" s);
          let res = Response.make_raw ~code:c "" in
-         let res = Response.set_header H.Location s res in
+         let res = Response.set_header Headers.Location s res in
          begin
            try Response.output_ oc res
            with Sys_error _ | Unix.Unix_error _ -> ()
@@ -920,7 +921,7 @@ let run (self:t) : (unit,_) result =
     let handler client_sock = handle_client_ self client_sock in
     let maxc = self.max_connections in
     let a = D.run ~nb_threads:self.num_thread ~listens:self.listens
-              ~maxc ~delta:self.delta ~timeout:self.timeout ~status:self.status
+              ~maxc ~timeout:self.timeout ~status:self.status
               handler
     in
     Array.iter (fun d -> Domain.join d) a;

@@ -2,7 +2,7 @@
 (* serves some streams of events *)
 
 module S = Simple_httpd
-module H = Simple_httpd.Header
+module H = S.Headers
 
 let addr = ref "127.0.0.1"
 let port = ref 8080

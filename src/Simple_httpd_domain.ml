@@ -348,7 +348,7 @@ type pollResult =
   | Yield of ((unit,unit) continuation * client * float)
   | Wait
 
-let loop id st listens pipe _delta timeout handler () =
+let loop id st listens pipe timeout handler () =
   let did = Domain.self () in
 
   let poll_list = Polly.create () in
@@ -573,7 +573,6 @@ let loop id st listens pipe _delta timeout handler () =
              else
                begin
                  U.debug ~lvl:3 (fun k -> k "[%d] continue io" cl.id);
-                 (*set_schedule delta;*)
                  let n = fn () in
                  continue cont n;
                end
@@ -584,7 +583,6 @@ let loop id st listens pipe _delta timeout handler () =
              dinfo.cur_client <- cl;
              cl.acont <- N;
              U.debug ~lvl:3 (fun k -> k "[%d] continue yield" cl.id);
-             (*set_schedule delta;*)
              continue cont ();
            end
     with e -> close e
@@ -700,7 +698,7 @@ let accept_loop status listens pipes maxc =
        U.debug (fun k -> k "ERROR DURING EPOLL_WAIT: %s" (printexn exn))
   done
 
-let run ~nb_threads ~listens ~maxc ~delta ~timeout ~status handler =
+let run ~nb_threads ~listens ~maxc ~timeout ~status handler =
   let listens =
     List.map (fun l ->
         let sock = connect l.addr l.port maxc in
@@ -712,7 +710,7 @@ let run ~nb_threads ~listens ~maxc ~delta ~timeout ~status handler =
   let fn id =
     let (r, _) = pipes.(id) in
     Unix.set_nonblock r;
-    spawn (loop id status listens_r r delta timeout handler)
+    spawn (loop id status listens_r r timeout handler)
   in
   let pipes = Array.map snd pipes in
   let r = Array.init nb_threads fn in

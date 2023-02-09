@@ -11,14 +11,9 @@
     it can handle hundreds of request simultaneously.
 *)
 
-module Byte_stream = Simple_httpd_stream
+module Input = Simple_httpd_input
 
-type listenning = Simple_httpd_domain.listenning =
-  {
-    addr : string;
-    port : int;
-    ssl  : Ssl.context option ;
-  }
+module Output = Simple_httpd_output
 
 include Simple_httpd_server
 
@@ -43,5 +38,3 @@ module Html = Simple_httpd_html
 module Domain = Simple_httpd_domain
 
 module Session = Simple_httpd_session
-
-module Header = Simple_httpd_header

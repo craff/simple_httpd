@@ -32,5 +32,5 @@ let to_string_top = to_string ~top:true
 
 (** Convert a HTML element to a stream. This might just convert
     it to a string first, do not assume it to be more efficient. *)
-let to_stream (self:elt) : Simple_httpd_stream.t =
-  Simple_httpd_stream.of_string @@ to_string self
+let to_stream (self:elt) : Simple_httpd_input.t =
+  Simple_httpd_input.of_string @@ to_string self

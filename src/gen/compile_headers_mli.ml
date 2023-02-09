@@ -31,15 +31,15 @@ let lines = List.rev (fn [])
 let fields = List.map (function [] -> assert false | (h::_) -> h) lines
 
 let _ =
-  Printf.printf "type t =\n";
+  Printf.printf "type header =\n";
   List.iter (fun h -> Printf.printf "  | %s\n" (to_cstr h)) fields;
   Printf.printf "\n%!"
 
 let _ = Printf.printf "
-val eq : t -> t -> bool
-val to_string : t -> string
+val eq : header -> header -> bool
+val to_string : header -> string
 exception Invalid_header of string
 exception End_of_headers
 
-val parse : Simple_httpd_stream.t -> t
+val parse : Simple_httpd_input.t -> header
 "
