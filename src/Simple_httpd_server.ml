@@ -494,6 +494,22 @@ module Route = struct
     | Rest : (string list -> 'b, 'b) t
     | Compose: ('a, 'b) comp * ('b, 'c) t -> ('a, 'c) t
 
+  let bpf = Printf.bprintf
+  let rec pp_
+    : type a b. Buffer.t -> (a,b) t -> unit
+    = fun out -> function
+      | Fire -> bpf out "/"
+      | Rest  -> bpf out "<rest_of_url>"
+      | Compose (Exact s, tl) -> bpf out "%s/%a" s pp_ tl
+      | Compose (Int, tl) -> bpf out "<int>/%a" pp_ tl
+      | Compose (String, tl) -> bpf out "<str>/%a" pp_ tl
+
+  let to_string x =
+    let b = Buffer.create 16 in
+    pp_ b x;
+    Buffer.contents b
+  let pp out x = Format.pp_print_string out (to_string x)
+
   let return = Fire
   let rest   = Rest
   let (@/) a b = Compose (a,b)
@@ -507,6 +523,103 @@ module Route = struct
       | s::ls -> exact s @/ fn ls
     in
     fn (String.split_on_char '/' s)
+
+  type 'a cell = C : (('b,'c) t * 'a) -> 'a cell
+
+  type 'a otree =
+    { exact : (string, 'a otree) Hashtbl.t
+    ; mutable others : 'a cell list }
+
+  let empty_otree () = { exact = Hashtbl.create 16; others = [] }
+
+  type 'a tree =
+    { get : 'a otree
+    ; put : 'a otree
+    ; post : 'a otree
+    ; head : 'a otree
+    ; delete : 'a otree }
+
+  let empty_tree () =
+    { get = empty_otree ()
+    ; put = empty_otree ()
+    ; post = empty_otree ()
+    ; head = empty_otree ()
+    ; delete = empty_otree () }
+
+  let rec compare : type a1 a2 b1 b2.(a1,b1) t -> (a2,b2) t -> int = fun r1 r2 ->
+    match (r1, r2) with
+    | (Fire, Fire) -> 0
+    | (Fire, _) -> -1
+    | (_, Fire) -> 1
+    | (Compose(Exact _, p), Compose(Exact _, q)) -> compare p q
+    | (Compose(Exact _, _), _) -> -1
+    | (_, Compose(Exact _, _)) -> 1
+    | (Compose(Int, p), Compose(Int, q)) -> compare p q
+    | (Compose(Int, _), _) -> -1
+    | (_, Compose(Int, _)) -> 1
+    | (Compose(String, p), Compose(String, q)) -> compare p q
+    | (Compose(String, _), _) -> -1
+    | (_, Compose(String, _)) -> 1
+    | (Rest, Rest) -> 0
+
+  let insert_list : 'a cell list -> ('b,'c) t -> (('b,'c) t -> 'a) -> 'a cell list =
+    fun l p f ->
+    let cell = C(p,f p) in
+    let rec fn l =
+      match l with
+      | [] -> [cell]
+      | (C(q,_) as c :: l') ->
+         if compare p q < 0 then
+           cell :: l
+         else
+           c :: fn l'
+    in fn l
+
+  let insert : type a b c.Meth.t -> (a,b) t -> c tree -> ((a,b) t -> c) -> unit =
+    fun m p t x ->
+      let t =
+        let open Meth in
+        match m with
+        | GET -> t.get
+        | PUT -> t.put
+        | POST -> t.post
+        | HEAD -> t.head
+        | DELETE -> t.delete
+      in
+      let rec fn : c otree -> (a,b) t -> unit =
+        fun t -> function
+              | Compose(Exact s, p) ->
+                 let t =
+                   try Hashtbl.find t.exact s
+                   with Not_found ->
+                     let t' = empty_otree () in
+                     Hashtbl.add t.exact s t';
+                     t'
+                 in
+                 fn t p
+              | p ->
+                 t.others <- insert_list t.others p x
+      in
+      fn t p
+
+  let get : Meth.t -> string list -> 'c tree -> string list * 'c cell list =
+    fun m p t ->
+      let open Meth in
+      let t = match m with
+        | GET -> t.get
+        | PUT -> t.put
+        | POST -> t.post
+        | HEAD -> t.head
+        | DELETE -> t.delete
+      in
+      let rec fn t = function
+        | [] -> ([], t.others)
+        | s::q as p ->
+           try fn (Hashtbl.find t.exact s) q
+           with Not_found -> (p, t.others)
+      in
+      fn t p
+
   let rec eval :
     type a b. path -> (a,b) t -> a -> b =
     fun path route f ->
@@ -523,27 +636,12 @@ module Route = struct
        | (String, route) -> eval path route (f x)
     end
 
-  let bpf = Printf.bprintf
-  let rec pp_
-    : type a b. Buffer.t -> (a,b) t -> unit
-    = fun out -> function
-      | Fire -> bpf out "/"
-      | Rest  -> bpf out "<rest_of_url>"
-      | Compose (Exact s, tl) -> bpf out "%s/%a" s pp_ tl
-      | Compose (Int, tl) -> bpf out "<int>/%a" pp_ tl
-      | Compose (String, tl) -> bpf out "<str>/%a" pp_ tl
-
-  let to_string x =
-    let b = Buffer.create 16 in
-    pp_ b x;
-    Buffer.contents b
-  let pp out x = Format.pp_print_string out (to_string x)
 end
 
 type filter = byte_stream Request.t -> byte_stream Request.t
                                        * (Response.t -> Response.t)
 type path_handler = filter *
-                    (byte_stream Request.t -> Out.t -> byte_stream Request.t -> resp:(Response.t->unit) -> unit)
+                    (string list -> Out.t -> byte_stream Request.t -> resp:(Response.t->unit) -> unit)
 
 module type SERVER_SENT_GENERATOR = sig
   val set_headers : Headers.t -> unit
@@ -576,7 +674,7 @@ type t = {
 
   status : D.status;
 
-  mutable handlers : path_handler list;
+  handlers : path_handler Route.tree;
 }
 
 let listens self = self.listens
@@ -618,16 +716,25 @@ let compose_cross : filter -> filter -> filter =
 let add_route_handler_
     ?(filter=(fun x -> (x, fun x -> x)))
     ?meth ~tr_req self route f =
-  let filter req =
-    match meth with
-    | Some m when m <> req.Request.meth -> raise Pass
-    | _ -> filter req
+  let fn route =
+    let filter req =
+      match meth with
+      | Some m when m <> req.Request.meth -> raise Pass
+      | _ -> filter req
+    in
+    let ph path =
+      let f = Route.eval path route f in
+      fun oc req ~resp -> tr_req oc req ~resp f
+    in
+    (filter, ph)
   in
-  let ph req =
-    let f = Route.eval req.Request.path_components route f in
-    fun oc req ~resp -> tr_req oc req ~resp f
-  in
-  self.handlers <- (filter, ph) :: self.handlers
+  match meth with
+  | Some m ->
+     Route.insert m route self.handlers fn
+  | None ->
+     Route.insert GET route self.handlers fn;
+     Route.insert HEAD route self.handlers fn;
+     Route.insert POST route self.handlers fn
 
 let add_route_handler ?filter ?meth
     self route f : unit =
@@ -705,7 +812,7 @@ let create
   let self = {
     listens; masksigpipe; buf_size;
     max_connections; delta;
-    handlers=[]; timeout; get_time_s; num_thread;
+    handlers=Route.empty_tree (); timeout; get_time_s; num_thread;
     status
     }
   in
@@ -728,18 +835,20 @@ let handle_client_ (self:t) (client:D.client) : unit =
 
       try
         (* is there a handler for this path? *)
+        let path, l = Route.get req.Request.meth
+                        req.Request.path_components self.handlers in
         let ((req,filter), handler) =
           let rec fn = function
-            | (freq,ph)::phs ->
+            | Route.C(_,(freq,ph))::phs ->
                (try
-                  let handler = ph req in
+                  let handler = ph path in
                   let req = freq req in
                   (req,handler)
                 with Pass -> fn phs)
             | [] ->
                bad_reqf 404 "not found"
           in
-          fn self.handlers
+          fn l
         in
         (* handle expect/continue *)
         begin match Request.get_header ~f:String.trim req H.Expect with
