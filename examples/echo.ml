@@ -1,37 +1,33 @@
 
 module S = Simple_httpd
+
 module U = Simple_httpd.Util
 module H = Simple_httpd.Header
 
 let now_ = Unix.gettimeofday
 
 (* util: a little middleware collecting statistics *)
-let middleware_stat () : S.Middleware.t * (unit -> string) =
+let filter_stat () : S.filter * (unit -> string) =
   let n_req = ref 0 in
   let total_time_ = ref 0. in
   let parse_time_ = ref 0. in
   let build_time_ = ref 0. in
-  let write_time_ = ref 0. in
 
-  let m h req ~resp =
+  let m req =
     incr n_req;
     let t1 = S.Request.start_time req in
     let t2 = now_ () in
-    h req ~resp:(fun response ->
+    (req, fun response ->
         let t3 = now_ () in
-        resp response;
-        let t4 = now_ () in
-        total_time_ := !total_time_ +. (t4 -. t1);
+        total_time_ := !total_time_ +. (t3 -. t1);
         parse_time_ := !parse_time_ +. (t2 -. t1);
         build_time_ := !build_time_ +. (t3 -. t2);
-        write_time_ := !write_time_ +. (t4 -. t3);
-      )
+        response)
   and get_stat () =
-    Printf.sprintf "%d requests (average response time: %.3fms = %.3fms + %.3fms + %.3fms)"
+    Printf.sprintf "%d requests (average response time: %.3fms = %.3fms + %.3fms)"
       !n_req (!total_time_ /. float !n_req *. 1e3)
              (!parse_time_ /. float !n_req *. 1e3)
              (!build_time_ /. float !n_req *. 1e3)
-             (!write_time_ /. float !n_req *. 1e3)
   in
   m, get_stat
 
@@ -51,19 +47,20 @@ let () =
 
   let listens = S.[{addr= !addr;port= !port;ssl=None}] in
   let server = S.create ~listens ~max_connections:!j () in
-  Simple_httpd_camlzip.setup ~compress_above:1024 ~buf_size:(16*1024) server;
-
-  let m_stats, get_stats = middleware_stat () in
-  S.add_middleware server ~stage:(`Stage 1) m_stats;
+  let filter_stat, get_stats = filter_stat () in
+  let filter_zip =
+    Simple_httpd_camlzip.filter ~compress_above:1024 ~buf_size:(16*1024) ()
+  in
+  let filter = S.compose_cross filter_zip filter_stat in
 
   (* say hello *)
-  S.add_route_handler ~meth:`GET server
+  S.add_route_handler ~meth:GET server ~filter
     S.Route.(exact "hello" @/ string @/ return)
     (fun name _req -> S.Response.make_string ("hello " ^name ^"!\n"));
 
   (* compressed file access *)
-  S.add_route_handler ~meth:`GET server
-    S.Route.(exact "zcat" @/ string_urlencoded @/ return)
+  S.add_route_handler ~meth:GET server
+    S.Route.(exact "zcat" @/ string @/ return)
     (fun path _req ->
         let ic = open_in path in
         let str = S.Byte_stream.of_chan ic in
@@ -92,7 +89,7 @@ let () =
           (Format.asprintf "echo:@ %a@ (query: %s)@." S.Request.pp req q));
 
   (* file upload *)
-  S.add_route_handler_stream ~meth:`PUT server
+  S.add_route_handler_stream ~meth:PUT server
     S.Route.(exact "upload" @/ string @/ return)
     (fun path req ->
         U.debug (fun k->k "start upload %S, headers:\n%s\n\n%!" path

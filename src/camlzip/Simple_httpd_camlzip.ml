@@ -217,8 +217,6 @@ let compress_resp_stream_
       |> S.Response.update_headers update_headers
       |> S.Response.set_body (Stream body)
 
-    | Chunked _ -> assert false (* only used by cache, not possible to zip *)
-
     | Stream str ->
       U.debug ~lvl:4 (fun k->k "encode stream response with deflate");
       resp
@@ -228,19 +226,11 @@ let compress_resp_stream_
     | String _ | Void -> resp
   ) else resp
 
-let middleware
+let filter
     ?(compress_above=16 * 1024)
     ?(buf_size=16 * 1_024)
-    () : S.Middleware.t =
+    () : S.filter =
   let buf_size = max buf_size 1_024 in
-  fun h req ~resp ->
+  fun req ->
     let req = decompress_req_stream_ ~buf_size req in
-    h req
-      ~resp:(fun response ->
-          resp @@ compress_resp_stream_ ~buf_size ~compress_above req response)
-
-let setup
-    ?compress_above ?buf_size server =
-  let m = middleware ?compress_above ?buf_size () in
-  U.debug (fun k->k "setup gzip support");
-  S.add_middleware ~stage:`Encoding server m
+    (req, compress_resp_stream_ ~buf_size ~compress_above req)

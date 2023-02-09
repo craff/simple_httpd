@@ -147,8 +147,8 @@ let check
         delete_session sess;
         let cookies = S.Cookies.delete_all cookies in
         let gn = S.Response.update_headers
-                   (fun h -> S.Headers.set_cookies cookies h) in
-        gn
+                     (fun h -> S.Headers.set_cookies cookies h) in
+        (req, gn)
       end
     else
       begin
@@ -159,7 +159,7 @@ let check
                 match (key, S.Request.get_cookie req "SESSION_ADDR") with
                 | (Some key, Some addr) when
                        key = session.key &&
-                       Http_cookie.value addr = session.addr -> ()
+                           Http_cookie.value addr = session.addr -> ()
                 | _ -> raise Exit
               end;
               let addr = addr_of_sock client.sock in
@@ -171,9 +171,9 @@ let check
         in
         let cookies = mk_cookies sess cookies in
         let gn = S.Response.update_headers
-                     (fun h -> S.Headers.set_cookies cookies h) in
-        gn
-        end
+                   (fun h -> S.Headers.set_cookies cookies h) in
+        (req, gn)
+      end
   with Exit ->
     delete_session sess;
     let (code, msg) = error in

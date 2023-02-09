@@ -48,28 +48,27 @@ module Response_code = struct
 end
 
 module Meth = struct
-  type t = [
-    | `GET
-    | `PUT
-    | `POST
-    | `HEAD
-    | `DELETE
-  ]
+  type t =
+    | GET
+    | PUT
+    | POST
+    | HEAD
+    | DELETE
 
   let to_string = function
-    | `GET -> "GET"
-    | `PUT -> "PUT"
-    | `HEAD -> "HEAD"
-    | `POST -> "POST"
-    | `DELETE -> "DELETE"
+    | GET -> "GET"
+    | PUT -> "PUT"
+    | HEAD -> "HEAD"
+    | POST -> "POST"
+    | DELETE -> "DELETE"
   let pp out s = Format.pp_print_string out (to_string s)
 
   let of_string = function
-    | "GET" -> `GET
-    | "PUT" -> `PUT
-    | "POST" -> `POST
-    | "HEAD" -> `HEAD
-    | "DELETE" -> `DELETE
+    | "GET" -> GET
+    | "PUT" -> PUT
+    | "POST" -> POST
+    | "HEAD" -> HEAD
+    | "DELETE" -> DELETE
     | s -> bad_reqf 400 "unknown method %S" s
 end
 
@@ -269,7 +268,7 @@ module Request = struct
 
   (* parse request, but not body (yet) *)
   let parse_req_start ~client ~get_time_s ~buf (bs:byte_stream)
-      : unit t option =
+      : byte_stream t option =
     try
       debug ~lvl:2 (fun k -> k "start reading request");
       D.register_starttime client;
@@ -294,6 +293,8 @@ module Request = struct
       in
       let path_components, query = Simple_httpd_util.split_query path in
       let path_components = Simple_httpd_util.split_on_slash path_components in
+      let path_components = List.map U.percent_decode path_components in
+
       let query =
         match Simple_httpd_util.(parse_query query) with
         | Ok l -> l
@@ -301,7 +302,7 @@ module Request = struct
       in
       let req = {
         meth; query; host; client; path; path_components;
-        headers; cookies; http_version=(1, version); body=(); start_time;
+        headers; cookies; http_version=(1, version); body=bs; start_time;
         trailer = ref None;
       } in
       Some req
@@ -355,8 +356,8 @@ module Request = struct
     let parse_req_start ~buf ~client ~get_time_s bs =
       parse_req_start ~client ~get_time_s ~buf bs
 
-    let parse_body ~buf req bs : _ t =
-      parse_body_ ~tr_stream:(fun s->s) ~buf {req with body=bs}
+    let parse_body ~buf req : byte_stream t =
+      parse_body_ ~tr_stream:(fun s->s) ~buf req
   end
 end
 
@@ -373,7 +374,7 @@ end
     assert_equal (Some "coucou") (Headers.get H.Host req.Request.headers);
     assert_equal (Some "11") (Headers.get H.Content_Length req.Request.headers);
     assert_equal "hello" req.Request.path;
-    let req = Request.Internal_.parse_body ~buf req str
+    let req = Request.Internal_.parse_body ~buf req
       |> Request.read_body_full ~buf in
     assert_equal ~printer:(fun s->s) "salutations" req.Request.body;
     ()
@@ -381,7 +382,6 @@ end
 
 module Response = struct
   type body = String of string
-            | Chunked of string (* already chunked string *)
             | Stream of byte_stream
             | Void
   type t = {
@@ -402,12 +402,6 @@ module Response = struct
     let headers = Headers.set_cookies cookies headers in
     { code; headers; body=String body; }
 
-  let make_raw_chunked ?(cookies=[]) ?(headers=[]) ~code body : t =
-    (* add content length to response *)
-    let headers = Headers.set H.Transfer_Encoding "chunked" headers in
-    let headers = Headers.set_cookies cookies headers in
-    { code; headers; body=Chunked body; }
-
   let make_raw_stream ?(cookies=[]) ?(headers=[]) ~code body : t =
     (* add content length to response *)
     let headers = Headers.set H.Transfer_Encoding "chunked" headers in
@@ -421,15 +415,11 @@ module Response = struct
   let make_string ?cookies ?headers body =
     make_raw ?cookies ?headers ~code:200 body
 
-  let make_chunked ?cookies ?headers body =
-    make_raw_chunked ?cookies ?headers ~code:200 body
-
   let make_stream ?cookies ?headers body =
     make_raw_stream ?cookies ?headers ~code:200 body
 
   let make ?cookies ?headers r : t = match r with
     | String body -> make_raw ?cookies ?headers ~code:200 body
-    | Chunked body -> make_raw_chunked ?cookies ?headers ~code:200 body
     | Stream body -> make_raw_stream ?cookies ?headers ~code:200 body
     | Void -> make_void ?cookies ?headers ~code:200 ()
 
@@ -441,7 +431,6 @@ module Response = struct
   let pp out self : unit =
     let pp_body out = function
       | String s -> Format.fprintf out "%S" s
-      | Chunked s -> Format.fprintf out "Chunked: %S" s
       | Stream _ -> Format.pp_print_string out "<stream>"
       | Void -> ()
     in
@@ -456,13 +445,13 @@ module Response = struct
     Out.add_char oc '\r';
     Out.add_char oc '\n';
     let body = self.body in
-    let headers, chunked =
+    let headers =
       match body with
-      | String "" | Void -> self.headers, false
-      | String s when String.length s < 50_000 ->
+      | String "" | Void -> self.headers
+      | String s ->
          Headers.set H.Content_Length (string_of_int (String.length s))
-           self.headers, false
-      | _ -> Headers.set H.Transfer_Encoding "chunked" self.headers, true
+           self.headers
+      | Stream _ -> Headers.set H.Transfer_Encoding "chunked" self.headers
     in
 
     let self = {self with headers; body} in
@@ -479,11 +468,7 @@ module Response = struct
     begin match body with
     | String "" | Void -> ()
     | String s ->
-       if chunked then
-         Byte_stream.output_string_chunked oc s
-       else
          Byte_stream.output_str oc s;
-    | Chunked s -> Byte_stream.output_str oc s
     | Stream str ->
        try
          Byte_stream.output_chunked oc str;
@@ -494,6 +479,8 @@ module Response = struct
 
 end
 
+exception Pass (* raised to test the next handler *)
+
 module Route = struct
   type path = string list (* split on '/' *)
 
@@ -501,21 +488,16 @@ module Route = struct
     | Exact : string -> ('a, 'a) comp
     | Int : (int -> 'a, 'a) comp
     | String : (string -> 'a, 'a) comp
-    | String_urlencoded : (string -> 'a, 'a) comp
 
   type (_, _) t =
     | Fire : ('b, 'b) t
-    | Rest : {
-        url_encoded: bool;
-      } -> (string -> 'b, 'b) t
+    | Rest : (string list -> 'b, 'b) t
     | Compose: ('a, 'b) comp * ('b, 'c) t -> ('a, 'c) t
 
   let return = Fire
-  let rest_of_path = Rest {url_encoded=false}
-  let rest_of_path_urlencoded = Rest {url_encoded=true}
+  let rest   = Rest
   let (@/) a b = Compose (a,b)
   let string = String
-  let string_urlencoded = String_urlencoded
   let int = Int
   let exact (s:string) = Exact s
   let exact_path (s:string) tail =
@@ -526,44 +508,19 @@ module Route = struct
     in
     fn (String.split_on_char '/' s)
   let rec eval :
-    type a b. path -> (a,b) t -> a -> b option =
+    type a b. path -> (a,b) t -> a -> b =
     fun path route f ->
     begin match path, route with
-      | [], Fire -> Some f
-      | _, Fire -> None
-      | _, Rest {url_encoded} ->
-        let whole_path = String.concat "/" path in
-        begin match
-            if url_encoded
-            then match Simple_httpd_util.percent_decode whole_path with
-              | Some s -> s
-              | None -> raise_notrace Exit
-            else whole_path
-          with
-          | whole_path ->
-            Some (f whole_path)
-          | exception Exit -> None
-        end
-      | (c1 :: path'), Compose (comp, route') ->
-        begin match comp with
-          | Int ->
-            begin match int_of_string c1 with
-              | i -> eval path' route' (f i)
-              | exception _ -> None
-            end
-          | String ->
-            eval path' route' (f c1)
-          | String_urlencoded ->
-            begin match Simple_httpd_util.percent_decode c1 with
-              | None -> None
-              | Some s -> eval path' route' (f s)
-            end
-          | Exact s ->
-            if s = c1 then eval path' route' f else None
-        end
-      | [], Compose (String, Fire) -> Some (f "") (* trailing *)
-      | [], Compose (String_urlencoded, Fire) -> Some (f "") (* trailing *)
-      | [], Compose _ -> None
+    | [], Fire -> f
+    | _, Fire -> raise Pass
+    | path, Rest -> f path
+    | [], Compose _ -> raise Pass
+    | x::path, Compose (ty, route) ->
+       match (ty,route) with
+       | (Exact s,route) -> if x <> s then raise Pass else eval path route f
+       | (Int,    route) -> (try let x = int_of_string x in eval path route (f x)
+                             with _ -> raise Pass)
+       | (String, route) -> eval path route (f x)
     end
 
   let bpf = Printf.bprintf
@@ -571,12 +528,10 @@ module Route = struct
     : type a b. Buffer.t -> (a,b) t -> unit
     = fun out -> function
       | Fire -> bpf out "/"
-      | Rest {url_encoded} ->
-        bpf out "<rest_of_url%s>" (if url_encoded then "_urlencoded" else "")
+      | Rest  -> bpf out "<rest_of_url>"
       | Compose (Exact s, tl) -> bpf out "%s/%a" s pp_ tl
       | Compose (Int, tl) -> bpf out "<int>/%a" pp_ tl
       | Compose (String, tl) -> bpf out "<str>/%a" pp_ tl
-      | Compose (String_urlencoded, tl) -> bpf out "<enc_str>/%a" pp_ tl
 
   let to_string x =
     let b = Buffer.create 16 in
@@ -585,19 +540,10 @@ module Route = struct
   let pp out x = Format.pp_print_string out (to_string x)
 end
 
-module Middleware = struct
-  type handler = byte_stream Request.t -> resp:(Response.t -> unit) -> unit
-  type t = handler -> handler
-
-  (** Apply a list of middlewares to [h] *)
-  let apply_l (l:t list) (h:handler) : handler =
-    List.fold_right (fun m h -> m h) l h
-
-  let[@inline] nil : t = fun h -> h
-end
-
-(* a request handler. handles a single request. *)
-type cb_path_handler = Out.t -> Middleware.handler
+type filter = byte_stream Request.t -> byte_stream Request.t
+                                       * (Response.t -> Response.t)
+type path_handler = filter *
+                    (byte_stream Request.t -> Out.t -> byte_stream Request.t -> resp:(Response.t->unit) -> unit)
 
 module type SERVER_SENT_GENERATOR = sig
   val set_headers : Headers.t -> unit
@@ -630,18 +576,7 @@ type t = {
 
   status : D.status;
 
-  mutable handler: (string Request.t -> Response.t);
-  (* toplevel handler, if any *)
-
-  mutable middlewares : (int * Middleware.t) list;
-  (** Global middlewares *)
-
-  mutable middlewares_sorted : (int * Middleware.t) list lazy_t;
-  (* sorted version of {!middlewares} *)
-
-  mutable path_handlers : (unit Request.t -> cb_path_handler option) list;
-  (* path handlers *)
-
+  mutable handlers : path_handler list;
 }
 
 let listens self = self.listens
@@ -650,86 +585,66 @@ let status self = self.status
 
 let active_connections _self = failwith "unimplemented"
 
-let add_middleware ~stage self m =
-  let stage = match stage with
-    | `Encoding -> 0
-    | `Stage n when n < 1 -> invalid_arg "add_middleware: bad stage"
-    | `Stage n -> n
-  in
-  self.middlewares <- (stage,m) :: self.middlewares;
-  self.middlewares_sorted <- lazy (
-    List.stable_sort (fun (s1,_) (s2,_) -> compare s1 s2) self.middlewares
-  )
-
-let add_decode_request_cb self f =
+let decode_request : (byte_stream -> byte_stream) -> (Headers.t -> Headers.t) ->
+                     filter =
   (* turn it into a middleware *)
-  let m h req ~resp =
+  fun tb th req ->
+    let open Request in
     (* see if [f] modifies the stream *)
-    let req0 = {req with Request.body=()} in
-    match f req0 with
-    | None -> h req ~resp (* pass through *)
-    | Some (req1, tr_stream) ->
-      let req = {req1 with Request.body=tr_stream req.Request.body} in
-      h req ~resp
-  in
-  add_middleware self ~stage:`Encoding m
+    ({req with body = tb req.body; headers = th req.headers }, fun r -> r)
 
-let add_encode_response_cb self f =
-  let m h req ~resp =
-    h req ~resp:(fun r ->
-        let req0 = {req with Request.body=()} in
-        (* now transform [r] if we want to *)
-        match f req0 r with
-        | None -> resp r
-        | Some r' -> resp r')
-  in
-  add_middleware self ~stage:`Encoding m
+let encode_response : (Response.body -> Response.body) ->
+                      (Headers.t -> Headers.t) ->  filter =
+  fun tb th req ->
+    (req, fun resp ->
+      let open Response in
+      { resp with body = tb resp.body; headers = th resp.headers })
 
-let set_top_handler self f = self.handler <- f
+let compose_embrace : filter -> filter -> filter =
+  fun f1 f2 req ->
+    let (req, f2) = f2 req in
+    let (req, f1) = f1 req in
+    (req, fun resp -> f1 (f2 resp))
 
-type finaliser = Response.t -> Response.t
-type 'a accept = 'a Request.t -> finaliser
+let compose_cross : filter -> filter -> filter =
+  fun f1 f2 req ->
+    let (req, f2) = f2 req in
+    let (req, f1) = f1 req in
+    (req, fun resp -> f2 (f1 resp))
 
 (* route the given handler.
    @param tr_req wraps the actual concrete function returned by the route
    and makes it into a handler. *)
 let add_route_handler_
-    ?(accept=fun _req x -> x) ?(middlewares=[])
-    ?meth ~tr_req self (route:_ Route.t) f =
-  let ph req : cb_path_handler option =
+    ?(filter=(fun x -> (x, fun x -> x)))
+    ?meth ~tr_req self route f =
+  let filter req =
     match meth with
-    | Some m when m <> req.Request.meth -> None (* ignore *)
-    | _ ->
-      begin match Route.eval req.Request.path_components route f with
-        | Some handler ->
-          (* we have a handler, do we accept the request based on its headers? *)
-           let fn = accept req in
-           Some (fun oc ->
-               Middleware.apply_l middlewares @@
-                 fun req ~resp -> let resp r = resp (fn r) in
-                                  tr_req oc req ~resp handler)
-        | None ->
-          None (* path didn't match *)
-      end
+    | Some m when m <> req.Request.meth -> raise Pass
+    | _ -> filter req
   in
-  self.path_handlers <- ph :: self.path_handlers
+  let ph req =
+    let f = Route.eval req.Request.path_components route f in
+    fun oc req ~resp -> tr_req oc req ~resp f
+  in
+  self.handlers <- (filter, ph) :: self.handlers
 
-let add_route_handler (type a) ?accept ?middlewares ?meth
-    self (route:(a,_) Route.t) (f:_) : unit =
+let add_route_handler ?filter ?meth
+    self route f : unit =
   let tr_req _oc req ~resp f =
     resp (f (Request.read_body_full ~buf:(Request.client req).buf req))
   in
-  add_route_handler_ ?accept ?middlewares ?meth self route ~tr_req f
+  add_route_handler_ ?filter ?meth self route ~tr_req f
 
-let add_route_handler_stream ?accept ?middlewares ?meth self route f =
+let add_route_handler_stream ?filter ?meth self route f =
   let tr_req _oc req ~resp f = resp (f req) in
-  add_route_handler_ ?accept ?middlewares ?meth self route ~tr_req f
+  add_route_handler_ ?filter ?meth self route ~tr_req f
 
 let[@inline] _opt_iter ~f o = match o with
   | None -> ()
   | Some x -> f x
 
-let add_route_server_sent_handler ?accept self route f =
+let add_route_server_sent_handler ?filter self route f =
   let tr_req oc req ~resp f =
     let buf = (Request.client req).buf in
     let req = Request.read_body_full ~buf req in
@@ -768,7 +683,7 @@ let add_route_server_sent_handler ?accept self route f =
     try f req (module SSG : SERVER_SENT_GENERATOR);
     with Exit -> Out.close oc
   in
-  add_route_handler_ self ?accept ~meth:`GET route ~tr_req f
+  add_route_handler_ self ?filter ~meth:GET route ~tr_req f
 
 let create
     ?(masksigpipe=true)
@@ -779,9 +694,7 @@ let create
     ?(buf_size=16 * 2048)
     ?(get_time_s=Unix.gettimeofday)
     ?(listens = D.[{addr = "127.0.0.1"; port=8080; ssl = None}])
-    ?(middlewares=[])
     () : t =
-  let handler _req = Response.fail ~code:404 "no top handler" in
   let max_connections = max 4 max_connections in
   if num_thread <= 0 || max_connections < num_thread then
     invalid_arg "bad number of threads or max connections";
@@ -790,24 +703,13 @@ let create
     }
   in
   let self = {
-    listens; masksigpipe; handler; buf_size;
+    listens; masksigpipe; buf_size;
     max_connections; delta;
-    path_handlers=[]; timeout; get_time_s; num_thread;
-    middlewares=[]; middlewares_sorted=lazy [];
+    handlers=[]; timeout; get_time_s; num_thread;
     status
     }
   in
-  List.iter (fun (stage,m) -> add_middleware self ~stage m) middlewares;
   self
-
-let find_map f l =
-  let rec aux f = function
-    | [] -> None
-    | x::l' ->
-      match f x with
-        | Some _ as res -> res
-        | None -> aux f l'
-  in aux f l
 
 let handle_client_ (self:t) (client:D.client) : unit =
   let buf = client.buf in
@@ -826,15 +728,19 @@ let handle_client_ (self:t) (client:D.client) : unit =
 
       try
         (* is there a handler for this path? *)
-        let handler =
-          match find_map (fun ph -> ph req) self.path_handlers with
-          | Some f -> f
-          | None ->
-            (fun _oc req ~resp ->
-               let body_str = Request.read_body_full ~buf req in
-               resp (self.handler body_str))
+        let ((req,filter), handler) =
+          let rec fn = function
+            | (freq,ph)::phs ->
+               (try
+                  let handler = ph req in
+                  let req = freq req in
+                  (req,handler)
+                with Pass -> fn phs)
+            | [] ->
+               bad_reqf 404 "not found"
+          in
+          fn self.handlers
         in
-
         (* handle expect/continue *)
         begin match Request.get_header ~f:String.trim req H.Expect with
           | Some "100-continue" ->
@@ -844,20 +750,14 @@ let handle_client_ (self:t) (client:D.client) : unit =
           | None -> ()
         end;
 
-        (* apply middlewares *)
-        let handler =
-          fun oc ->
-            List.fold_right (fun (_, m) h -> m h)
-              (Lazy.force self.middlewares_sorted) (handler oc)
-        in
-
         (* now actually read request's body into a stream *)
         let req =
-          Request.parse_body_ ~tr_stream:(fun s->s) ~buf {req with body=is}
+          Request.parse_body_ ~tr_stream:(fun s->s) ~buf req
         in
 
         (* how to reply *)
         let resp r =
+          let r = filter r in
           try
             if Headers.get H.Connection r.Response.headers = Some"close" then
               continue := false;

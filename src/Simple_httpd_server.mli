@@ -13,13 +13,12 @@ type byte_stream = Simple_httpd_stream.t
 (** {2 Methods} *)
 
 module Meth : sig
-  type t = [
-    | `GET
-    | `PUT
-    | `POST
-    | `HEAD
-    | `DELETE
-  ]
+  type t =
+    | GET
+    | PUT
+    | POST
+    | HEAD
+    | DELETE
   (** A HTTP method.
       For now we only handle a subset of these.
 
@@ -206,8 +205,8 @@ module Request : sig
   (* for testing purpose, do not use *)
   module Internal_ : sig
     val parse_req_start : buf:buf -> client:Simple_httpd_domain.client ->
-                          get_time_s:(unit -> float) -> byte_stream -> unit t option
-    val parse_body : buf:buf -> unit t -> byte_stream -> byte_stream t
+                          get_time_s:(unit -> float) -> byte_stream -> byte_stream t option
+    val parse_body : buf:buf -> byte_stream t -> byte_stream t
   end
   (**/**)
 end
@@ -238,8 +237,6 @@ end
 
 module Response : sig
   type body = String of string
-            | Chunked of string (* a string already encoded as chunks, with
-                                   an empty trailer *)
             | Stream of byte_stream
             | Void
   (** Body of a response, either as a simple string,
@@ -285,16 +282,6 @@ module Response : sig
   (** Make a response from its raw components, with a string body.
       Use [""] to not send a body at all. *)
 
-  val make_raw_chunked :
-    ?cookies:Cookies.t ->
-    ?headers:Headers.t ->
-    code:Response_code.t ->
-    string ->
-    t
-  (** Same as {!make_raw} but with a stream body. The body will be sent with
-      the chunked transfer-encoding., the string argument must already
-      be chunked encoded *)
-
   val make_raw_stream :
     ?cookies:Cookies.t ->
     ?headers:Headers.t ->
@@ -320,12 +307,6 @@ module Response : sig
     ?headers:Headers.t ->
     string -> t
   (** Same as {!make} but with a string body. *)
-
-  val make_chunked :
-    ?cookies:Cookies.t ->
-    ?headers:Headers.t ->
-    string -> t
-  (** Same as {!make} but with a string that is already chunked encoded. *)
 
   val make_stream :
     ?cookies:Cookies.t ->
@@ -368,23 +349,15 @@ module Route : sig
   val string : (string -> 'a, 'a) comp
   (** Matches a string not containing ['/'] and binds it as is. *)
 
-  val string_urlencoded : (string -> 'a, 'a) comp
-  (** Matches a URL-encoded string, and decodes it. *)
-
   val exact : string -> ('a, 'a) comp
   (** [exact "s"] matches ["s"] and nothing else. *)
 
   val return : ('a, 'a) t
   (** Matches the empty path. *)
 
-  val rest_of_path : (string -> 'a, 'a) t
+  val rest : (string list -> 'a, 'a) t
   (** Matches a string, even containing ['/']. This will match
       the entirety of the remaining route.
-      @since 0.7 *)
-
-  val rest_of_path_urlencoded : (string -> 'a, 'a) t
-  (** Matches a string, even containing ['/'], an URL-decode it.
-      This will match the entirety of the remaining route.
       @since 0.7 *)
 
   val (@/) : ('a, 'b) comp -> ('b, 'c) t -> ('a, 'c) t
@@ -405,31 +378,6 @@ module Route : sig
       @since 0.7 *)
 end
 
-(** {2 Middlewares}
-
-    A middleware can be inserted in a handler to modify or observe
-    its behavior.
-
-    @since 0.11
-*)
-module Middleware : sig
-  type handler = byte_stream Request.t -> resp:(Response.t -> unit) -> unit
-  (** Handlers are functions returning a response to a request.
-      The response can be delayed, hence the use of a continuation
-      as the [resp] parameter. *)
-
-  type t = handler -> handler
-  (** A middleware is a handler transformation.
-
-      It takes the existing handler [h],
-      and returns a new one which, given a query, modify it or log it
-      before passing it to [h], or fail. It can also log or modify or drop
-      the response. *)
-
-  val nil : t
-  (** Trivial middleware that does nothing. *)
-end
-
 (** {2 Main Server type} *)
 
 type t
@@ -444,7 +392,6 @@ val create :
   ?buf_size:int ->
   ?get_time_s:(unit -> float) ->
   ?listens:Simple_httpd_domain.listenning list ->
-  ?middlewares:([`Encoding | `Stage of int] * Middleware.t) list ->
   unit ->
   t
 (** Create a new webserver.
@@ -457,8 +404,6 @@ val create :
     tends to kill client threads when they try to write on broken sockets. Default: [true].
 
     @param buf_size size for buffers (since 0.11)
-
-    @param middlewares see {!add_middleware} for more details.
 
     @param max_connections maximum number of simultaneous connections.
     @param num_thread number of thread to treat client.
@@ -487,56 +432,33 @@ val status : t -> Simple_httpd_domain.status
 val active_connections : t -> int
 (** Number of active connections *)
 
-val add_decode_request_cb :
-  t ->
-  (unit Request.t -> (unit Request.t * (byte_stream -> byte_stream)) option) -> unit
-[@@deprecated "use add_middleware"]
-(** Add a callback for every request.
-    The callback can provide a stream transformer and a new request (with
-    modified headers, typically).
-    A possible use is to handle decompression by looking for a [Transfer-Encoding]
-    header and returning a stream transformer that decompresses on the fly.
-
-    @deprecated use {!add_middleware} instead
-*)
-
-val add_encode_response_cb:
-  t -> (unit Request.t -> Response.t -> Response.t option) -> unit
-[@@deprecated "use add_middleware"]
-(** Add a callback for every request/response pair.
-    Similarly to {!add_encode_response_cb} the callback can return a new
-    response, for example to compress it.
-    The callback is given the query with only its headers,
-    as well as the current response.
-
-    @deprecated use {!add_middleware} instead
-*)
-
-val add_middleware :
-  stage:[`Encoding | `Stage of int] ->
-  t -> Middleware.t -> unit
-(** Add a middleware to every request/response pair.
-    @param stage specify when middleware applies.
-      Encoding comes first (outermost layer), then stages in increasing order.
-    @raise Invalid_argument if stage is [`Stage n] where [n < 1]
-    @since 0.11
-*)
-
 (** {2 Request handlers} *)
 
-val set_top_handler : t -> (string Request.t -> Response.t) -> unit
-(** Setup a handler called by default.
+(** type of request filter: several method may share filter that may
+    transform the resquest and response *)
+type filter = byte_stream Request.t -> byte_stream Request.t *
+                                         (Response.t -> Response.t)
 
-    This handler is called with any request not accepted by any handler
-    installed via {!add_path_handler}.
-    If no top handler is installed, unhandled paths will return a [404] not found. *)
+val decode_request : (byte_stream -> byte_stream) -> (Headers.t -> Headers.t)
+                     -> filter
+(** helper to create filters *)
 
-type finaliser = Response.t -> Response.t
-type 'a accept = 'a Request.t -> finaliser
+val encode_response : (Response.body -> Response.body) -> (Headers.t -> Headers.t)
+                      -> filter
+(** helper to create filters *)
+
+val compose_embrace : filter -> filter -> filter
+(** [compose_embrace f1 f2] compose two filters:
+    the request will be passed first to f2, then to f1,
+    res response will be passed first to f2, then to f1 **)
+
+val compose_cross : filter -> filter -> filter
+(** [compose_cross f1 f2] compose two filters:
+    the request will be passed first to f2, then to f1,
+    res response will be passed first to f1, then to f2 **)
 
 val add_route_handler :
-  ?accept:(unit accept) ->
-  ?middlewares:Middleware.t list ->
+  ?filter:filter ->
   ?meth:Meth.t ->
   t ->
   ('a, string Request.t -> Response.t) Route.t -> 'a ->
@@ -562,8 +484,7 @@ val add_route_handler :
 *)
 
 val add_route_handler_stream :
-  ?accept:(unit accept) ->
-  ?middlewares:Middleware.t list ->
+  ?filter:filter ->
   ?meth:Meth.t ->
   t ->
   ('a, byte_stream Request.t -> Response.t) Route.t -> 'a ->
@@ -612,7 +533,7 @@ type server_sent_generator = (module SERVER_SENT_GENERATOR)
     @since 0.9 *)
 
 val add_route_server_sent_handler :
-  ?accept:(unit accept) ->
+  ?filter:filter ->
   t ->
   ('a, string Request.t -> server_sent_generator -> unit) Route.t -> 'a ->
   unit

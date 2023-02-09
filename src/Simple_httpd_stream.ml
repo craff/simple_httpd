@@ -464,11 +464,11 @@ module Out_buf = struct
   let printf oc format =
     let cont s = add_string oc s in
     Printf.ksprintf cont format
-
+(*
   let free_space oc =
     let r = oc.s - oc.o in
     if r = 0 then (flush oc; oc.s) else r
-
+ *)
 end
 
 (* print a stream as a series of chunks: no allocation! *)
@@ -490,39 +490,6 @@ let output_chunked (oc:Out_buf.t) (self:t) : unit =
   done;
   add_string oc "\r\n"; (* empty trailer required by RFC *)
   ()
-
-(* print a string as a string of chunks: no allocation! *)
-let output_string_chunked (oc:Out_buf.t) (str:string) : unit =
-  let open Out_buf in
-  let offset = ref 0 in
-  let len = String.length str in
-  while !offset < len do
-    (* next chunk *)
-    let max_chunk = Out_buf.free_space oc - 8 in
-    let n = min max_chunk (len - !offset) in
-    add_hexa oc n;
-    add_string oc "\r\n";
-    add_substring oc str !offset n;
-    add_string oc "\r\n";
-    offset := !offset + n;
-  done;
-  add_string oc "0\r\n\r\n"
-
-let string_to_chunk ?(chunk_size = 16*4_096) str =
-  let offset = ref 0 in
-  let len = String.length str in
-  let buf = Buffer.create (len + len / (chunk_size / 8)) in
-  let max_chunk = chunk_size - 8 in
-  while !offset < len do
-    (* next chunk *)
-    let n = min max_chunk (len - !offset) in
-    Printf.bprintf buf "%x\r\n" n;
-    Buffer.add_substring buf str !offset n;
-    Buffer.add_string buf "\r\n";
-    offset := !offset + n;
-  done;
-  Buffer.add_string buf "0\r\n\r\n";
-  Buffer.contents buf
 
 let output_str = Out_buf.add_string
 let output_bytes = Out_buf.add_bytes

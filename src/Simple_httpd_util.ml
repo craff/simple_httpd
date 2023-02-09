@@ -68,40 +68,37 @@ let percent_encode ?(skip=fun _->false) s =
   "a%20ohm%2B5235%25%26%40%23%20---%20_" (percent_encode "a ohm+5235%&@# --- _")
 *)
 
-(*$= & ~printer:Q.(Print.(option string))
-  (Some "?") (percent_decode @@ percent_encode "?")
+(*$= & ~printer:Q.(Print.string)
+  ("?") (percent_decode @@ percent_encode "?")
 *)
 
 let hex_int (s:string) : int = Scanf.sscanf s "%x" (fun x->x)
 
-let percent_decode (s:string) : _ option =
+let percent_decode (s:string) =
   let buf = Buffer.create (String.length s) in
   let i = ref 0 in
-  try
-    while !i < String.length s do
-      match String.get s !i with
-      | '%' ->
-        if !i+2 < String.length s then (
-          begin match hex_int @@ String.sub s (!i+1) 2 with
-            | n -> Buffer.add_char buf (Char.chr n)
-            | exception _ -> raise Exit
-          end;
-          i := !i + 3;
-        ) else (
-          raise Exit (* truncated *)
-        )
-      | '+' -> Buffer.add_char buf ' '; incr i (* for query strings *)
-      | c -> Buffer.add_char buf c; incr i
-    done;
-    Some (Buffer.contents buf)
-  with Exit -> None
+  while !i < String.length s do
+    match String.get s !i with
+    | '%' ->
+       if !i+2 < String.length s then (
+         begin match hex_int @@ String.sub s (!i+1) 2 with
+         | n -> Buffer.add_char buf (Char.chr n)
+         | exception _ -> invalid_arg "percent_decode"
+         end;
+         i := !i + 3;
+       ) else (
+         raise Exit (* truncated *)
+       )
+    | '+' -> Buffer.add_char buf ' '; incr i (* for query strings *)
+    | c -> Buffer.add_char buf c; incr i
+  done;
+  Buffer.contents buf
 
 (*$QR & ~count:1_000 ~long_factor:20
     Q.string (fun s ->
         String.iter (fun c -> Q.assume @@ is_ascii_char c) s;
-        match percent_decode (percent_encode s) with
-        | Some s' -> s=s'
-        | None -> Q.Test.fail_report "invalid percent encoding")
+        percent_decode (percent_encode s) = s ||
+          Q.Test.fail_report "invalid percent encoding")
 *)
 
 exception Invalid_query
@@ -157,7 +154,7 @@ let parse_query s : (_ list, string) result=
   let j = ref 0 in
   try
     let percent_decode s =
-      match percent_decode s with Some x -> x | None -> raise Invalid_query
+      try percent_decode s with _ -> raise Invalid_query
     in
     let parse_pair () =
       let eq = String.index_from s !i '=' in

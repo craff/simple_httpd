@@ -16,9 +16,10 @@ val percent_encode : ?skip:(char -> bool) -> string -> string
     @param skip if provided, allows to preserve some characters, e.g. '/' in a path.
 *)
 
-val percent_decode : string -> string option
+val percent_decode : string -> string
 (** Inverse operation of {!percent_encode}.
-    Can fail since some strings are not valid percent encodings. *)
+    Can raise [Invalid_argument "percent_decode"] if string is not valid
+    percent encodings. *)
 
 val split_query : string -> string * string
 (** Split a path between the path and the query

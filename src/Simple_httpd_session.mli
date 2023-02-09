@@ -6,8 +6,7 @@ val check : ?session_life_time:float ->
             ?init:(unit -> session_data) ->
             ?check:(session -> bool) ->
             ?error:(int*string) ->
-            'a Simple_httpd_server.Request.t ->
-              Simple_httpd_server.finaliser
+            Simple_httpd_server.filter
 
 val do_session_data : (session_data -> 'a) -> session -> 'a
 

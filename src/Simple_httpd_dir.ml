@@ -67,7 +67,6 @@ let header_html = H.Content_Type, "text/html"
 let (//) = Filename.concat
 
 let encode_path s = U.percent_encode ~skip:(function '/' -> true|_->false) s
-let _decode_path s = match U.percent_decode s with Some s->s | None -> s
 
 let is_hidden s = String.length s>0 && s.[0] = '.'
 
@@ -191,7 +190,7 @@ let html_list_dir (module VFS:VFS) ~prefix ~parent d : Html.elt =
   html [][head; body]
 
 (* @param on_fs: if true, we assume the file exists on the FS *)
-let add_vfs_ ?(accept=(fun _req x -> x)) ~config
+let add_vfs_ ?(filter=(fun x -> (x, fun r -> r))) ~config
                ~vfs:((module VFS:VFS) as vfs) ~prefix server : unit=
   let search_cache : (bool * string -> S.Response.t)
                      -> bool * string -> S.Response.t =
@@ -224,12 +223,13 @@ let add_vfs_ ?(accept=(fun _req x -> x)) ~config
       end
   in
   let route () =
-    if prefix="" then S.Route.rest_of_path_urlencoded
-    else S.Route.exact_path prefix S.Route.rest_of_path_urlencoded
+    if prefix="" then S.Route.rest
+    else S.Route.exact_path prefix S.Route.rest
   in
   if config.delete then (
-    S.add_route_handler ~accept server ~meth:`DELETE (route())
+    S.add_route_handler ~filter server ~meth:DELETE (route())
       (fun path _req ->
+         let path = String.concat "/" path in
          if contains_dot_dot path then (
            U.debug ~lvl:2 (fun k->k "delete fails %s (dotdot)" path);
            S.Response.fail_raise ~code:403 "invalid path in delete"
@@ -245,23 +245,24 @@ let add_vfs_ ?(accept=(fun _req x -> x)) ~config
                   "delete fails: %s (%s)" path (D.printexn e))
       )))
     else (
-      S.add_route_handler ~accept server ~meth:`DELETE (route())
+      S.add_route_handler ~filter server ~meth:DELETE (route())
         (fun _ _  ->
           S.Response.fail_raise ~code:405 "delete not allowed");
     );
 
   if config.upload then (
-    S.add_route_handler_stream server ~meth:`PUT (route())
-      ~accept:(fun req ->
+    S.add_route_handler_stream server ~meth:PUT (route())
+      ~filter:(fun req ->
           match S.Request.get_header_int req H.Content_Length with
           | Some n when n > config.max_upload_size ->
              S.Response.fail_raise ~code:403
                "max upload size is %d" config.max_upload_size
           | Some _ when contains_dot_dot req.S.Request.path ->
              S.Response.fail_raise ~code:403 "invalid path (contains '..')"
-          | _ -> accept req
+          | _ -> filter req
         )
       (fun path req ->
+         let path = String.concat "/" path in
          let write, close =
            try VFS.create path
            with e ->
@@ -277,13 +278,14 @@ let add_vfs_ ?(accept=(fun _req x -> x)) ~config
          S.Response.make_raw ~code:201 "upload successful"
       )
   ) else (
-    S.add_route_handler ~accept server ~meth:`PUT (route())
+    S.add_route_handler ~filter server ~meth:PUT (route())
       (fun _ _  -> S.Response.make_raw ~code:405 "upload not allowed");
   );
 
   if config.download then (
-    S.add_route_handler ~accept server ~meth:`GET (route())
+    S.add_route_handler ~filter server ~meth:GET (route())
       (fun path req ->
+        let path = String.concat "/" path in
         let mtime = lazy (
                         match VFS.file_mtime path with
                         | None -> S.Response.fail_raise ~code:403 "Cannot access file"
@@ -331,22 +333,16 @@ let add_vfs_ ?(accept=(fun _req x -> x)) ~config
               | ZlibCache {cmp; _} when deflate ->
                  let string = cmp (VFS.read_file_content path) in
                  U.debug ~lvl:2 (fun k->k "download ok %s" path);
-                 S.Response.make_raw_chunked
+                 S.Response.make_raw
                    ~headers:(mime_type@[(H.ETag, Lazy.force mtime)
-                                       ;(H.Content_Encoding, "chunked, deflate")])
-                   ~code:200 (Simple_httpd_stream.string_to_chunk string)
+                                       ;(H.Content_Encoding, "deflate")])
+                   ~code:200 string
               | SimpleCache | ZlibCache _ ->
                  let string = VFS.read_file_content path in
                  U.debug ~lvl:2 (fun k->k "download ok %s" path);
-                 if String.length string <= 50_000 then
-                   S.Response.make_raw
-                     ~headers:(mime_type@[(H.ETag, Lazy.force mtime)])
-                     ~code:200 string
-                 else
-                   S.Response.make_raw_chunked
-                     ~headers:(mime_type@[(H.ETag, Lazy.force mtime)
-                                         ;(H.Content_Encoding, "chunked")])
-                     ~code:200 (Simple_httpd_stream.string_to_chunk string)
+                 S.Response.make_raw
+                   ~headers:(mime_type@[(H.ETag, Lazy.force mtime)])
+                   ~code:200 string
               | NoCache ->
                  let stream = VFS.read_file_stream path in
                  U.debug ~lvl:2 (fun k->k "download ok %s" path);
@@ -361,16 +357,16 @@ let add_vfs_ ?(accept=(fun _req x -> x)) ~config
         )
       )
   ) else (
-    S.add_route_handler server ~accept ~meth:`GET (route())
+    S.add_route_handler server ~filter ~meth:GET (route())
       (fun _ _  -> S.Response.make_raw ~code:405 "download not allowed");
   );
   ()
 
-let add_vfs ?accept ~config ~vfs ~prefix server : unit =
-  add_vfs_ ?accept ~config ~prefix ~vfs server
+let add_vfs ?filter ~config ~vfs ~prefix server : unit =
+  add_vfs_ ?filter ~config ~prefix ~vfs server
 
-let add_dir_path ?accept ~config ~dir ~prefix server : unit =
-  add_vfs_ ?accept ~config ~prefix ~vfs:(vfs_of_dir dir) server
+let add_dir_path ?filter ~config ~dir ~prefix server : unit =
+  add_vfs_ ?filter ~config ~prefix ~vfs:(vfs_of_dir dir) server
 
 module Embedded_fs = struct
   module Str_map = Map.Make(String)
