@@ -1,5 +1,4 @@
 module S = Simple_httpd
-module U = S.Util
 module D = S.Dir
 module Pf = Printf
 
@@ -39,6 +38,9 @@ let main () =
   let delta    = ref 0.030 in
   let timeout  = ref (-1.0) in
   let t        = ref (Domain.recommended_domain_count () - 1) in
+  let log_folder = ref "" in
+  let log_basename = ref "log" in
+  let log_perm = ref 0o700 in
   Arg.parse (Arg.align [
       "--addr", Set_string addr, " address to listen on";
       "-a", Set_string addr, " alias to --listen";
@@ -48,7 +50,10 @@ let main () =
       "--cache-zlib", Unit (fun () -> config.cache <- Simple_httpd_camlzip.(ZlibCache  { chk = accept_deflate; cmp = deflate_string})), " cache compressed files in memory";
       "--ssl", Tuple[Set_string ssl_cert; Set_string ssl_priv], " give ssl certificate and private key";
       "--dir", Set_string dir_, " directory to serve (default: \".\")";
-      "--debug", Int U.set_debug, " debug mode";
+      "--log", Int S.set_log_lvl, " log level";
+      "--log-folder", Set_string log_folder, " log folder";
+      "--log-basename", Set_string log_basename, " log basename";
+      "--log-perm", Set_int log_perm, " log permission";
       "--upload", Unit (fun () -> config.upload <- true), " enable file uploading";
       "--no-upload", Unit (fun () -> config.upload <- false), " disable file uploading";
       "--download", Unit (fun () -> config.download <- true), " enable file downloading";
@@ -80,6 +85,9 @@ let main () =
   let listens = S.[{addr = !addr;port = !port;ssl}] in
   let timeout = !timeout in
   let maxc = !maxc in
+  let _ = if !log_folder <> "" then
+            S.set_log_folder ~basename:!log_basename ~perm:!log_perm !log_folder (!t + 1)
+  in
 
   match serve ~config ~timeout ~maxc !dir_ listens !t with
   | Ok () -> ()

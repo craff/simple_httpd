@@ -21,6 +21,7 @@ doc:
 .PHONY: send_doc
 send_doc: doc
 	rsync -r _build/default/_doc/_html/ raffalli:WWW/simple_httpd/
+	rsync -r tests/small.png tests/big.png raffalli:WWW/simple_httpd/
 
 .PHONY: install
 install:

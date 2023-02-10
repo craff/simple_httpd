@@ -1,6 +1,5 @@
 
 module S = Simple_httpd
-module U = S.Util
 module H = S.Headers
 
 let now_ = Unix.gettimeofday
@@ -40,7 +39,7 @@ let () =
       "-a", Arg.Set_string addr, " set address";
       "--port", Arg.Set_int port, " set port";
       "-p", Arg.Set_int port, " set port";
-      "--debug", Arg.Int (fun n -> U.set_debug n), " set debug lvl";
+      "--log", Arg.Int (fun n -> S.set_log_lvl n), " set debug lvl";
       "-j", Arg.Set_int j, " maximum number of connections";
     ]) (fun _ -> raise (Arg.Bad "")) "echo [option]*";
 
@@ -91,7 +90,7 @@ let () =
   S.add_route_handler_stream ~meth:PUT server
     S.Route.(exact "upload" @/ string @/ return)
     (fun path req ->
-        U.debug (fun k->k "start upload %S, headers:\n%s\n\n%!" path
+        S.log (fun k->k "start upload %S, headers:\n%s\n\n%!" path
                      (Format.asprintf "%a" S.Headers.pp (S.Request.headers req)));
         try
           let oc = open_out @@ "/tmp/" ^ path in

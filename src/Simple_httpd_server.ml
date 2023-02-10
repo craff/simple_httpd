@@ -9,8 +9,9 @@ module Out = Simple_httpd_output
 
 module Input = Simple_httpd_input
 
-let debug     = U.debug
-let set_debug = U.set_debug
+let log     = D.log
+let set_log_lvl = D.set_log_lvl
+let set_log_folder = D.set_log_folder
 
 exception Bad_req of int * string
 let bad_reqf c fmt = Printf.ksprintf (fun s ->raise (Bad_req (c,s))) fmt
@@ -266,24 +267,24 @@ module Request = struct
         bad_reqf 400 "body is too short by %d bytes" size)
 
   (* parse request, but not body (yet) *)
-  let parse_req_start ~client ~get_time_s ~buf (bs:byte_stream)
+  let parse_req_start ~client ~buf (bs:byte_stream)
       : byte_stream t option =
     try
-      debug ~lvl:2 (fun k -> k "start reading request");
+      D.log ~lvl:1 (fun k -> k "start reading request");
       D.register_starttime client;
       let line = Input.read_line ~buf bs in
-      let start_time = get_time_s() in
+      let start_time = Unix.gettimeofday () in
       let meth, path, version =
         try
           let meth, path, version = Scanf.sscanf line "%s %s HTTP/1.%d" (fun x y z->x,y,z) in
           if version != 0 && version != 1 then raise Exit;
           meth, path, version
         with e ->
-          debug ~lvl:1 (fun k->k "INVALID REQUEST LINE: `%s` (%s)" line (Printexc.to_string e));
+          log ~lvl:1 (fun k->k "INVALID REQUEST LINE: `%s` (%s)" line (Printexc.to_string e));
           raise (bad_reqf 400 "Invalid request line")
       in
       let meth = Meth.of_string meth in
-      debug ~lvl:2 (fun k->k "got meth: %s, path %S" (Meth.to_string meth) path);
+      log ~lvl:2 (fun k->k "got meth: %s, path %S" (Meth.to_string meth) path);
       let (headers, cookies) = Headers.parse_ ~buf bs in
       let host =
         match Headers.get Headers.Host headers with
@@ -353,8 +354,8 @@ module Request = struct
     | e -> bad_reqf 500 "failed to read body: %s" (D.printexn e)
 
   module Internal_ = struct
-    let parse_req_start ~buf ~client ~get_time_s bs =
-      parse_req_start ~client ~get_time_s ~buf bs
+    let parse_req_start ~buf ~client bs =
+      parse_req_start ~client ~buf bs
 
     let parse_body ~buf req : byte_stream t =
       parse_body_ ~tr_stream:(fun s->s) ~buf req
@@ -366,7 +367,7 @@ end
   let str = Simple_httpd.Input.of_string q in
   let buf = Buffer.create 256 in
   let r = Request.Internal_.parse_req_start ~buf ~client:Simple_httpd_domain.fake_client
-             ~get_time_s:(fun _ -> 0.) str in
+             str in
   match r with
   | None -> assert_failure "should parse"
   | Some req ->
@@ -455,7 +456,7 @@ module Response = struct
     in
 
     let self = {self with headers; body} in
-    debug ~lvl:2 (fun k->k "output response: %s"
+    log ~lvl:2 (fun k->k "output response: %s"
                            (Format.asprintf "%a" pp {self with body=String "<…>"}));
     List.iter (fun (k,v) ->
         Out.add_string oc (Headers.to_string k);
@@ -677,8 +678,6 @@ type t = {
 
   buf_size: int;
 
-  get_time_s : unit -> float;
-
   status : D.status;
 
   handlers : path_handler Route.tree;
@@ -800,7 +799,6 @@ let create
     ?(num_thread=Domain.recommended_domain_count () - 1)
     ?(timeout=300.0)
     ?(buf_size=16 * 2048)
-    ?(get_time_s=Unix.gettimeofday)
     ?(listens = D.[{addr = "127.0.0.1"; port=8080; ssl = None}])
     () : t =
   let max_connections = max 4 max_connections in
@@ -813,7 +811,7 @@ let create
   let self = {
     listens; masksigpipe; buf_size;
     max_connections;
-    handlers=Route.empty_tree (); timeout; get_time_s; num_thread;
+    handlers=Route.empty_tree (); timeout; num_thread;
     status
     }
   in
@@ -825,12 +823,12 @@ let handle_client_ (self:t) (client:D.client) : unit =
   let is = Input.of_client ~buf_size:self.buf_size client in
   let continue = ref true in
   while !continue do
-    match Request.parse_req_start ~client ~get_time_s:self.get_time_s ~buf is with
+    match Request.parse_req_start ~client ~buf is with
     | None ->
       continue := false (* client is done *)
 
     | Some req ->
-      debug ~lvl:2 (fun k->k "req: %s" (Format.asprintf "@[%a@]" Request.pp_ req));
+      log ~lvl:2 (fun k->k "req: %s" (Format.asprintf "@[%a@]" Request.pp_ req));
 
       if Request.close_after_req req then continue := false;
 
@@ -854,7 +852,7 @@ let handle_client_ (self:t) (client:D.client) : unit =
         (* handle expect/continue *)
         begin match Request.get_header ~f:String.trim req Headers.Expect with
           | Some "100-continue" ->
-            debug ~lvl:2 (fun k->k "send back: 100 CONTINUE");
+            log ~lvl:2 (fun k->k "send back: 100 CONTINUE");
             Response.output_ oc (Response.make_raw ~code:100 "");
           | Some s -> bad_reqf 417 "unknown expectation %s" s
           | None -> ()
@@ -875,19 +873,21 @@ let handle_client_ (self:t) (client:D.client) : unit =
           with Sys_error _
              | Unix.Unix_error _ as e ->
                 continue := false;
-                U.debug ~lvl:1 (fun k -> k "fail to output response (%s)"
+                log ~lvl:1 (fun k -> k "fail to output response (%s)"
                                            (D.printexn e))
         in
         (* call handler *)
-        handler oc req ~resp; if !continue then D.yield ()
+        handler oc req ~resp;
+        log ~lvl:1 (fun k -> k "response sent after %fms" (1e3 *. (Unix.gettimeofday () -. req.start_time)));
+        if !continue then D.yield ()
       with
       | Sys_error _ | Unix.Unix_error _ | D.ClosedByHandler | D.TimeOut as e ->
-         U.debug ~lvl:1 (fun k -> k "broken connection (%s)"
+         log ~lvl:1 (fun k -> k "broken connection (%s)"
                                     (D.printexn e));
          continue := false; (* connection broken somehow *)
 
       | Bad_req (c,s) when (300 <= c && c <= 303) || (307 <= c && c <= 308) ->
-         U.debug ~lvl:1 (fun k -> k "redirect request (%s)" s);
+         log ~lvl:1 (fun k -> k "redirect request (%s)" s);
          let res = Response.make_raw ~code:c "" in
          let res = Response.set_header Headers.Location s res in
          begin
@@ -898,7 +898,7 @@ let handle_client_ (self:t) (client:D.client) : unit =
 
       | Bad_req (c,s) ->
          (* connection error, close *)
-         U.debug ~lvl:1 (fun k -> k "error handling request (%s)" s);
+         log ~lvl:1 (fun k -> k "error handling request (%s)" s);
          let res = Response.make_raw ~code:c s in
          begin
            try Response.output_ oc res
@@ -907,13 +907,13 @@ let handle_client_ (self:t) (client:D.client) : unit =
          if not (c < 500) then continue := false else D.yield ()
 
       | e ->
-         U.debug ~lvl:1 (fun k -> k "server error (%s)"
+         log ~lvl:1 (fun k -> k "server error (%s)"
                                     (D.printexn e));
          continue := false;
          Response.output_ oc @@
            Response.fail ~code:500 "server error: %s" (D.printexn e)
   done;
-  debug ~lvl:2 (fun k->k "done with client, exiting");
+  log ~lvl:2 (fun k->k "done with client, exiting");
   ()
 
 let run (self:t) : (unit,_) result =
@@ -927,6 +927,6 @@ let run (self:t) : (unit,_) result =
     Array.iter (fun d -> Domain.join d) a;
     Ok ()
   with e ->
-    U.debug ~lvl:1 (fun k -> k "server exit error (%s)"
+    log ~lvl:1 (fun k -> k "server exit error (%s)"
                                (D.printexn e));
     Error e

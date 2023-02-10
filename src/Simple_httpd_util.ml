@@ -23,20 +23,6 @@ let read fd buf ofs len =
   if ret == -1 then read_error();
   ret
 
-let debug_lvl = ref (
-  match int_of_string (Sys.getenv "HTTP_DBG") with
-  | n -> n | exception _ -> 0
-)
-let set_debug n = debug_lvl := n
-let debug ?(lvl=1) k =
-  if !debug_lvl >= lvl then (
-    k (fun fmt->
-        Printf.fprintf stdout "[domain %d - %.6f]: "
-          Domain.((self() :> int))
-          (Unix.gettimeofday ());
-       Printf.kfprintf (fun oc -> Printf.fprintf oc "\n%!") stdout fmt)
-  )
-
 (* test utils *)
 (*$inject
   let pp_res f = function Ok x -> f x | Error e -> e

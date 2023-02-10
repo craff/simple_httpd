@@ -232,15 +232,15 @@ let add_vfs_ ?(filter=(fun x -> (x, fun r -> r))) ~config
       (fun path _req ->
          let path = String.concat "/" path in
          if contains_dot_dot path then (
-           U.debug ~lvl:2 (fun k->k "delete fails %s (dotdot)" path);
+           D.log ~lvl:2 (fun k->k "delete fails %s (dotdot)" path);
            S.Response.fail_raise ~code:403 "invalid path in delete"
          ) else (
            S.Response.make_string
              (try
-                U.debug ~lvl:2 (fun k->k "done delete %s" path);
+                S.log ~lvl:2 (fun k->k "done delete %s" path);
                 VFS.delete path; "file deleted successfully"
               with e ->
-                U.debug ~lvl:2 (fun k->k "delete fails %s (%s)" path
+                S.log ~lvl:2 (fun k->k "delete fails %s (%s)" path
                                          (D.printexn e));
                 S.Response.fail_raise ~code:500
                   "delete fails: %s (%s)" path (D.printexn e))
@@ -267,7 +267,7 @@ let add_vfs_ ?(filter=(fun x -> (x, fun r -> r))) ~config
          let write, close =
            try VFS.create path
            with e ->
-             U.debug ~lvl:2 (fun k->k "fail uploading %s (%s)"
+             S.log ~lvl:2 (fun k->k "fail uploading %s (%s)"
                                       path (D.printexn e));
              S.Response.fail_raise ~code:403 "cannot upload to %S: %s"
                path (D.printexn e)
@@ -275,7 +275,7 @@ let add_vfs_ ?(filter=(fun x -> (x, fun r -> r))) ~config
          let req = S.Request.limit_body_size ~max_size:config.max_upload_size req in
          Input.iter write req.S.Request.body;
          close ();
-         U.debug ~lvl:2 (fun k->k "done uploading %s" path);
+         S.log ~lvl:2 (fun k->k "done uploading %s" path);
          S.Response.make_raw ~code:201 "upload successful"
       )
   ) else (
@@ -293,10 +293,10 @@ let add_vfs_ ?(filter=(fun x -> (x, fun r -> r))) ~config
                         | Some t -> Printf.sprintf "mtime: %.4f" t
                       ) in
         if contains_dot_dot path then (
-          U.debug ~lvl:2 (fun k->k "download fails %s (dotdot)" path);
+          S.log ~lvl:2 (fun k->k "download fails %s (dotdot)" path);
           S.Response.fail ~code:403 "Path is forbidden";
         ) else if not (VFS.contains path) then (
-          U.debug ~lvl:2 (fun k->k "download fails %s (not found)" path);
+          S.log ~lvl:2 (fun k->k "download fails %s (not found)" path);
           S.Response.fail ~code:404 "File not found";
         ) else if S.Request.get_header req H.If_None_Match = Some (Lazy.force mtime) then (
           S.Response.make_raw ~code:304 ""
@@ -307,18 +307,18 @@ let add_vfs_ ?(filter=(fun x -> (x, fun r -> r))) ~config
             | Index | Index_or_lists when VFS.contains (path // "index.html") ->
                (* redirect using path, not full path *)
                let new_path = "/" // prefix // path // "index.html" in
-               U.debug ~lvl:2 (fun k->k "download redirect %s" path);
+               S.log ~lvl:2 (fun k->k "download redirect %s" path);
                S.Response.make_raw ~code:301 ""
                  ~headers:S.Headers.(empty |> set H.Location new_path)
             | Lists | Index_or_lists ->
                let body = html_list_dir ~prefix vfs path ~parent
                           |> Html.to_string_top in
-               U.debug ~lvl:2 (fun k->k "download index %s" path);
+               S.log ~lvl:2 (fun k->k "download index %s" path);
                S.Response.make_string
                  ~headers:[header_html; H.ETag, Lazy.force mtime]
                  body
             | Forbidden | Index ->
-               U.debug ~lvl:2 (fun k->k "download index fails %s (forbidden)" path);
+               S.log ~lvl:2 (fun k->k "download index fails %s (forbidden)" path);
                S.Response.make_raw ~code:405 "listing dir not allowed"
         ) else (
           let deflate = match config.cache with
@@ -333,25 +333,25 @@ let add_vfs_ ?(filter=(fun x -> (x, fun r -> r))) ~config
               match config.cache with
               | ZlibCache {cmp; _} when deflate ->
                  let string = cmp (VFS.read_file_content path) in
-                 U.debug ~lvl:2 (fun k->k "download ok %s" path);
+                 S.log ~lvl:2 (fun k->k "download ok %s" path);
                  S.Response.make_raw
                    ~headers:(mime_type@[(H.ETag, Lazy.force mtime)
                                        ;(H.Content_Encoding, "deflate")])
                    ~code:200 string
               | SimpleCache | ZlibCache _ ->
                  let string = VFS.read_file_content path in
-                 U.debug ~lvl:2 (fun k->k "download ok %s" path);
+                 S.log ~lvl:2 (fun k->k "download ok %s" path);
                  S.Response.make_raw
                    ~headers:(mime_type@[(H.ETag, Lazy.force mtime)])
                    ~code:200 string
               | NoCache ->
                  let stream = VFS.read_file_stream path in
-                 U.debug ~lvl:2 (fun k->k "download ok %s" path);
+                 S.log ~lvl:2 (fun k->k "download ok %s" path);
                  S.Response.make_raw_stream
                    ~headers:(mime_type@[(H.ETag, Lazy.force mtime)])
                    ~code:200 stream
             with e ->
-              U.debug ~lvl:2 (fun k->k "download fails %s (%s)" path (D.printexn e));
+              S.log ~lvl:2 (fun k->k "download fails %s (%s)" path (D.printexn e));
               S.Response.fail ~code:500 "error while reading file: %s" (D.printexn e)
           in
           search_cache fn (deflate,path)

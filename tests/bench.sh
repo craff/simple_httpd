@@ -4,7 +4,6 @@ ulimit -n 2048
 
 dune exec -- ../src/bin/http_of_dir.exe --cache --maxc=2100 --port=8080 --delta 10 --timeout 10 /var/www/nginx &
 PID=$!
-maxc = 2000
 
 if [ -f small.csv ]; then rm small.csv; fi
 

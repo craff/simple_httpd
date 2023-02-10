@@ -15,22 +15,26 @@ provides:
 Here are some curves showing the performance on static files compared to nginx and
 apache:
 
-![Comparison for small files](/images/small.png)
-![Comparison for small files](/images/big.png)
+{%html: <p align="center"><img src="https://raffalli.eu/simple_httpd/small.png" alt="comparison for small files"/></p>%}
+
+{%html: <p align="center"><img src="https://raffalli.eu/simple_httpd/big.png" alt="comparison for small files"/></p>%}
 
 See [src/examples/echo.ml] below, that demonstrates some of the
 features by declaring a few endpoints, including one for uploading files.
 
-Here are the various entry point of the library
-- the main module {!Simple_httpd}
+To go further, you should start reading
+- {!Simple_httpd} the main module of the library:
+- {{:../../simple_httpd_camlzip/Simple_httpd_camlzip/index.html}Simple_httpd_camlzip}
+  to compress response body and decompress request body.
 
 {[
 module S = Simple_httpd
-module U = Simple_httpd.Util
-module H = Simple_httpd.Header
+module U = S.Util
+module H = S.Headers
+
 let now_ = Unix.gettimeofday
 
-(* util: a little filter collecting statistics *)
+(* util: a little middleware collecting statistics *)
 let filter_stat () : S.filter * (unit -> string) =
   let n_req = ref 0 in
   let total_time_ = ref 0. in
@@ -87,7 +91,7 @@ let () =
     S.Route.(exact "zcat" @/ string @/ return)
     (fun path _req ->
         let ic = open_in path in
-        let str = S.Byte_stream.of_chan ic in
+        let str = S.Input.of_chan ic in
         let mime_type =
           try
             let p = Unix.open_process_in (Printf.sprintf "file -i -b %S" path) in
@@ -120,7 +124,7 @@ let () =
                      (Format.asprintf "%a" S.Headers.pp (S.Request.headers req)));
         try
           let oc = open_out @@ "/tmp/" ^ path in
-          S.Byte_stream.to_chan oc req.S.Request.body;
+          S.Input.to_chan oc req.S.Request.body;
           flush oc;
           S.Response.make_string "uploaded file"
         with e ->
@@ -168,26 +172,4 @@ let () =
   match S.run server with
   | Ok () -> ()
   | Error e -> raise e
-]}
-
-It is then possible to query it using curl:
-
-{[
-$ dune exec src/examples/echo.exe &
-listening on http://127.0.0.1:8080
-
-# the path "hello/name" greets you.
-$ curl -X GET http://localhost:8080/hello/quadrarotaphile
-hello quadrarotaphile!
-
-# the path "echo" just prints the request.
-$ curl -X GET http://localhost:8080/echo --data "howdy y'all"
-echo:
-{meth=GET;
- headers=Host: localhost:8080
-         User-Agent: curl/7.66.0
-         Accept: */*
-         Content-Length: 10
-         Content-Type: application/x-www-form-urlencoded;
- path="/echo"; body="howdy y'all"}
 ]}

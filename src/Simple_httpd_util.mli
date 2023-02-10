@@ -7,9 +7,6 @@ val single_write : Unix.file_descr -> Bytes.t -> int -> int -> int
 val read : Unix.file_descr -> Bytes.t -> int -> int -> int
 val setsockopt_cork : Unix.file_descr -> bool -> unit
 
-val set_debug : int -> unit
-val debug : ?lvl:int -> ((('a, out_channel, unit, unit) format4 -> 'a) -> unit) -> unit
-
 val percent_encode : ?skip:(char -> bool) -> string -> string
 (** Encode the string into a valid path following
     https://tools.ietf.org/html/rfc3986#section-2.1

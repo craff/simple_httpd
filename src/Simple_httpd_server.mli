@@ -191,7 +191,7 @@ module Request : sig
   (* for testing purpose, do not use *)
   module Internal_ : sig
     val parse_req_start : buf:buf -> client:Simple_httpd_domain.client ->
-                          get_time_s:(unit -> float) -> byte_stream -> byte_stream t option
+                          byte_stream -> byte_stream t option
     val parse_body : buf:buf -> byte_stream t -> byte_stream t
   end
   (**/**)
@@ -376,7 +376,6 @@ val create :
   ?num_thread:int ->
   ?timeout:float ->
   ?buf_size:int ->
-  ?get_time_s:(unit -> float) ->
   ?listens:listenning list ->
   unit ->
   t
@@ -397,9 +396,6 @@ val create :
       systemd on Linux (or launchd on macOS). If passed in, this socket will be
       used instead of the [addr] and [port]. If not passed in, those will be
       used. This parameter exists since 0.10.
-
-    @param get_time_s obtain the current timestamp in seconds.
-      This parameter exists since 0.11.
 *)
 
 val listens : t -> Simple_httpd_domain.listenning list
@@ -549,7 +545,7 @@ val run : t -> (unit, exn) result
 
 (** {1 Debuggin/logging} *)
 
-val debug : ?lvl:int ->
+val log : ?lvl:int ->
             ((('a, out_channel, unit, unit) format4 -> 'a) -> unit) -> unit
 (** call [debug ~lvl (fun k -> k "format" args)] will output a debugging message
     on stdout. We currently use the following convention for levels:
@@ -559,5 +555,11 @@ val debug : ?lvl:int ->
     - [2]: give details of request or response
     - [>=3]: for debugging *)
 
-val set_debug: int -> unit
+val set_log_lvl: int -> unit
 (** Set the current debug level *)
+
+val set_log_folder:  ?basename:string -> ?perm:int -> string -> int -> unit
+(** [set_log_folder ~basename ~perm folder nb] will write log in file
+    [folder/basename-domain_id.log] created with the given permission.
+    The default permission is 0x700. One file is created by domain, ensuring
+    that message are not mixed. *)

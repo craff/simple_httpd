@@ -12,7 +12,7 @@ Arg.parse (Arg.align [
       "-a", Arg.Set_string addr, " address to listen on";
       "-p", Arg.Set_int port, " port to listen on";
       "-r", Arg.Set_int t, " number of thread (1)";
-      "--debug", Arg.Int S.set_debug, " toggle debug";
+      "--log", Arg.Int S.set_log_lvl, " set log level";
       ]) (fun _ -> ()) "sse_clock [opt*]";
 
   let listens = S.[{addr= !addr;port= !port;ssl=None}] in
@@ -26,12 +26,12 @@ Arg.parse (Arg.align [
   (* tick/tock goes the clock *)
   S.add_route_server_sent_handler server S.Route.(exact "clock" @/ return)
     (fun _req (module EV : S.SERVER_SENT_GENERATOR) ->
-       S.debug (fun k->k"new connection");
+       S.log (fun k->k "new connection");
        EV.set_headers extra_headers;
        let tick = ref true in
        while true do
          let now = Ptime_clock.now() in
-         S.debug (fun k->k"send clock ev %s" (Format.asprintf "%a" Ptime.pp now));
+         S.log (fun k->k"send clock ev %s" (Format.asprintf "%a" Ptime.pp now));
          EV.send_event ~event:(if !tick then "tick" else "tock")
            ~data:(Ptime.to_rfc3339 now) ();
          tick := not !tick;

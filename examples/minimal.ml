@@ -9,7 +9,7 @@ let () =
   Arg.parse (Arg.align [
       "--addr", Arg.Set_string addr, " set address";
       "--port", Arg.Set_int port, " set port";
-      "--debug", Arg.Int S.set_debug, " set debug level";
+      "--log", Arg.Int S.set_log_lvl, " set log level";
       "-j", Arg.Set_int j, " maximum number of connections";
       "-t", Arg.Set_int t, " number of threads/domains used";
     ]) (fun _ -> raise (Arg.Bad "")) "echo [option]*";
