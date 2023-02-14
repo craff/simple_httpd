@@ -1,4 +1,4 @@
-nbc, apache, nginx, simple, simple_sf, simple_ssl
+nbc, apache, nginx, simple, simple-sendfile, simple-ssl
 5 ,133.18 ,205.66 ,140.67 ,201.02 ,56.12 ,
 10 ,130.64 ,213.08 ,135.37 ,203.23 ,57.95 ,
 15 ,130.56 ,214.35 ,136.19 ,205.05 ,58.28 ,
