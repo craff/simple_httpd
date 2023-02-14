@@ -1,0 +1,13 @@
+set datafile separator comma
+set term png
+set key autotitle columnhead
+set xlabel 'Number of simultaneous connections'
+set ylabel 'Request per seconds'
+
+set title 'Small static file: 100o'
+set output 'small.png'
+plot for [col=2:6] 'small.csv' using 1:col with lines
+
+set title 'Big static file: 50Mo'
+set output 'big.png'
+plot for [col=2:6] 'big.csv' using 1:col with lines
