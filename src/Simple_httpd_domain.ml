@@ -263,7 +263,7 @@ module Mutex : sig
     if not (try_lock lk) then perform (Lock (lk, lock))
 end
 
-(*module Ssl = struct include Ssl include Ssl.SslNoRelease end*)
+module Ssl = struct include Ssl include Ssl.SslNoRelease end
 
 let rec read c s o l =
   try
