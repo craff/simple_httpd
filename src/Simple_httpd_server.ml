@@ -386,6 +386,7 @@ end
 module Response = struct
   type body = String of string
             | Stream of byte_stream
+            | File of int * Unix.file_descr * bool (* sent via sendfile *)
             | Void
   type t = {
     code: Response_code.t;
@@ -406,10 +407,15 @@ module Response = struct
     { code; headers; body=String body; }
 
   let make_raw_stream ?(cookies=[]) ?(headers=[]) ~code body : t =
-    (* add content length to response *)
+    (* do not add content length to response *)
     let headers = Headers.set Headers.Transfer_Encoding "chunked" headers in
     let headers = Headers.set_cookies cookies headers in
     { code; headers; body=Stream body; }
+
+  let make_raw_file ?(cookies=[]) ?(headers=[]) ~code ~close n body : t =
+    (* add content length to response *)
+    let headers = Headers.set_cookies cookies headers in
+    { code; headers; body=File(n,body,close); }
 
   let make_void ?(cookies=[]) ?(headers=[]) ~code () : t =
     let headers = Headers.set_cookies cookies headers in
@@ -421,9 +427,13 @@ module Response = struct
   let make_stream ?cookies ?headers body =
     make_raw_stream ?cookies ?headers ~code:200 body
 
+  let make_file ?cookies ?headers ~close n body =
+    make_raw_file ?cookies ?headers ~code:200 ~close n body
+
   let make ?cookies ?headers r : t = match r with
     | String body -> make_raw ?cookies ?headers ~code:200 body
     | Stream body -> make_raw_stream ?cookies ?headers ~code:200 body
+    | File(n,body,close)-> make_raw_file ?cookies ?headers ~code:200 ~close n body
     | Void -> make_void ?cookies ?headers ~code:200 ()
 
   let fail ?cookies ?headers ~code fmt =
@@ -435,6 +445,7 @@ module Response = struct
     let pp_body out = function
       | String s -> Format.fprintf out "%S" s
       | Stream _ -> Format.pp_print_string out "<stream>"
+      | File   _ -> Format.pp_print_string out "<file>"
       | Void -> ()
     in
     Format.fprintf out "{@[code=%d;@ headers=[@[%a@]];@ body=%a@]}"
@@ -454,6 +465,8 @@ module Response = struct
       | String s ->
          Headers.set Headers.Content_Length (string_of_int (String.length s))
            self.headers
+      | File(n, _, _) ->
+         Headers.set Headers.Content_Length (string_of_int n) self.headers
       | Stream _ -> Headers.set Headers.Transfer_Encoding "chunked" self.headers
     in
 
@@ -470,13 +483,16 @@ module Response = struct
     Out.add_string oc "\r\n";
     begin match body with
     | String "" | Void -> ()
-    | String s ->
-         Out.output_str oc s;
+    | String s         -> Out.output_str oc s
+    | File (n, fd, false) -> Out.sendfile oc n fd
+    | File (n, fd, true) ->
+       (try Out.sendfile oc n fd; Unix.close fd
+        with e -> Unix.close fd; raise e)
     | Stream str ->
-       try
-         Out.output_chunked oc str;
-         Input.close str;
-       with e -> Input.close str; raise e
+       (try
+          Out.output_chunked oc str;
+          Input.close str;
+        with e -> Input.close str; raise e)
     end;
     Out.flush oc
 

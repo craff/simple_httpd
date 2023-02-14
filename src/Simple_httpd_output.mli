@@ -24,3 +24,8 @@ val output_str   : t -> string -> unit
 
 val output_bytes : t -> bytes  -> unit
 (** Write the content of a bytes to a fd *)
+
+val sendfile: t -> int -> Unix.file_descr -> unit
+(** Try to send n bytes from the given file descriptor using sendfile linux
+    system call. Note: the descriptor can be use by several thread as its
+    internal offset is not updated. *)

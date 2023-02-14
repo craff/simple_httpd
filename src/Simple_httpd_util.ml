@@ -14,8 +14,6 @@ external raw_read : Unix.file_descr -> Bytes.t -> int -> int -> int = "caml_fast
 
 external read_error : unit -> 'a = "caml_read_error"
 
-external setsockopt_cork : Unix.file_descr -> bool -> unit = "caml_setsockopt_cork"
-
 let read fd buf ofs len =
   if ofs < 0 || len < 0 || ofs+len > Bytes.length buf then
     invalid_arg "read";
@@ -32,6 +30,18 @@ let read fd buf ofs len =
   let eq_sorted a b = (=) (err_map sort_l a)(err_map sort_l b)
   let is_ascii_char c = Char.code c < 128
 *)
+
+external setsockopt_cork : Unix.file_descr -> bool -> unit = "caml_setsockopt_cork"
+
+external raw_sendfile : Unix.file_descr -> Unix.file_descr -> int -> int -> int
+  = "caml_sendfile" [@@noalloc]
+
+external sendfile_error : unit -> 'a = "caml_sendfile_error"
+
+let sendfile out in_ offset count =
+  let ret = raw_sendfile out in_ offset count in
+  if ret == -1 then sendfile_error ();
+  ret
 
 let percent_encode ?(skip=fun _->false) s =
   let buf = Buffer.create (String.length s) in

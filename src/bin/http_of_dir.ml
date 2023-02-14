@@ -41,13 +41,23 @@ let main () =
   let log_folder = ref "" in
   let log_basename = ref "log" in
   let log_perm = ref 0o700 in
+  let send_file_cache ~size:_ ~mime:_ ~accept_encoding:__ = D.SendFile in
+  let mem_cache ~size:_ ~mime:_ ~accept_encoding:_ = D.MemCache in
+  let deflate_cache ~size ~mime:_ ~accept_encoding =
+    if (match size with None -> false | Some s -> s > 4_096)
+       && List.mem "deflate" accept_encoding then
+      D.CompressCache ("deflate",Simple_httpd_camlzip.deflate_string)
+    else
+      D.MemCache
+  in
   Arg.parse (Arg.align [
       "--addr", Set_string addr, " address to listen on";
       "-a", Set_string addr, " alias to --listen";
       "--port", Set_int port, " port to listen on";
       "-p", Set_int port, " alias to --port";
-      "--cache", Unit (fun () -> config.cache <- SimpleCache), " cache files in memory";
-      "--cache-zlib", Unit (fun () -> config.cache <- Simple_httpd_camlzip.(ZlibCache  { chk = accept_deflate; cmp = deflate_string})), " cache compressed files in memory";
+      "--send-file", Unit (fun () -> config.cache <- send_file_cache), " use sendfile, not compatible with SSL but fast";
+      "--cache", Unit (fun () -> config.cache <- mem_cache), " cache files in memory";
+      "--cache-zlib", Unit (fun () -> config.cache <- deflate_cache), " cache compressed files in memory";
       "--ssl", Tuple[Set_string ssl_cert; Set_string ssl_priv], " give ssl certificate and private key";
       "--dir", Set_string dir_, " directory to serve (default: \".\")";
       "--log", Int S.set_log_lvl, " log level";

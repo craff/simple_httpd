@@ -1,4 +1,7 @@
-type t = { fd : Simple_httpd_domain.client; b: Bytes.t
+module D = Simple_httpd_domain
+module U = Simple_httpd_util
+
+type t = { fd : D.client; b: Bytes.t
            ; mutable o : int; s : int }
 
 let create ?(buf_size=16* 4_096) fd =
@@ -6,7 +9,7 @@ let create ?(buf_size=16* 4_096) fd =
 
 let push oc =
   assert(oc.o = oc.s);
-  let w = Simple_httpd_domain.write oc.fd oc.b 0 oc.s in
+  let w = D.write oc.fd oc.b 0 oc.s in
   if w < oc.s then
     begin
       Bytes.blit oc.b w oc.b 0 (oc.s - w);
@@ -18,13 +21,13 @@ let push oc =
 let flush oc =
   let n = ref 0 in
   while !n < oc.o do
-    let w = Simple_httpd_domain.write oc.fd oc.b !n (oc.o - !n) in
+    let w = D.write oc.fd oc.b !n (oc.o - !n) in
     n := !n + w
   done;
   oc.o <- 0
 
 let close oc =
-  flush oc; Simple_httpd_domain.close oc.fd
+  flush oc; D.close oc.fd
 
 let add_substring oc str offset len =
   if oc.o + len <= oc.s then
@@ -50,7 +53,7 @@ let add_substring oc str offset len =
       let r = ref remain in
       while !r > oc.s do
         let str = Bytes.unsafe_of_string str in
-        let w = Simple_httpd_domain.write oc.fd str !n !r in
+        let w = D.write oc.fd str !n !r in
         n := !n + w;
         r := !r - w;
       done;
@@ -129,3 +132,12 @@ let output_chunked (oc:t) (self:Simple_httpd_input.t) : unit =
 
 let output_str = add_string
 let output_bytes = add_bytes
+
+let sendfile oc n fd =
+  let r = ref 0 in
+  U.setsockopt_cork oc.fd.sock true;
+  flush oc;
+  while !r < n  do
+    r := !r + D.sendfile oc.fd fd !r (n - !r);
+  done; (* without cork, it may not send the last bytes ?*)
+  U.setsockopt_cork oc.fd.sock false

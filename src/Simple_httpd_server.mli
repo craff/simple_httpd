@@ -227,6 +227,7 @@ end
 module Response : sig
   type body = String of string
             | Stream of byte_stream
+            | File of int * Unix.file_descr * bool
             | Void
   (** Body of a response, either as a simple string,
       or a stream of bytes, or nothing (for server-sent events). *)
@@ -274,6 +275,19 @@ module Response : sig
   (** Same as {!make_raw} but with a stream body. The body will be sent with
       the chunked transfer-encoding. *)
 
+  val make_raw_file :
+    ?cookies:Cookies.t ->
+    ?headers:Headers.t ->
+    code:Response_code.t ->
+    close:bool ->
+    int -> Unix.file_descr ->
+    t
+  (** Same as {!make_raw} but with a file_descriptor. The body will be sent with
+      Linux sendfile system call.
+      @param [close] tells if one must close the file_descriptor after sending
+      the response.
+   *)
+
   val make :
     ?cookies:Cookies.t ->
     ?headers:Headers.t ->
@@ -296,6 +310,12 @@ module Response : sig
     ?headers:Headers.t ->
     byte_stream -> t
   (** Same as {!make} but with a stream body. *)
+
+  val make_file :
+    ?cookies:Cookies.t ->
+    ?headers:Headers.t -> close:bool ->
+    int -> Unix.file_descr -> t
+  (** Same as {!make} but with a file_descr body. *)
 
   val fail :
     ?cookies:Cookies.t ->

@@ -132,9 +132,10 @@ let socket_client s = match s.ty with
   | Pipe -> assert false
 
 type domain_info =
-  {  mutable cur_client : client
+  { mutable cur_client : client
   ; pendings : (Unix.file_descr, socket_info) Hashtbl.t
   ; poll_list : Polly.t
+  ; bytes : Bytes.t (* a preallocated buffer *)
   }
 
 let fake_domain_info =
@@ -142,6 +143,7 @@ let fake_domain_info =
   ; *)cur_client = fake_client
   ; pendings = Hashtbl.create 16
   ; poll_list = Polly.create ()
+  ; bytes = Bytes.create 0
   }
 
 let all_domain_info = Array.make max_domain fake_domain_info
@@ -261,6 +263,8 @@ module Mutex : sig
     if not (try_lock lk) then perform (Lock (lk, lock))
 end
 
+(*module Ssl = struct include Ssl include Ssl.SslNoRelease end*)
+
 let rec read c s o l =
   try
     apply c U.read Ssl.read s o l
@@ -285,6 +289,23 @@ let rec write c s o l =
 
 and perform_write c s o l =
   perform (Io {sock = c.sock; fn = (fun () -> write c s o l) })
+
+(* Note: sendfile together with SSL, not really efficient *)
+let sendfile_ssl c fd o l =
+  let buf = all_domain_info.((Domain.self () :> int)).bytes in
+  let len = Bytes.length buf in
+  let w = Unix.read fd buf 0 (min l len) in
+  Ssl.write c buf o w
+
+let rec sendfile c fd o l =
+  try
+    apply c U.sendfile sendfile_ssl fd o l
+  with Unix.(Unix_error((EAGAIN|EWOULDBLOCK),_,_)) ->
+        perform_sendfile c fd o l
+     | exn -> clientError c exn
+
+and perform_sendfile c fd o l =
+  perform (Io {sock = c.sock; fn = (fun () -> sendfile c fd o l) })
 
 let schedule_io sock fn =
   perform (Io {sock; fn })
@@ -395,7 +416,8 @@ let loop id st listens pipe timeout handler () =
   let pipe_info = { ty = Pipe; pd = NoEvent } in
   Hashtbl.add pendings pipe pipe_info;
 
-  let dinfo = { cur_client = fake_client; pendings ; poll_list } in
+  let bytes = Bytes.create (16 * 4_096) in
+  let dinfo = { cur_client = fake_client; pendings ; poll_list; bytes } in
   let get_client () = dinfo.cur_client in
   all_domain_info.((did :> int)) <- dinfo;
 
@@ -473,15 +495,15 @@ let loop id st listens pipe timeout handler () =
                                (printexn exn) c.connected
                                (Atomic.get st.nb_connections.(id)));
     assert c.connected;
-    unregister c.sock;
-    Atomic.decr st.nb_connections.(id);
     begin
       let fn s =
-        (try Ssl.shutdown s with Unix.Unix_error _ -> ());
+        (try Ssl.shutdown s with _ -> ());
         Unix.close (Ssl.file_descr_of_socket s)
       in
       try apply c Unix.close fn with Unix.Unix_error _ -> ()
     end;
+    unregister c.sock;
+    Atomic.decr st.nb_connections.(id);
     begin
       match c.session with
       | None -> ()
@@ -528,6 +550,7 @@ let loop id st listens pipe timeout handler () =
                  in
                  let index = Int32.to_int (Bytes.get_int32_ne pipe_buf 4) in
                  let l = listens.(index) in
+                 log ~lvl:1 (fun k -> k "received accepted socket");
                  add_ready (Accept (sock, l))
                done
              with Unix.Unix_error((EAGAIN|EWOULDBLOCK),_,_) -> ()
@@ -543,8 +566,12 @@ let loop id st listens pipe timeout handler () =
            let e = Polly.Events.((err lor hup) land evt <> empty) in
            p.pd <- TooSoon (b || e)
       in
-      ignore (Polly.wait poll_list 1000 select_timeout fn);
-      add_ready Wait
+      log ~lvl:4 (fun k -> k "entering poll");
+      try
+        ignore (Polly.wait poll_list 1000 select_timeout fn);
+        log ~lvl:4 (fun k -> k "exiting poll");
+        add_ready Wait
+      with e -> add_ready Wait; raise e
     with
     | exn -> log ~lvl:1 (fun k -> k "UNEXPECTED EXCEPTION IN POLL: %s\n%!"
                                         (printexn exn));
@@ -552,6 +579,7 @@ let loop id st listens pipe timeout handler () =
   in
   let step v =
     try
+      log ~lvl:4 (fun k -> k "step");
       match v with
       | Wait ->
          poll ()
@@ -618,7 +646,9 @@ let loop id st listens pipe timeout handler () =
              log ~lvl:3 (fun k -> k "[%d] continue yield" cl.id);
              continue cont ();
            end
-    with e -> close e
+    with e -> (try close e
+               with e -> log ~lvl:1 (fun k -> k "exception during close: %s"
+                                                (Printexc.to_string e)))
 
   in
   let step_handler v =
@@ -652,6 +682,7 @@ let loop id st listens pipe timeout handler () =
     )}
   in
   while true do
+    log ~lvl:4 (fun k -> k "step handler");
     step_handler (Queue.take ready)
   done
 
@@ -706,6 +737,7 @@ let accept_loop status listens pipes maxc =
         Bytes.set_int32_ne pipe_buf 0 (Int32.of_int (Obj.magic (Obj.repr lsock)));
         Bytes.set_int32_ne pipe_buf 4 (Int32.of_int index);
         assert(U.single_write pipe pipe_buf 0 8 = 8);
+        log ~lvl:2 (fun k -> k "send accepted socket to domain %d" did);
         Atomic.incr status.nb_connections.(did);
       with
       | Full ->

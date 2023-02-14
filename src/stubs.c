@@ -15,6 +15,22 @@
 #include <netinet/tcp.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include <sys/sendfile.h>
+
+CAMLprim value caml_sendfile(value out_fd, value in_fd, value offset, value count) {
+  CAMLparam0();
+  ssize_t off = Int_val(offset);
+  // printf("sendfile %d %d\n",off,Int_val(count)); fflush(stdout);
+  ssize_t w = sendfile(Int_val(out_fd),Int_val(in_fd),&off,Int_val(count));
+  // printf("sendfile %d %d\n",off,w); fflush(stdout);
+  CAMLreturn(Val_int(w));
+}
+
+CAMLprim void caml_sendfile_error() {
+  CAMLparam0();
+  caml_uerror("sendfile", Nothing);
+  CAMLreturn0;
+}
 
 CAMLprim void caml_setsockopt_cork(value socket, value val)
 {

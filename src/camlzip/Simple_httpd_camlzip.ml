@@ -223,7 +223,7 @@ let compress_resp_stream_
       |> S.Response.update_headers update_headers
       |> S.Response.set_body (Stream (encode_deflate_stream_ ~buf_size str))
 
-    | String _ | Void -> resp
+    | String _ | Void | File _ (* TODO ?*) -> resp
   ) else resp
 
 let filter

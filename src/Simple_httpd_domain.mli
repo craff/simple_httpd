@@ -6,8 +6,8 @@
       like a connection to a database, a file etc.
     - client: a connection to the server. Each client has at least one socket (the
       connection socket)
-    - session: an application can do several connection to the server and
-      be identifies as one session using session cookies.
+    - session: an application can do several connections to the server and
+      be identified as one session using session cookies.
  *)
 
 (** Connection status. Holds the number of clients per domain.  We support
@@ -18,14 +18,13 @@ type status = {
 
 val string_status : status -> string
 
-(** Simple_httpd notion of mutex. It is a bad idea to have server wide mutex:
+(** Simple_httpd notion of mutex. You must be careful with server wide mutex:
     a DoS attack could try to hold such a mutex. A mutex per session may be a good
     idea. A mutex per client is useless (client are treated sequentially.
 
-    FIXME: there is a global mutex for file cache. It is hold very shortly and
+    FIXME: there is a global mutex for file cache. It is holded very shortly and
     once the file is in the cache it is not used anymore, so this is OK.
 *)
-
 module Mutex : sig
   type t
 
@@ -33,9 +32,6 @@ module Mutex : sig
   val try_lock : t -> bool
   val lock : t -> unit
   val unlock : t -> unit
-
-  (** Wait for a boolean but do not lock anything *)
-                      (*val wait_bool : bool Atomic.t -> unit*)
 end
 
 type any_continuation (** internal use only *)
@@ -78,15 +74,15 @@ val fake_client : client
 (** The scheduling primitives *)
 val read  : client -> Bytes.t -> int -> int -> int
 val write : client -> Bytes.t -> int -> int -> int
+val sendfile : client -> Unix.file_descr -> int -> int -> int
 val yield : unit -> unit
-(*val schedule : unit -> unit*)
 val sleep : float -> unit
 val close : client -> unit
 val flush : client -> unit
 
-(** This register the starttime of a request to compute timeout.
-    You could use it if you know a request require time and you
-    want to avoit timeout *)
+(** This register the starttime of a request. You may use it to compute
+    Request timeout (as opposed to socket timeout which are included
+    and reset the timeout if you know a request requires time. *)
 val register_starttime : client -> unit
 
 (** Module with function similar to Unix.read and Unix.single_write

@@ -5,6 +5,8 @@
 
 val single_write : Unix.file_descr -> Bytes.t -> int -> int -> int
 val read : Unix.file_descr -> Bytes.t -> int -> int -> int
+val sendfile : Unix.file_descr -> Unix.file_descr -> int -> int -> int
+
 val setsockopt_cork : Unix.file_descr -> bool -> unit
 
 val percent_encode : ?skip:(char -> bool) -> string -> string

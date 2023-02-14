@@ -21,15 +21,29 @@ type dir_behavior =
   | Forbidden
   (** Forbid access to directory. This is suited for serving assets, for example. *)
 
-type hidden
-(** Type used to prevent users from building a config directly.
-    Use {!default_config} or {!val-config} instead. *)
+(** Static files can be cached/served in various ways *)
+type cache = NoCache  (** No cache: serve directly the file from its location *)
+           | MemCache (** Cache a string in memory *)
+           | CompressCache of string * (string -> string)
+           (** Cache a compressed string in memory. The first parameter
+               must be the Transfer-Encoding name of the compression algorithme
+               and the second argument is the compression function *)
+           | SendFile
+           (** Require to use sendfile linux system call. Faster, but
+               useless with SSL. *)
+           | SendFileCache
+           (** Cache a file descriptor to be used with sendfile linux system
+               call. It you indent to serve thousand of simultaneous
+               connection, [SendFile] or [NoCache] will require one socket per
+               connection while [SendFileCache] will use one socket per static
+               file. *)
+
+(** type of the function deciding which cache policy to use *)
+type choose_cache = size:int option -> mime:string -> accept_encoding:string list
+                    -> cache
 
 (** configuration for static file handlers. This might get
     more fields over time. *)
-type cache = NoCache | SimpleCache
-             | ZlibCache of { chk : 'a . 'a Simple_httpd_server.Request.t -> bool
-                            ; cmp : string -> string }
 type config = {
   mutable download: bool;
   (** Is downloading files allowed? *)
@@ -47,11 +61,8 @@ type config = {
   (** If {!upload} is true, this is the maximum size in bytes for
       uploaded files. *)
 
-  mutable cache: cache;
+  mutable cache: choose_cache;
   (** Cache download of file. *)
-
-  _rest: hidden;
-  (** Just ignore this field. *)
 }
 
 (** default configuration: [
@@ -70,11 +81,10 @@ val config :
   ?delete:bool ->
   ?upload:bool ->
   ?max_upload_size:int ->
-  ?cache:cache ->
+  ?cache:choose_cache ->
   unit ->
   config
-(** Build a config from {!default_config}.
-    @since 0.12 *)
+(** Build a config from {!default_config}. *)
 
 (** [add_dirpath ~config ~dir ~prefix server] adds route handle to the
     [server] to serve static files in [dir] when url starts with [prefix],
@@ -90,7 +100,10 @@ val add_dir_path :
 
     This is used to emulate a file system from pure OCaml functions and data,
     e.g. for resources bundled inside the web server.
-    @since 0.12
+
+    Remark: the diffrence between VFS and cache is that caches are updated
+    when the modification time of the file changes. Thus, VFS do not do any
+    system call.
 *)
 module type VFS = sig
   val descr : string
@@ -118,6 +131,9 @@ module type VFS = sig
   val read_file_stream : string -> Simple_httpd_input.t
   (** Read content of a file as a stream *)
 
+  val read_file_fd : string -> int * Unix.file_descr
+  (** Read content of a file as a size and file_descriptor *)
+
   val file_size : string -> int option
   (** File size, e.g. using "stat" *)
 
@@ -128,7 +144,6 @@ end
 val vfs_of_dir : string -> (module VFS)
 (** [vfs_of_dir dir] makes a virtual file system that reads from the
     disk.
-    @since 0.12
 *)
 
 val add_vfs :
@@ -138,14 +153,11 @@ val add_vfs :
   prefix:string ->
   Simple_httpd_server.t -> unit
 (** Similar to {!add_dir_path} but using a virtual file system instead.
-    @since 0.12
 *)
 
 (** An embedded file system, as a list of files with (relative) paths.
     This is useful in combination with the "simple-httpd-mkfs" tool,
     which embeds the files it's given into a OCaml module.
-
-    @since 0.12
 *)
 module Embedded_fs : sig
   type t

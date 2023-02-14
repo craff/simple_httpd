@@ -10,11 +10,26 @@ module Input = Simple_httpd_input
 type dir_behavior =
   | Index | Lists | Index_or_lists | Forbidden
 
-type hidden = unit
+type cache = NoCache
+           | MemCache
+           | CompressCache of string * (string -> string)
+           | SendFile
+           | SendFileCache
 
-type cache = NoCache | SimpleCache
-             | ZlibCache of { chk : 'a . 'a S.Request.t -> bool
-                            ; cmp : string -> string }
+
+type cache_key =
+           | MemCacheKey
+           | CompressCacheKey of string
+           | SendFileCacheKey
+
+let cache_key = function
+  | NoCache | SendFile -> assert false
+  | MemCache -> MemCacheKey
+  | CompressCache (s,_) -> CompressCacheKey s
+  | SendFileCache -> SendFileCacheKey
+
+type choose_cache = size:int option -> mime:string -> accept_encoding:string list
+                    -> cache
 
 type config = {
   mutable download: bool;
@@ -22,8 +37,7 @@ type config = {
   mutable delete: bool;
   mutable upload: bool;
   mutable max_upload_size: int;
-  mutable cache: cache;
-  _rest: hidden
+  mutable cache: choose_cache;
 }
 
 let default_config_ : config =
@@ -32,8 +46,7 @@ let default_config_ : config =
     delete=false;
     upload=false;
     max_upload_size = 10 * 1024 * 1024;
-    cache=NoCache;
-    _rest=();
+    cache=(fun ~size:_ ~mime:_ ~accept_encoding:_ -> NoCache);
   }
 
 let default_config () = default_config_
@@ -46,7 +59,7 @@ let config
     ?(cache=default_config_.cache)
     () : config =
   { download; dir_behavior; delete; upload; max_upload_size;
-    cache; _rest=()}
+    cache; }
 
 let contains_dot_dot s =
   try
@@ -80,6 +93,7 @@ module type VFS = sig
   val create : string -> (bytes -> int -> int -> unit) * (unit -> unit)
   val read_file_content : string -> string
   val read_file_stream : string -> Simple_httpd_input.t
+  val read_file_fd : string -> int * Unix.file_descr
   val file_size : string -> int option
   val file_mtime : string -> float option
 end
@@ -107,10 +121,15 @@ let vfs_of_dir (top:string) : vfs =
       with
         e -> close_in ch; raise e
     let read_file_stream f =
-      let ic = Unix.(openfile (top // f) [O_RDONLY] 0) in
+      let fd = Unix.(openfile (top // f) [O_RDONLY] 0) in
+      Input.of_fd fd
       (* Remark: epoll is illegal on regular file, can not
          use of_client_fd*)
-      Input.of_fd ic
+    let read_file_fd f =
+      let open Unix in
+      let stat = stat (top // f) in
+      let fd = openfile (top // f) [O_RDONLY] 0 in
+      (stat.st_size, fd)
     let create f =
       let oc = open_out_bin (top // f) in
       let write = output oc in
@@ -193,35 +212,37 @@ let html_list_dir (module VFS:VFS) ~prefix ~parent d : Html.elt =
 (* @param on_fs: if true, we assume the file exists on the FS *)
 let add_vfs_ ?(filter=(fun x -> (x, fun r -> r))) ~config
                ~vfs:((module VFS:VFS) as vfs) ~prefix server : unit=
-  let search_cache : (bool * string -> S.Response.t)
-                     -> bool * string -> S.Response.t =
-    if config.cache = NoCache then (fun fn key -> fn key)
-    else
-      begin
-        let cache_mutex = Mutex.create () in
-        let cache = Hashtbl.create 128 in
-        let tmp_rep = S.Response.make_raw ~code:400 "" in
-        fun fn (_,filename as key) ->
-        try
-          let (ready, mtime, ptr) = Hashtbl.find cache key in
-          while not (Atomic.get ready) do D.sleep 0.01; done; (* FIXME *)
-          let mtime' = VFS.file_mtime filename in
-          if mtime' <> mtime then raise Not_found;
-          !ptr
-        with Not_found ->
-           let ready = Atomic.make false in
-           let mtime = VFS.file_mtime filename in
-           let ptr = ref tmp_rep in
-           Mutex.lock cache_mutex;
-           Hashtbl.replace cache key (ready, mtime, ptr);
-           Mutex.unlock cache_mutex;
-           let x = fn key in
-           Mutex.lock cache_mutex;
-           ptr := x;
-           Atomic.set ready true;
-           Mutex.unlock cache_mutex;
-           x
-      end
+  let search_cache : (string -> S.Response.t)
+                     -> cache_key * string -> S.Response.t =
+    let cache_mutex = Mutex.create () in
+    let cache = Hashtbl.create 128 in
+    let tmp_rep = S.Response.make_raw ~code:400 "" in
+    fun fn (_,filename as key) ->
+    try
+      let (ready, mtime, ptr) = Hashtbl.find cache key in
+      while not (Atomic.get ready) do D.sleep 0.01; done; (* FIXME *)
+      let mtime' = VFS.file_mtime filename in
+      if mtime' <> mtime then
+        begin
+          (match (!ptr).S.Response.body with
+           | File(_,fd,_) -> (try Unix.close fd with _ -> ())
+           | _ -> ());
+          raise Not_found;
+        end;
+      !ptr
+    with Not_found ->
+      let ready = Atomic.make false in
+      let mtime = VFS.file_mtime filename in
+      let ptr = ref tmp_rep in
+      Mutex.lock cache_mutex;
+      Hashtbl.replace cache key (ready, mtime, ptr);
+      Mutex.unlock cache_mutex;
+      let x = fn filename in
+      Mutex.lock cache_mutex;
+      ptr := x;
+      Atomic.set ready true;
+      Mutex.unlock cache_mutex;
+      x
   in
   let route () =
     if prefix="" then S.Route.rest
@@ -321,40 +342,62 @@ let add_vfs_ ?(filter=(fun x -> (x, fun r -> r))) ~config
                S.log ~lvl:2 (fun k->k "download index fails %s (forbidden)" path);
                S.Response.make_raw ~code:405 "listing dir not allowed"
         ) else (
-          let deflate = match config.cache with
-            | ZlibCache {chk; _} -> chk req
-            | _ -> false
+          let mime =  Magic_mime.lookup path in
+          let mime_type = (H.Content_Type,mime) in
+          let size = VFS.file_size path in
+          let accept_encoding =
+            match S.Request.(get_header req H.Accept_Encoding)
+            with None -> []
+               | Some l -> List.map String.trim (String.split_on_char ',' l)
           in
-          let fn (deflate,path) =
+          let cache = config.cache ~size ~mime ~accept_encoding in
+          let fn path =
             try
-              let mime_type =
-                [H.Content_Type, Magic_mime.lookup path]
-              in
-              match config.cache with
-              | ZlibCache {cmp; _} when deflate ->
-                 let string = cmp (VFS.read_file_content path) in
-                 S.log ~lvl:2 (fun k->k "download ok %s" path);
-                 S.Response.make_raw
-                   ~headers:(mime_type@[(H.ETag, Lazy.force mtime)
-                                       ;(H.Content_Encoding, "deflate")])
-                   ~code:200 string
-              | SimpleCache | ZlibCache _ ->
+              match cache with
+              | MemCache ->
                  let string = VFS.read_file_content path in
                  S.log ~lvl:2 (fun k->k "download ok %s" path);
                  S.Response.make_raw
-                   ~headers:(mime_type@[(H.ETag, Lazy.force mtime)])
+                   ~headers:(mime_type::[(H.ETag, Lazy.force mtime)])
                    ~code:200 string
-              | NoCache ->
-                 let stream = VFS.read_file_stream path in
+              | CompressCache(encoding,cmp) ->
+                 let string = cmp (VFS.read_file_content path) in
                  S.log ~lvl:2 (fun k->k "download ok %s" path);
-                 S.Response.make_raw_stream
-                   ~headers:(mime_type@[(H.ETag, Lazy.force mtime)])
-                   ~code:200 stream
+                 S.Response.make_raw
+                   ~headers:(mime_type::[(H.ETag, Lazy.force mtime)
+                                       ;(H.Content_Encoding, encoding)])
+                   ~code:200 string
+              | SendFileCache ->
+                 let (size, stream) = VFS.read_file_fd path in
+                 (*if size > 50_000 then*)
+                   begin
+                     S.log ~lvl:2 (fun k->k "download ok %s" path);
+                     S.Response.make_raw_file
+                       ~headers:(mime_type::[(H.ETag, Lazy.force mtime)])
+                       ~code:200 ~close:false size stream
+                   end
+              | NoCache | SendFile -> assert false
             with e ->
               S.log ~lvl:2 (fun k->k "download fails %s (%s)" path (D.printexn e));
               S.Response.fail ~code:500 "error while reading file: %s" (D.printexn e)
           in
-          search_cache fn (deflate,path)
+          match cache with
+          | NoCache ->
+             let stream = VFS.read_file_stream path in
+             S.log ~lvl:2 (fun k->k "download ok %s" path);
+             S.Response.make_raw_stream
+               ~headers:(mime_type::[(H.ETag, Lazy.force mtime)])
+               ~code:200 stream
+          | SendFile ->
+             let (size, stream) = VFS.read_file_fd path in
+             (*if size > 50_000 then*)
+             begin
+               S.log ~lvl:2 (fun k->k "download ok %s" path);
+               S.Response.make_raw_file
+                 ~headers:(mime_type::[(H.ETag, Lazy.force mtime)])
+                 ~code:200 ~close:true size stream
+             end
+          | _ -> search_cache fn (cache_key cache,path)
         )
       )
   ) else (
@@ -464,6 +507,8 @@ module Embedded_fs = struct
       let read_file_stream p = match find_ self p with
         | Some (File {content;_}) -> Input.of_string content
         | _ -> failwith (Printf.sprintf "no such file: %S" p)
+
+      let read_file_fd _ = failwith "read_file_fd not available"
 
       let list_dir p = match find_ self p with
         | Some (Dir sub) ->
