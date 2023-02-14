@@ -171,7 +171,9 @@ module Headers = struct
          assert (Input.read_char bs = '\n');
          (fun () -> (headers,cookies))
       | Invalid_header s ->
-         (fun () -> bad_reqf 400 "invalid header value: %S" s)) ()
+         let _ = Input.read_line ~buf bs in
+         D.log ~lvl:1 (fun k -> k "ignoring unknown header starting with %s\n%!" s);
+         (fun () -> loop headers cookies)) ()
     in
     loop [] []
 
