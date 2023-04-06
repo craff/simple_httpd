@@ -1,0 +1,3 @@
+[submodule "ocaml-ssl"]
+	path = ocaml-ssl
+	url = ssh://github.com/craff/ocaml-ssl
