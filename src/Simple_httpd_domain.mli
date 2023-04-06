@@ -45,6 +45,8 @@ type client = {
     id : int;                         (** Unique identifier *)
     mutable connected : bool;         (** Is the client still connected *)
     sock : Unix.file_descr;           (** The sockect for the client *)
+    accept_by : int;                  (** index in the listens table of the
+                                          adress:port that received the connection *)
     mutable ssl  : Ssl.socket option; (** An eventual ssl context
                                           modified once after ssl negociation *)
     mutable session : session option; (** Session *)
@@ -115,13 +117,13 @@ exception TimeOut
 val schedule_io : Unix.file_descr -> (unit -> int) -> int
 
 (** Type describing a socket we listen for *)
-type listenning = {
+type listening = {
     addr : string;
     port : int;
     ssl  : Ssl.context option ;
   }
 
-val run : nb_threads:int -> listens:listenning list -> maxc:int ->
+val run : nb_threads:int -> listens:listening list -> maxc:int ->
           timeout:float -> status:status ->
             (client -> unit) -> unit Domain.t array
 

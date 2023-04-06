@@ -33,6 +33,8 @@ type client =
   { id : int
   ; mutable connected : bool
   ; sock : Unix.file_descr
+  ; accept_by : int (* index of the socket that accepted the connection in the
+                       listens table *)
   ; mutable ssl : Ssl.socket option
   ; mutable session : session option
   ; mutable acont : any_continuation
@@ -70,6 +72,7 @@ let fake_client =
       buf = Buffer.create 16;
       start_time = 0.0;
       locks = [];
+      accept_by = 0;
     }
 
 type _ Effect.t +=
@@ -390,14 +393,14 @@ let connect addr port maxc =
     sock
   with e -> Unix.close sock; raise e
 
-type listenning = {
+type listening = {
     addr : string;
     port : int;
     ssl  : Ssl.context option ;
   }
 
 type pollResult =
-  | Accept of (Unix.file_descr * listenning)
+  | Accept of (int * Unix.file_descr * listening)
   | Action : 'a pending * socket_info * bool -> pollResult
   | Yield of ((unit,unit) continuation * client * float)
   | Wait
@@ -551,7 +554,7 @@ let loop id st listens pipe timeout handler () =
                  let index = Int32.to_int (Bytes.get_int32_ne pipe_buf 4) in
                  let l = listens.(index) in
                  log ~lvl:1 (fun k -> k "received accepted socket");
-                 add_ready (Accept (sock, l))
+                 add_ready (Accept (index, sock, l))
                done
              with Unix.Unix_error((EAGAIN|EWOULDBLOCK),_,_) -> ()
            end
@@ -583,11 +586,12 @@ let loop id st listens pipe timeout handler () =
       match v with
       | Wait ->
          poll ()
-      | Accept (sock, linfo) ->
+      | Accept (index, sock, linfo) ->
          let client = { sock; ssl = None; id = new_id ();
                         connected = true; session = None;
                         start_time = now (); locks = [];
-                        acont = N; buf = Buffer.create 4_096
+                        acont = N; buf = Buffer.create 4_096;
+                        accept_by = index;
                       } in
          dinfo.cur_client <- client;
          let info = { ty = Client client

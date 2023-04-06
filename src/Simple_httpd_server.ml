@@ -674,7 +674,7 @@ module type SERVER_SENT_GENERATOR = sig
 end
 type server_sent_generator = (module SERVER_SENT_GENERATOR)
 
-type listenning = Simple_httpd_domain.listenning =
+type listening = Simple_httpd_domain.listening =
   {
     addr : string;
     port : int;
@@ -684,7 +684,7 @@ type listenning = Simple_httpd_domain.listenning =
     here to avoid module opening *)
 
 type t = {
-  listens : listenning list;
+  listens : listening list;
 
   timeout: float;
 
@@ -698,7 +698,7 @@ type t = {
 
   status : D.status;
 
-  handlers : path_handler Route.tree;
+  handlers : path_handler Route.tree array;
 }
 
 let listens self = self.listens
@@ -739,7 +739,7 @@ let compose_cross : filter -> filter -> filter =
    and makes it into a handler. *)
 let add_route_handler_
     ?(filter=(fun x -> (x, fun x -> x)))
-    ?meth ~tr_req self route f =
+    ?adresses ?meth ~tr_req self route f =
   let fn route =
     let ph path =
       let f = Route.eval path route f in
@@ -747,24 +747,38 @@ let add_route_handler_
     in
     (filter, ph)
   in
-  match meth with
-  | Some m ->
-     Route.insert m route self.handlers fn
-  | None ->
-     Route.insert GET route self.handlers fn;
-     Route.insert HEAD route self.handlers fn;
-     Route.insert POST route self.handlers fn
+  let gn t =
+    match meth with
+    | Some m ->
+       Route.insert m route t fn
+    | None ->
+       Route.insert GET route t fn;
+       Route.insert HEAD route t fn;
+       Route.insert POST route t fn
+  in
+  let find_index x l =
+    let rec fn i = function
+    | [] -> invalid_arg "add_route: the server is not listening to that adress"
+    | y::l -> if x = y then i else fn (i+1) l
+    in
+    fn 0 l
+  in
+  match adresses with
+  | None -> Array.iter gn self.handlers
+  | Some l ->
+     let l = List.map (fun c -> find_index c self.listens) l in
+     List.iter (fun i -> gn self.handlers.(i)) l
 
-let add_route_handler ?filter ?meth
+let add_route_handler ?filter ?adresses ?meth
     self route f : unit =
   let tr_req _oc req ~resp f =
     resp (f (Request.read_body_full ~buf:(Request.client req).buf req))
   in
-  add_route_handler_ ?filter ?meth self route ~tr_req f
+  add_route_handler_ ?filter ?adresses ?meth self route ~tr_req f
 
-let add_route_handler_stream ?filter ?meth self route f =
+let add_route_handler_stream ?filter ?adresses ?meth self route f =
   let tr_req _oc req ~resp f = resp (f req) in
-  add_route_handler_ ?filter ?meth self route ~tr_req f
+  add_route_handler_ ?filter ?adresses ?meth self route ~tr_req f
 
 let[@inline] _opt_iter ~f o = match o with
   | None -> ()
@@ -826,10 +840,13 @@ let create
       nb_connections = Array.init num_thread (fun _ -> Atomic.make 0)
     }
   in
+  let handlers = Array.init (List.length listens) (fun _ ->
+                     Route.empty_tree ())
+  in
   let self = {
     listens; masksigpipe; buf_size;
     max_connections;
-    handlers=Route.empty_tree (); timeout; num_thread;
+    handlers; timeout; num_thread;
     status
     }
   in
@@ -852,8 +869,8 @@ let handle_client_ (self:t) (client:D.client) : unit =
 
       try
         (* is there a handler for this path? *)
-        let path, l = Route.get req.Request.meth
-                        req.Request.path_components self.handlers in
+        let h = self.handlers.(client.accept_by) in
+        let path, l = Route.get req.Request.meth req.Request.path_components h in
         let ((req,filter), handler) =
           let rec fn = function
             | Route.C(_,(freq,ph))::phs ->

@@ -381,7 +381,7 @@ end
 type t
 (** A HTTP server. See {!create} for more details. *)
 
-type listenning = Simple_httpd_domain.listenning =
+type listening = Simple_httpd_domain.listening =
   {
     addr : string;
     port : int;
@@ -396,7 +396,7 @@ val create :
   ?num_thread:int ->
   ?timeout:float ->
   ?buf_size:int ->
-  ?listens:listenning list ->
+  ?listens:listening list ->
   unit ->
   t
 (** Create a new webserver.
@@ -418,7 +418,7 @@ val create :
       used. This parameter exists since 0.10.
 *)
 
-val listens : t -> Simple_httpd_domain.listenning list
+val listens : t -> Simple_httpd_domain.listening list
 (** Addresses and ports on which the server listens. *)
 
 val status : t -> Simple_httpd_domain.status
@@ -467,6 +467,7 @@ val compose_cross : filter -> filter -> filter
 
 val add_route_handler :
   ?filter:filter ->
+  ?adresses:listening list ->
   ?meth:Meth.t ->
   t ->
   ('a, string Request.t -> Response.t) Route.t -> 'a ->
@@ -486,6 +487,10 @@ val add_route_handler :
     - {!Route.rest} is tried last.
     - In case of ambiguity, the first added route is tried first.
 
+    @param adresses if provided, only accept requests from the given
+    adress and port. Will raise
+       [Invalid_argument "add_route: the server is not listening to that adress"]
+    if the server is not listenning to that adresse and port.
     @param meth if provided, only accept requests with the given method.
     Typically one could react to [`GET] or [`PUT].
     @param filter can be used to modify the request and response and also
@@ -495,6 +500,7 @@ val add_route_handler :
 
 val add_route_handler_stream :
   ?filter:filter ->
+  ?adresses:listening list ->
   ?meth:Meth.t ->
   t ->
   ('a, byte_stream Request.t -> Response.t) Route.t -> 'a ->
