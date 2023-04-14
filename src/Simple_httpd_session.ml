@@ -24,8 +24,9 @@ let get_session, delete_session =
     Mutex.lock mutex_list;
     (try LinkedList.remove_cell sess sessions_list;
          Mutex.unlock mutex_list
-     with e -> Mutex.unlock mutex_list; raise e);
-    List.iter D.close session.clients;
+     with e ->
+       Mutex.unlock mutex_list; raise e);
+    (*List.iter D.close session.clients;*)
     List.iter (fun cl -> cl.session <- None) session.clients;
     session.cleanup session.data;
   in
@@ -78,14 +79,15 @@ let get_session, delete_session =
               ; data; cleanup; cookies = []; life_time = session_life_time
               ; last_refresh = now }
             in
+            Mutex.unlock mutex_tbl;
             Mutex.lock mutex_list;
             let session = LinkedList.add_first session_info sessions_list in
             Mutex.unlock mutex_list;
             client.session <- Some session;
             Hashtbl.add sessions_tbl key session;
-            Mutex.unlock mutex_tbl;
             (session, false)
-    with e -> Mutex.unlock mutex_tbl; raise e
+    with e ->
+      Mutex.unlock mutex_tbl; raise e
   in
   (get_session, delete_session)
 
@@ -142,39 +144,33 @@ let check
   let (sess, old) = get_session ~session_life_time client key init in
   let session = LinkedList.get sess in
   try
-    if not (check sess) then
-      begin
-        delete_session sess;
-        let cookies = S.Cookies.delete_all cookies in
-        let gn = S.Response.update_headers
-                     (fun h -> S.Headers.set_cookies cookies h) in
-        (req, gn)
-      end
-    else
-      begin
-        let cookies =
-          if old then
-            begin
-              begin
-                match (key, S.Request.get_cookie req "SESSION_ADDR") with
-                | (Some key, Some addr) when
-                       key = session.key &&
-                           Http_cookie.value addr = session.addr -> ()
-                | _ -> raise Exit
-              end;
-              let addr = addr_of_sock client.sock in
-              if addr <> session.addr then raise Exit;
-              cookies
-            end
-          else
-            S.Cookies.delete_all cookies
-        in
-        let cookies = mk_cookies sess cookies in
-        let gn = S.Response.update_headers
-                   (fun h -> S.Headers.set_cookies cookies h) in
-        (req, gn)
-      end
+    if not (check sess) then raise Exit;
+    let cookies =
+      if old then
+        begin
+          begin
+            match (key, S.Request.get_cookie req "SESSION_ADDR") with
+            | (Some key, Some addr) when
+                   key = session.key &&
+                     Http_cookie.value addr = session.addr -> ()
+            | _ -> raise Exit
+          end;
+          let addr = addr_of_sock client.sock in
+          if addr <> session.addr then raise Exit;
+          cookies
+        end
+      else
+        S.Cookies.delete_all cookies
+    in
+    let cookies = mk_cookies sess cookies in
+    let gn = S.Response.update_headers
+               (fun h -> S.Headers.set_cookies cookies h) in
+    (req, gn)
   with Exit ->
     delete_session sess;
-    let (code, msg) = error in
-    S.Response.fail_raise ~code "session error: %S" msg
+    let cookies = S.Cookies.delete_all cookies in
+    let (code, redirect) = error in
+    (req, (fun _ -> S.Response.update_headers
+                      (fun h -> S.Headers.set_cookies cookies h)
+                      (S.Response.set_header S.Headers.Location redirect
+                         (S.Response.fail ~code "logout"))))
