@@ -404,7 +404,8 @@ module Response = struct
   let make_raw ?(cookies=[]) ?(headers=[]) ~code body : t =
     (* add content length to response *)
     let headers = Headers.set_cookies cookies headers in
-    { code; headers; body=String body; }
+    let body = if body = "" then Void else String body in
+    { code; headers; body; }
 
   let make_raw_stream ?(cookies=[]) ?(headers=[]) ~code body : t =
     (* do not add content length to response *)
