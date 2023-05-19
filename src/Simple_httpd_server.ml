@@ -789,7 +789,7 @@ let add_route_server_sent_handler ?filter self route f =
   let tr_req oc req ~resp f =
     let buf = (Request.client req).buf in
     let req = Request.read_body_full ~buf req in
-    let headers = ref Headers.(empty |> set Headers.Content_Type "text/event-stream") in
+    let headers = ref Headers.(empty |> set Content_Type "text/event-stream") in
 
     (* send response once *)
     let resp_sent = ref false in

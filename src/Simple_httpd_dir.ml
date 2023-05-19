@@ -329,8 +329,9 @@ let add_vfs_ ?(filter=(fun x -> (x, fun r -> r))) ~config
                (* redirect using path, not full path *)
                let new_path = "/" // prefix // path // "index.html" in
                S.log ~lvl:2 (fun k->k "download redirect %s" path);
-               S.Response.make_raw ~code:301 ""
-                 ~headers:S.Headers.(empty |> set H.Location new_path)
+               S.Response.make_raw ~code:301 "No Body"
+                 ~headers:S.Headers.(empty |> set H.Location new_path
+                                     |> set H.Content_Type "text/plain")
             | Lists | Index_or_lists ->
                let body = html_list_dir ~prefix vfs path ~parent
                           |> Html.to_string_top in
