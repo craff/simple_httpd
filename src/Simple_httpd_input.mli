@@ -91,6 +91,10 @@ val read_all : buf:Buffer.t -> t -> string
 (** Read the whole stream into a string.
     @param buf a buffer to (re)use. Its content will be cleared. *)
 
+val read_until : buf:Buffer.t -> target:string -> t -> unit
+(** Advance in the stream until in meet the given target.
+    @param buf a buffer to (re)use. Its content will be cleared. *)
+
 val limit_size_to :
   close_rec:bool ->
   max_size:int ->

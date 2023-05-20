@@ -198,6 +198,27 @@ let read_exactly_ ~too_short (self:t) (bytes:bytes) (n:int) : unit =
     if n_read=0 then too_short();
   done
 
+let read_until ~buf ~target (self:t) : unit =
+  Buffer.clear buf;
+  let pos = ref 0 in
+  let len = String.length target in
+  while !pos < len do
+    self.fill_buf();
+    let c = Bytes.get self.bs self.off in
+    self.consume 1;
+    if c <> target.[!pos] then
+      begin
+        if !pos > 0 then
+          begin
+            Buffer.add_substring buf target 0 !pos;
+            pos := 0;
+          end;
+        Buffer.add_char buf c;
+      end
+    else incr pos
+  done
+
+
 (* read a line into the buffer, after clearing it. *)
 let read_line_into (self:t) ~buf : unit =
   Buffer.clear buf;

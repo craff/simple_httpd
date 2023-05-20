@@ -313,6 +313,33 @@ module Request = struct
     | Bad_req _ as e -> raise e
     | e -> bad_reqf 400 "exception: %s" (D.printexn e)
 
+  let parse_multipart_ ~bound req =
+    let body = req.body in
+    let buf = Buffer.create 1024 in
+    let buf2 = Buffer.create 1024 in
+    let _ = Input.read_line ~buf body in
+    let query = ref [] in
+    let cont = ref true in
+    while !cont do
+      let (header, _) = Headers.parse_ ~buf body in
+      let cd = match Headers.get Content_Disposition header
+        with Some cd -> cd
+           | None -> raise Not_found
+      in
+      let key =
+        Scanf.sscanf cd "form-data; name = %S " (* FIXME: filename *)
+          String.trim
+      in
+      let value =
+        Input.read_until ~buf:buf2 ~target:bound body;
+        let line = Input.read_line ~buf body in
+        if String.trim line = "--" then cont := false;
+        Buffer.contents buf2
+      in
+      query := (key, value) :: !query
+    done;
+    { req with query = List.rev_append !query req.query }
+
   (* parse body, given the headers.
      @param tr_stream a transformation of the input stream. *)
   let parse_body_ ~tr_stream ~buf (req:byte_stream t) : byte_stream t =
@@ -328,21 +355,43 @@ module Request = struct
       let trailer bs =
         req.trailer := Some (Headers.parse_ ~buf bs)
       in
-      let body =
-        match get_header ~f:String.trim req Headers.Transfer_Encoding with
-        | None ->
+      let is_multipart, bound =
+        try
+          match Headers.(get Content_Type req.headers)
+          with
+          | Some ct ->
+             Scanf.sscanf ct "multipart/form-data ; boundary = %s "
+               (fun b -> (true, "--" ^ b))
+          | None -> (false, "")
+        with _ -> (false, "")
+      in
+      let transfer_encoding =
+        get_header ~f:String.trim req Headers.Transfer_Encoding
+      in
+      let req =
+        match transfer_encoding, is_multipart
+        with
+        | None, false ->
            let body = read_exactly ~size @@ tr_stream req.body in
-           body
-        | Some "chunked" ->
+           { req with body }
+        | None, true ->
+           let req = parse_multipart_ ~bound req in
+           let body = Input.of_string "" in
+           { req with body }
+        | Some "chunked", _ ->
           let bs =
             read_stream_chunked_ ~buf ~trailer @@ tr_stream req.body
              (* body sent by chunks, with a trailer *)
           in
           let body = if size>0 then limit_body_size_ ~max_size:size bs else bs in
-          body
-        | Some s -> bad_reqf 500 "cannot handle transfer encoding: %s" s
+          let req = { req with body } in
+          if is_multipart then
+            parse_multipart_ ~bound req
+          else
+            req
+        | Some s, _ -> bad_reqf 500 "cannot handle transfer encoding: %s" s
       in
-      {req with body}
+      req
     with
     | End_of_file -> bad_reqf 400 "unexpected end of file"
     | Bad_req _ as e -> raise e
