@@ -43,7 +43,7 @@ let () =
       "-j", Arg.Set_int j, " maximum number of connections";
     ]) (fun _ -> raise (Arg.Bad "")) "echo [option]*";
 
-  let listens = S.[{addr= !addr;port= !port;ssl=None}] in
+  let listens = S.[{addr= !addr;port= !port;ssl=None; reuse = false}] in
   let server = S.create ~listens ~max_connections:!j () in
   let filter_stat, get_stats = filter_stat () in
   let filter_zip =

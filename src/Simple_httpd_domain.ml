@@ -376,7 +376,7 @@ end
 
 let is_ipv6 addr = String.contains addr ':'
 
-let connect addr port maxc =
+let connect addr port reuse maxc =
   ignore (Unix.sigprocmask Unix.SIG_BLOCK [Sys.sigpipe] : _ list);
   let sock =
     Unix.socket
@@ -386,7 +386,8 @@ let connect addr port maxc =
   in
   try
     Unix.set_nonblock sock;
-    Unix.setsockopt_optint sock Unix.SO_LINGER None;
+    Unix.(setsockopt_optint sock SO_LINGER None);
+    Unix.(setsockopt sock SO_REUSEADDR reuse);
     let inet_addr = Unix.inet_addr_of_string addr in
     Unix.bind sock (Unix.ADDR_INET (inet_addr, port));
     Unix.listen sock maxc;
@@ -397,6 +398,7 @@ type listening = {
     addr : string;
     port : int;
     ssl  : Ssl.context option ;
+    reuse : bool ;
   }
 
 type pollResult =
@@ -770,7 +772,7 @@ let accept_loop status listens pipes maxc =
 let run ~nb_threads ~listens ~maxc ~timeout ~status handler =
   let listens =
     List.map (fun l ->
-        let sock = connect l.addr l.port maxc in
+        let sock = connect l.addr l.port l.reuse maxc in
         (sock, l)) listens
   in
   let pipes = Array.init nb_threads (fun _ -> Unix.pipe ()) in

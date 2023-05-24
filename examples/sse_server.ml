@@ -15,7 +15,7 @@ Arg.parse (Arg.align [
       "--log", Arg.Int S.set_log_lvl, " set log level";
       ]) (fun _ -> ()) "sse_clock [opt*]";
 
-  let listens = S.[{addr= !addr;port= !port;ssl=None}] in
+  let listens = S.[{addr= !addr;port= !port;ssl=None; reuse = false}] in
   let server = S.create ~num_thread:!t ~listens () in
 
   let extra_headers = [

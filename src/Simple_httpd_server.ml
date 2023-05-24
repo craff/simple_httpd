@@ -729,6 +729,7 @@ type listening = Simple_httpd_domain.listening =
     addr : string;
     port : int;
     ssl  : Ssl.context option ;
+    reuse : bool ;
   }
 (** Type describing addresses we want to listen too, provided
     here to avoid module opening *)
@@ -881,7 +882,7 @@ let create
     ?(num_thread=Domain.recommended_domain_count () - 1)
     ?(timeout=300.0)
     ?(buf_size=16 * 2048)
-    ?(listens = D.[{addr = "127.0.0.1"; port=8080; ssl = None}])
+    ?(listens = D.[{addr = "127.0.0.1"; port=8080; ssl = None; reuse = false}])
     () : t =
   let max_connections = max 4 max_connections in
   if num_thread <= 0 || max_connections < num_thread then

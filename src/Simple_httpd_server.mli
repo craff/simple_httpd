@@ -386,6 +386,7 @@ type listening = Simple_httpd_domain.listening =
     addr : string;
     port : int;
     ssl  : Ssl.context option ;
+    reuse : bool ;
   }
 (** Type describing addresses we want to listen too, provided
     here to avoid module opening *)

@@ -92,7 +92,7 @@ let main () =
       end
     else None
   in
-  let listens = S.[{addr = !addr;port = !port;ssl}] in
+  let listens = S.[{addr = !addr;port = !port;ssl; reuse = false}] in
   let timeout = !timeout in
   let maxc = !maxc in
   let _ = if !log_folder <> "" then

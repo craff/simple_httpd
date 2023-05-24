@@ -121,6 +121,7 @@ type listening = {
     addr : string;
     port : int;
     ssl  : Ssl.context option ;
+    reuse : bool ;
   }
 
 val run : nb_threads:int -> listens:listening list -> maxc:int ->

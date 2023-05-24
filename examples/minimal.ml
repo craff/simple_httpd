@@ -14,7 +14,7 @@ let () =
       "-t", Arg.Set_int t, " number of threads/domains used";
     ]) (fun _ -> raise (Arg.Bad "")) "echo [option]*";
 
-  let listens = S.[{addr= !addr;port= !port;ssl=None}] in
+  let listens = S.[{addr= !addr;port= !port;ssl=None; reuse = false}] in
   let server = S.create ~num_thread:!t ~listens ~max_connections:!j () in
 
   (* echo request *)
