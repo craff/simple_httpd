@@ -86,7 +86,7 @@ let main () =
     if !ssl_cert <> "" then
       begin
         Ssl_threads.init (); Ssl.init ();
-        let ctx = Ssl.create_context Ssl.SSLv23 Ssl.Server_context in
+        let ctx = Ssl.create_context Ssl.TLSv1_2 Ssl.Server_context in
         Ssl.use_certificate ctx !ssl_cert !ssl_priv;
         Some ctx
       end
