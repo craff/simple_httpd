@@ -739,7 +739,8 @@ type t = {
 
   status : D.status;
 
-  handlers : path_handler Route.tree array;
+  handlers : (path_handler Route.tree *
+                (string, path_handler Route.tree) Hashtbl.t) array;
 }
 
 let listens self = self.listens
@@ -780,7 +781,7 @@ let compose_cross : filter -> filter -> filter =
    and makes it into a handler. *)
 let add_route_handler_
     ?(filter=(fun x -> (x, fun x -> x)))
-    ?adresses ?meth ~tr_req self route f =
+    ?adresses ?hosts ?meth ~tr_req self route f =
   let fn route =
     let ph path =
       let f = Route.eval path route f in
@@ -797,10 +798,24 @@ let add_route_handler_
        Route.insert HEAD route t fn;
        Route.insert POST route t fn
   in
+  let kn (default, specific) = match hosts with
+    | None -> gn default
+    | Some l ->
+       List.iter (fun h ->
+           let tree =
+             try Hashtbl.find specific h
+             with Not_found ->
+                   let t = Route.empty_tree () in
+                   Hashtbl.add specific h t;
+                   t
+           in
+           gn tree) l
+  in
+
   match adresses with
-  | None -> Array.iter gn self.handlers
+  | None -> Array.iter kn self.handlers
   | Some l ->
-     List.iter (fun a -> gn self.handlers.((Address.index a :> int))) l
+     List.iter (fun a -> kn self.handlers.((Address.index a :> int))) l
 
 let add_route_handler ?filter ?adresses ?meth
     self route f : unit =
@@ -874,7 +889,7 @@ let create
     }
   in
   let (listens, handlers) =
-    Address.register (fun _ -> Route.empty_tree ()) listens
+    Address.register (fun _ -> (Route.empty_tree (), Hashtbl.create 16)) listens
   in
   let self = {
     listens; masksigpipe; buf_size;
@@ -902,21 +917,37 @@ let handle_client_ (self:t) (client:D.client) : unit =
 
       try
         (* is there a handler for this path? *)
-        let h = self.handlers.(client.accept_by) in
-        let path, l = Route.get req.Request.meth req.Request.path_components h in
-        let ((req,filter), handler) =
-          let rec fn = function
-            | Route.C(_,(freq,ph))::phs ->
-               (try
-                  let handler = ph path in
-                  let req = freq req in
-                  (req,handler)
-                with Pass -> fn phs)
-            | [] ->
-               bad_reqf 404 "not found"
-          in
-          fn l
+        let (default, specific) = self.handlers.(client.accept_by) in
+        let trees =
+          if Hashtbl.length specific <= 0 then [default] else
+          let host = Headers.(get Host req.headers) in
+          match host with
+          | None -> [default]
+          | Some host ->
+             match String.split_on_char ':' host with
+               []       -> [default]
+             | host:: _ ->
+                try [Hashtbl.find specific host ; default]
+                with Not_found ->  [default]
         in
+        let rec kn = function
+          | []           -> bad_reqf 404 "not found"
+          | tree :: rest ->
+             let path, l =
+               Route.get req.Request.meth req.Request.path_components tree
+             in
+             let rec fn = function
+               | Route.C(_,(freq,ph))::phs ->
+                  (try
+                     let handler = ph path in
+                     let req = freq req in
+                     (req,handler)
+                   with Pass -> fn phs)
+               | [] -> kn rest
+             in
+             fn l
+        in
+        let ((req,filter), handler) = kn trees in
         (* handle expect/continue *)
         begin match Request.get_header ~f:String.trim req Headers.Expect with
           | Some "100-continue" ->
