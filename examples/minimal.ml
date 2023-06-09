@@ -27,6 +27,5 @@ let () =
   Array.iter (fun l ->
     let open Address in
     Printf.printf "listening on http://%s:%d\n%!" l.addr l.port) (S.listens server);
-  match S.run server with
-  | Ok () -> ()
-  | Error e -> raise e
+
+  S.run server

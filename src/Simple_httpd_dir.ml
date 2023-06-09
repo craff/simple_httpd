@@ -210,8 +210,9 @@ let html_list_dir (module VFS:VFS) ~prefix ~parent d : Html.elt =
   html [][head; body]
 
 (* @param on_fs: if true, we assume the file exists on the FS *)
-let add_vfs_ ?(filter=(fun x -> (x, fun r -> r))) ~config
-               ~vfs:((module VFS:VFS) as vfs) ~prefix server : unit=
+let add_vfs_ ?addresses ?hostnames ?(filter=(fun x -> (x, fun r -> r)))
+               ?(config=default_config ())
+               ?(prefix="") ~vfs:((module VFS:VFS) as vfs) server : unit=
   let search_cache : (string -> S.Response.t)
                      -> cache_key * string -> S.Response.t =
     let cache_mutex = Mutex.create () in
@@ -249,7 +250,7 @@ let add_vfs_ ?(filter=(fun x -> (x, fun r -> r))) ~config
     else S.Route.exact_path prefix S.Route.rest
   in
   if config.delete then (
-    S.add_route_handler ~filter server ~meth:DELETE (route())
+    S.add_route_handler ?addresses ?hostnames ~filter ~meth:DELETE server (route())
       (fun path _req ->
          let path = String.concat "/" path in
          if contains_dot_dot path then (
@@ -407,11 +408,11 @@ let add_vfs_ ?(filter=(fun x -> (x, fun r -> r))) ~config
   );
   ()
 
-let add_vfs ?filter ~config ~vfs ~prefix server : unit =
-  add_vfs_ ?filter ~config ~prefix ~vfs server
+let add_vfs ?addresses ?hostnames ?filter ?prefix ?config ~vfs server : unit =
+  add_vfs_ ?addresses ?hostnames ?filter ?prefix ?config ~vfs server
 
-let add_dir_path ?filter ~config ~dir ~prefix server : unit =
-  add_vfs_ ?filter ~config ~prefix ~vfs:(vfs_of_dir dir) server
+let add_dir_path ?addresses ?hostnames ?filter ?prefix ?config ~dir server : unit =
+  add_vfs_ ?addresses ?hostnames ?filter ?prefix ?config ~vfs:(vfs_of_dir dir) server
 
 module Embedded_fs = struct
   module Str_map = Map.Make(String)

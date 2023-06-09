@@ -73,7 +73,4 @@ Arg.parse (Arg.align [
     let open Address in
     Printf.printf "listening on http://%s:%d\n%!" l.addr l.port) (S.listens server);
 
-  match S.run server with
-  | Ok () -> ()
-  | Error e ->
-    Printf.eprintf "error: %s\n%!" (Printexc.to_string e); exit 1
+  S.run server

@@ -457,9 +457,10 @@ val compose_cross : filter -> filter -> filter
 *)
 
 val add_route_handler :
-  ?filter:filter ->
-  ?adresses:Address.t list ->
+  ?addresses:Address.t list ->
+  ?hostnames:string list ->
   ?meth:Meth.t ->
+  ?filter:filter ->
   t ->
   ('a, string Request.t -> Response.t) Route.t -> 'a ->
   unit
@@ -490,9 +491,10 @@ val add_route_handler :
 *)
 
 val add_route_handler_stream :
-  ?filter:filter ->
-  ?adresses:Address.t list ->
+  ?addresses:Address.t list ->
+  ?hostnames:string list ->
   ?meth:Meth.t ->
+  ?filter:filter ->
   t ->
   ('a, byte_stream Request.t -> Response.t) Route.t -> 'a ->
   unit
@@ -552,13 +554,9 @@ val add_route_server_sent_handler :
 
 (** {1 Run the server} *)
 
-val run : t -> (unit, exn) result
+val run : t -> unit
 (** Run the main loop of the server, listening on a socket
-    described at the server's creation time, using [new_thread] to
-    start a thread for each new client.
-
-    This returns [Ok ()] if the server exits gracefully, or [Error e] if
-    it exits with an error. *)
+    described at the server's creation time. *)
 
 (** {1 Debuggin/logging} *)
 

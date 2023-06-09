@@ -151,6 +151,8 @@ let fake_domain_info =
 
 let all_domain_info = Array.make max_domain fake_domain_info
 
+let is_client cl = cl <> fake_client
+
 let global_get_client () =
   let id = Domain.self () in
   all_domain_info.((id :> int)).cur_client
@@ -181,9 +183,10 @@ let log ?(lvl=1) k =
         let ch = if id < Array.length !log_files then !log_files.(id)
                  else stdout
         in
-        Printf.fprintf ch "%.6f %3d %10d: "
-          (Unix.gettimeofday ())
-          id (global_get_client ()).id;
+        let cl = global_get_client () in
+        if is_client cl then
+          Printf.fprintf ch "%.6f %3d %10d: "
+            (Unix.gettimeofday ()) id cl.id;
         Printf.kfprintf (fun oc -> Printf.fprintf oc "\n%!") ch fmt)
   )
 

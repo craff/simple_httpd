@@ -780,8 +780,9 @@ let compose_cross : filter -> filter -> filter =
    @param tr_req wraps the actual concrete function returned by the route
    and makes it into a handler. *)
 let add_route_handler_
-    ?(filter=(fun x -> (x, fun x -> x)))
-    ?adresses ?hosts ?meth ~tr_req self route f =
+      ?addresses ?hostnames ?meth
+      ?(filter=(fun x -> (x, fun x -> x)))
+      ~tr_req self route f =
   let fn route =
     let ph path =
       let f = Route.eval path route f in
@@ -798,7 +799,7 @@ let add_route_handler_
        Route.insert HEAD route t fn;
        Route.insert POST route t fn
   in
-  let kn (default, specific) = match hosts with
+  let kn (default, specific) = match hostnames with
     | None -> gn default
     | Some l ->
        List.iter (fun h ->
@@ -812,21 +813,21 @@ let add_route_handler_
            gn tree) l
   in
 
-  match adresses with
+  match addresses with
   | None -> Array.iter kn self.handlers
   | Some l ->
      List.iter (fun a -> kn self.handlers.((Address.index a :> int))) l
 
-let add_route_handler ?filter ?adresses ?meth
+let add_route_handler ?addresses ?hostnames ?meth ?filter
     self route f : unit =
   let tr_req _oc req ~resp f =
     resp (f (Request.read_body_full ~buf:(Request.client req).buf req))
   in
-  add_route_handler_ ?filter ?adresses ?meth self route ~tr_req f
+  add_route_handler_ ?filter ?addresses ?hostnames ?meth self route ~tr_req f
 
-let add_route_handler_stream ?filter ?adresses ?meth self route f =
+let add_route_handler_stream ?addresses ?hostnames ?meth ?filter self route f =
   let tr_req _oc req ~resp f = resp (f req) in
-  add_route_handler_ ?filter ?adresses ?meth self route ~tr_req f
+  add_route_handler_ ?filter ?addresses ?hostnames ?meth self route ~tr_req f
 
 let[@inline] _opt_iter ~f o = match o with
   | None -> ()
@@ -1015,17 +1016,11 @@ let handle_client_ (self:t) (client:D.client) : unit =
   log ~lvl:2 (fun k->k "done with client, exiting");
   ()
 
-let run (self:t) : (unit,_) result =
-  try
-    let handler client_sock = handle_client_ self client_sock in
-    let maxc = self.max_connections in
-    let a = D.run ~nb_threads:self.num_thread ~listens:self.listens
-              ~maxc ~timeout:self.timeout ~status:self.status
-              handler
-    in
-    Array.iter (fun d -> Domain.join d) a;
-    Ok ()
-  with e ->
-    log ~lvl:1 (fun k -> k "server exit error (%s)"
-                               (D.printexn e));
-    Error e
+let run (self:t) =
+  let handler client_sock = handle_client_ self client_sock in
+  let maxc = self.max_connections in
+  let a = D.run ~nb_threads:self.num_thread ~listens:self.listens
+            ~maxc ~timeout:self.timeout ~status:self.status
+            handler
+  in
+  Array.iter (fun d -> Domain.join d) a

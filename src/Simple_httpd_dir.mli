@@ -90,10 +90,12 @@ val config :
     [server] to serve static files in [dir] when url starts with [prefix],
     using the given configuration [config]. *)
 val add_dir_path :
+  ?addresses: Address.t list ->
+  ?hostnames: string list ->
   ?filter:Simple_httpd_server.filter ->
-  config:config ->
+  ?prefix:string ->
+  ?config:config ->
   dir:string ->
-  prefix:string ->
   Simple_httpd_server.t -> unit
 
 (** Virtual file system.
@@ -147,10 +149,12 @@ val vfs_of_dir : string -> (module VFS)
 *)
 
 val add_vfs :
+  ?addresses: Address.t list ->
+  ?hostnames: string list ->
   ?filter:Simple_httpd_server.filter ->
-  config:config ->
+  ?prefix:string ->
+  ?config:config ->
   vfs:(module VFS) ->
-  prefix:string ->
   Simple_httpd_server.t -> unit
 (** Similar to {!add_dir_path} but using a virtual file system instead.
 *)
