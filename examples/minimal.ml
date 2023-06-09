@@ -14,7 +14,7 @@ let () =
       "-t", Arg.Set_int t, " number of threads/domains used";
     ]) (fun _ -> raise (Arg.Bad "")) "echo [option]*";
 
-  let listens = S.[{addr= !addr;port= !port;ssl=None; reuse = false}] in
+  let listens = [Address.make ~addr:!addr ~port:!port ()] in
   let server = S.create ~num_thread:!t ~listens ~max_connections:!j () in
 
   (* echo request *)
@@ -24,8 +24,9 @@ let () =
         S.Response.make_string
           (Format.asprintf "echo:@ %a@\n@." S.Request.pp req));
 
-  List.iter S.(fun l ->
-      Printf.printf "listening on http://%s:%d\n%!" l.addr l.port) (S.listens server);
+  Array.iter (fun l ->
+    let open Address in
+    Printf.printf "listening on http://%s:%d\n%!" l.addr l.port) (S.listens server);
   match S.run server with
   | Ok () -> ()
   | Error e -> raise e

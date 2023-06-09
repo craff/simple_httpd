@@ -394,15 +394,8 @@ let connect addr port reuse maxc =
     sock
   with e -> Unix.close sock; raise e
 
-type listening = {
-    addr : string;
-    port : int;
-    ssl  : Ssl.context option ;
-    reuse : bool ;
-  }
-
 type pollResult =
-  | Accept of (int * Unix.file_descr * listening)
+  | Accept of (int * Unix.file_descr * Address.t)
   | Action : 'a pending * socket_info * bool -> pollResult
   | Yield of ((unit,unit) continuation * client * float)
   | Wait
@@ -770,13 +763,13 @@ let accept_loop status listens pipes maxc =
   done
 
 let run ~nb_threads ~listens ~maxc ~timeout ~status handler =
+  let open Address in
   let listens =
-    List.map (fun l ->
+    Array.map (fun l ->
         let sock = connect l.addr l.port l.reuse maxc in
         (sock, l)) listens
   in
   let pipes = Array.init nb_threads (fun _ -> Unix.pipe ()) in
-  let listens = Array.of_list listens in
   let listens_r = Array.map snd listens in
   let fn id =
     let (r, _) = pipes.(id) in

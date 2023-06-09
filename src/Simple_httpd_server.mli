@@ -381,23 +381,13 @@ end
 type t
 (** A HTTP server. See {!create} for more details. *)
 
-type listening = Simple_httpd_domain.listening =
-  {
-    addr : string;
-    port : int;
-    ssl  : Ssl.context option ;
-    reuse : bool ;
-  }
-(** Type describing addresses we want to listen too, provided
-    here to avoid module opening *)
-
 val create :
   ?masksigpipe:bool ->
   ?max_connections:int ->
   ?num_thread:int ->
   ?timeout:float ->
   ?buf_size:int ->
-  ?listens:listening list ->
+  ?listens:Address.t list ->
   unit ->
   t
 (** Create a new webserver.
@@ -419,7 +409,7 @@ val create :
       used. This parameter exists since 0.10.
 *)
 
-val listens : t -> Simple_httpd_domain.listening list
+val listens : t -> Address.t array
 (** Addresses and ports on which the server listens. *)
 
 val status : t -> Simple_httpd_domain.status
@@ -468,7 +458,7 @@ val compose_cross : filter -> filter -> filter
 
 val add_route_handler :
   ?filter:filter ->
-  ?adresses:listening list ->
+  ?adresses:Address.t list ->
   ?meth:Meth.t ->
   t ->
   ('a, string Request.t -> Response.t) Route.t -> 'a ->
@@ -501,7 +491,7 @@ val add_route_handler :
 
 val add_route_handler_stream :
   ?filter:filter ->
-  ?adresses:listening list ->
+  ?adresses:Address.t list ->
   ?meth:Meth.t ->
   t ->
   ('a, byte_stream Request.t -> Response.t) Route.t -> 'a ->

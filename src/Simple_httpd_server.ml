@@ -724,18 +724,8 @@ module type SERVER_SENT_GENERATOR = sig
 end
 type server_sent_generator = (module SERVER_SENT_GENERATOR)
 
-type listening = Simple_httpd_domain.listening =
-  {
-    addr : string;
-    port : int;
-    ssl  : Ssl.context option ;
-    reuse : bool ;
-  }
-(** Type describing addresses we want to listen too, provided
-    here to avoid module opening *)
-
 type t = {
-  listens : listening list;
+  listens : Address.t array;
 
   timeout: float;
 
@@ -807,18 +797,10 @@ let add_route_handler_
        Route.insert HEAD route t fn;
        Route.insert POST route t fn
   in
-  let find_index x l =
-    let rec fn i = function
-    | [] -> invalid_arg "add_route: the server is not listening to that adress"
-    | y::l -> if x = y then i else fn (i+1) l
-    in
-    fn 0 l
-  in
   match adresses with
   | None -> Array.iter gn self.handlers
   | Some l ->
-     let l = List.map (fun c -> find_index c self.listens) l in
-     List.iter (fun i -> gn self.handlers.(i)) l
+     List.iter (fun a -> gn self.handlers.((Address.index a :> int))) l
 
 let add_route_handler ?filter ?adresses ?meth
     self route f : unit =
@@ -882,7 +864,7 @@ let create
     ?(num_thread=Domain.recommended_domain_count () - 1)
     ?(timeout=300.0)
     ?(buf_size=16 * 2048)
-    ?(listens = D.[{addr = "127.0.0.1"; port=8080; ssl = None; reuse = false}])
+    ?(listens = [Address.make ()])
     () : t =
   let max_connections = max 4 max_connections in
   if num_thread <= 0 || max_connections < num_thread then
@@ -891,8 +873,8 @@ let create
       nb_connections = Array.init num_thread (fun _ -> Atomic.make 0)
     }
   in
-  let handlers = Array.init (List.length listens) (fun _ ->
-                     Route.empty_tree ())
+  let (listens, handlers) =
+    Address.register (fun _ -> Route.empty_tree ()) listens
   in
   let self = {
     listens; masksigpipe; buf_size;

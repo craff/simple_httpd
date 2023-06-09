@@ -7,8 +7,9 @@ let send_status status _req =
   S.Response.make_string (string_status status ^ "\n")
 
 let serve ~config ~timeout ~maxc (dir:string) listens t : _ result =
+  let open Address in
   let server = S.create ~timeout ~max_connections:maxc ~num_thread:t ~listens () in
-  List.iter S.(fun l ->
+  Array.iter (fun l ->
       Printf.printf "serve directory %s on http://%s:%d\n%!"
         dir l.addr l.port) (S.listens server);
 
@@ -92,7 +93,7 @@ let main () =
       end
     else None
   in
-  let listens = S.[{addr = !addr;port = !port;ssl; reuse = false}] in
+  let listens = [Address.make ~addr:!addr ~port:!port ?ssl ()] in
   let timeout = !timeout in
   let maxc = !maxc in
   let _ = if !log_folder <> "" then

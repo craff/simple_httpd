@@ -15,7 +15,7 @@ Arg.parse (Arg.align [
       "--log", Arg.Int S.set_log_lvl, " set log level";
       ]) (fun _ -> ()) "sse_clock [opt*]";
 
-  let listens = S.[{addr= !addr;port= !port;ssl=None; reuse = false}] in
+  let listens = [Address.make ~addr:!addr ~port:!port ()] in
   let server = S.create ~num_thread:!t ~listens () in
 
   let extra_headers = [
@@ -69,7 +69,8 @@ Arg.parse (Arg.align [
       S.Response.make_string ("fib: " ^ string_of_int (fib n)^"\n")
     );
 
-  List.iter S.(fun l ->
+  Array.iter (fun l ->
+    let open Address in
     Printf.printf "listening on http://%s:%d\n%!" l.addr l.port) (S.listens server);
 
   match S.run server with

@@ -116,15 +116,7 @@ exception TimeOut
     to schedule an Io task *)
 val schedule_io : Unix.file_descr -> (unit -> int) -> int
 
-(** Type describing a socket we listen for *)
-type listening = {
-    addr : string;
-    port : int;
-    ssl  : Ssl.context option ;
-    reuse : bool ;
-  }
-
-val run : nb_threads:int -> listens:listening list -> maxc:int ->
+val run : nb_threads:int -> listens:Address.t array -> maxc:int ->
           timeout:float -> status:status ->
             (client -> unit) -> unit Domain.t array
 
