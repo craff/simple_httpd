@@ -1,27 +1,27 @@
-open Simple_httpd_server
-open Simple_httpd_dir
+open Server
+open Dir
 
 module type HostInit = sig
   val server : t
 
   val add_route_handler :
-    ?meth:Meth.t ->
-    ?filter:filter ->
+    ?meth:Method.t ->
+    ?filter:Route.filter ->
     ('a, string Request.t -> Response.t) Route.t -> 'a -> unit
 
   val add_route_handler_stream :
-    ?meth:Meth.t ->
-    ?filter:filter ->
-    ('a, byte_stream Request.t -> Response.t) Route.t -> 'a -> unit
+    ?meth:Method.t ->
+    ?filter:Route.filter ->
+    ('a, Input.t Request.t -> Response.t) Route.t -> 'a -> unit
 
   val add_dir_path :
-    ?filter:Simple_httpd_server.filter ->
+    ?filter:Route.filter ->
     ?prefix:string ->
     ?config:config ->
     string -> unit
 
   val add_vfs :
-    ?filter:Simple_httpd_server.filter ->
+    ?filter:Route.filter ->
     ?prefix:string ->
     ?config:config ->
     (module VFS) -> unit
@@ -80,7 +80,7 @@ let start_server
 
   Array.iter (fun l ->
       let open Address in
-      log ~lvl:0 (fun k -> k "listening on http://%s:%d" l.addr l.port))
+      Log.f ~lvl:0 (fun k -> k "listening on http://%s:%d" l.addr l.port))
     (listens server);
 
   run server

@@ -46,10 +46,10 @@ val of_chan : ?buf_size:int -> in_channel -> t
 val of_fd : ?buf_size:int -> Unix.file_descr -> t
 (** Make a buffered stream from the given file descriptor. *)
 
-val of_client : ?buf_size:int -> Simple_httpd_domain.client -> t
+val of_client : ?buf_size:int -> Async.client -> t
 (** Make a buffered stream from the given http client. *)
 
-val of_client_fd : ?buf_size:int -> Simple_httpd_domain.Io.t -> t
+val of_client_fd : ?buf_size:int -> Async.Io.t -> t
 (** Allow a to Make a buffered stream from the given descriptor.
     The call will be scheduled if read blocks. *)
 

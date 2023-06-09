@@ -1,8 +1,7 @@
-
-module S = Simple_httpd
-module U = S.Util
-module H = S.Headers
-module BS = S.Input
+open Simple_httpd
+module U = Util
+module H = Headers
+module BS = Input
 
 (* zlib string compression *)
 let deflate_string ?(buf_size=16 * 4096) str =
@@ -26,8 +25,8 @@ let deflate_string ?(buf_size=16 * 4096) str =
   Zlib.deflate_end zlib_str;
   Buffer.contents res
 
-let decode_deflate_stream_ ~buf_size (is:S.byte_stream) : S.byte_stream =
-  S.log ~lvl:4 (fun k->k "wrap stream with deflate.decode");
+let decode_deflate_stream_ ~buf_size (is:BS.t) : BS.t =
+  Log.f ~lvl:4 (fun k->k "wrap stream with deflate.decode");
   let zlib_str = Zlib.inflate_init false in
   let is_done = ref false in
   BS.make
@@ -38,7 +37,7 @@ let decode_deflate_stream_ ~buf_size (is:S.byte_stream) : S.byte_stream =
       )
     ~consume:(fun self len ->
         if len > self.len then (
-          S.Response.fail_raise ~code:400
+          Response.fail_raise ~code:400
             "inflate: error during decompression: invalid consume len %d (max %d)"
             len self.len
         );
@@ -60,25 +59,27 @@ let decode_deflate_stream_ ~buf_size (is:S.byte_stream) : S.byte_stream =
               self.off <- 0;
               self.len <- used_out;
               if finished then is_done := true;
-              S.log ~lvl:6 (fun k->k "decode %d bytes as %d bytes from inflate (finished: %b)"
-                           used_in used_out finished);
+              Log.f ~lvl:6
+                (fun k->k "decode %d bytes as %d bytes from inflate (finished: %b)"
+                          used_in used_out finished);
             with Zlib.Error (e1,e2) ->
-              S.Response.fail_raise ~code:400
+              Response.fail_raise ~code:400
                 "inflate: error during decompression:\n%s %s" e1 e2
           end;
-          S.log ~lvl:6 (fun k->k "inflate: refill %d bytes into internal buf" self.len);
+          Log.f ~lvl:6
+            (fun k->k "inflate: refill %d bytes into internal buf" self.len);
         );
       )
     ()
 
-let encode_deflate_stream_ ~buf_size (is:S.byte_stream) : S.byte_stream =
-  S.log ~lvl:4 (fun k->k "wrap stream with deflate.encode");
+let encode_deflate_stream_ ~buf_size (is:BS.t) : BS.t =
+  Log.f ~lvl:4 (fun k->k "wrap stream with deflate.encode");
   let refill = ref true in
   let zlib_str = Zlib.deflate_init 4 false in
   BS.make
     ~bs:(Bytes.create buf_size)
     ~close:(fun _self ->
-        S.log ~lvl:4 (fun k->k "deflate: close");
+        Log.f ~lvl:4 (fun k->k "deflate: close");
         Zlib.deflate_end zlib_str;
         BS.close is
       )
@@ -88,7 +89,7 @@ let encode_deflate_stream_ ~buf_size (is:S.byte_stream) : S.byte_stream =
       )
     ~fill:(fun self ->
         let rec loop() =
-          S.log ~lvl:6 (fun k->k "deflate.fill.iter out_off=%d out_len=%d"
+          Log.f ~lvl:6 (fun k->k "deflate.fill.iter out_off=%d out_len=%d"
                        self.off self.len);
           if self.len > 0 then (
             () (* still the same slice, not consumed entirely by output *)
@@ -108,11 +109,11 @@ let encode_deflate_stream_ ~buf_size (is:S.byte_stream) : S.byte_stream =
               self.off <- 0;
               self.len <- used_out;
               is.consume used_in;
-              S.log ~lvl:6
+              Log.f ~lvl:6
                 (fun k->k "encode %d bytes as %d bytes using deflate (finished: %b)"
                     used_in used_out _finished);
               if _finished then (
-                S.log ~lvl:4 (fun k->k "deflate: finished");
+                Log.f ~lvl:4 (fun k->k "deflate: finished");
                 refill := false;
               );
               loop()
@@ -136,7 +137,7 @@ let encode_deflate_stream_ ~buf_size (is:S.byte_stream) : S.byte_stream =
         in
         try loop()
         with Zlib.Error (e1,e2) ->
-          S.Response.fail_raise ~code:400
+          Response.fail_raise ~code:400
             "deflate: error during compression:\n%s %s" e1 e2
       )
     ()
@@ -162,19 +163,19 @@ let has_deflate headers =
   | Some s -> List.mem "deflate" @@ split_on_char ~f:String.trim ',' s
   | None -> false
 
-let accept_deflate (req:_ S.Request.t) =
-  has_deflate (S.Request.headers req)
+let accept_deflate (req:_ Request.t) =
+  has_deflate (Request.headers req)
 
-let not_deflated (resp: S.Response.t) =
-  not (S.Headers.contains H.Content_Encoding (S.Response.headers resp))
+let not_deflated (resp: Response.t) =
+  not (Headers.contains H.Content_Encoding (Response.headers resp))
 
 let has_deflate s =
   try Scanf.sscanf s "deflate, %s" (fun _ -> true)
   with _ -> false
 
 (* decompress [req]'s body if needed *)
-let decompress_req_stream_ ~buf_size (req:BS.t S.Request.t) : _ S.Request.t =
-  match S.Request.get_header ~f:String.trim req H.Transfer_Encoding with
+let decompress_req_stream_ ~buf_size (req:BS.t Request.t) : _ Request.t =
+  match Request.get_header ~f:String.trim req H.Transfer_Encoding with
   (* TODO
     | Some "gzip" ->
       let req' = S.Request.set_header req "Transfer-Encoding" "chunked" in
@@ -183,10 +184,10 @@ let decompress_req_stream_ ~buf_size (req:BS.t S.Request.t) : _ S.Request.t =
   | Some s when has_deflate s ->
     begin match Scanf.sscanf s "deflate, %s" (fun s -> s) with
       | tr' ->
-        let body' = S.Request.body req |> decode_deflate_stream_ ~buf_size in
+        let body' = Request.body req |> decode_deflate_stream_ ~buf_size in
         req
-        |> S.Request.set_header H.Transfer_Encoding tr'
-        |> S.Request.set_body body'
+        |> Request.set_header H.Transfer_Encoding tr'
+        |> Request.set_body body'
       | exception _ -> req
     end
   | _ -> req
@@ -194,34 +195,34 @@ let decompress_req_stream_ ~buf_size (req:BS.t S.Request.t) : _ S.Request.t =
 let compress_resp_stream_
     ~compress_above
     ~buf_size
-    (req:_ S.Request.t) (resp:S.Response.t) : S.Response.t =
+    (req:_ Request.t) (resp:Response.t) : Response.t =
 
   (* headers for compressed stream *)
   let update_headers h =
     h
-    |> S.Headers.remove H.Content_Length
-    |> S.Headers.set H.Content_Encoding "deflate"
+    |> H.remove H.Content_Length
+    |> H.set H.Content_Encoding "deflate"
   in
 
   if accept_deflate req && not_deflated resp then (
-    match resp.body with
+    match Response.body resp with
     | String s when String.length s > compress_above ->
       (* big string, we compress *)
-      S.log ~lvl:4
+      Log.f ~lvl:4
         (fun k->k "encode str response with deflate (size %d, threshold %d)"
              (String.length s) compress_above);
       let body =
         encode_deflate_stream_ ~buf_size @@ BS.of_string s
       in
       resp
-      |> S.Response.update_headers update_headers
-      |> S.Response.set_body (Stream body)
+      |> Response.update_headers update_headers
+      |> Response.set_body (Stream body)
 
     | Stream str ->
-      S.log ~lvl:4 (fun k->k "encode stream response with deflate");
+      Log.f ~lvl:4 (fun k->k "encode stream response with deflate");
       resp
-      |> S.Response.update_headers update_headers
-      |> S.Response.set_body (Stream (encode_deflate_stream_ ~buf_size str))
+      |> Response.update_headers update_headers
+      |> Response.set_body (Stream (encode_deflate_stream_ ~buf_size str))
 
     | String _ | Void | File _ (* TODO ?*) -> resp
   ) else resp
@@ -229,7 +230,7 @@ let compress_resp_stream_
 let filter
     ?(compress_above=16 * 1024)
     ?(buf_size=16 * 1_024)
-    () : S.filter =
+    () : Route.filter =
   let buf_size = max buf_size 1_024 in
   fun req ->
     let req = decompress_req_stream_ ~buf_size req in

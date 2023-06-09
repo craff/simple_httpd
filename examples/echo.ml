@@ -1,11 +1,11 @@
 
-module S = Simple_httpd
-module H = S.Headers
+open Simple_httpd
+module H = Headers
 
 let now_ = Unix.gettimeofday
 
 (* util: a little middleware collecting statistics *)
-let filter_stat () : S.filter * (unit -> string) =
+let filter_stat () : Route.filter * (unit -> string) =
   let n_req = ref 0 in
   let total_time_ = ref 0. in
   let parse_time_ = ref 0. in
@@ -13,7 +13,7 @@ let filter_stat () : S.filter * (unit -> string) =
 
   let m req =
     incr n_req;
-    let t1 = S.Request.start_time req in
+    let t1 = Request.start_time req in
     let t2 = now_ () in
     (req, fun response ->
         let t3 = now_ () in
@@ -39,29 +39,29 @@ let () =
       "-a", Arg.Set_string addr, " set address";
       "--port", Arg.Set_int port, " set port";
       "-p", Arg.Set_int port, " set port";
-      "--log", Arg.Int (fun n -> S.set_log_lvl n), " set debug lvl";
+      "--log", Arg.Int (fun n -> Log.set_log_lvl n), " set debug lvl";
       "-j", Arg.Set_int j, " maximum number of connections";
     ]) (fun _ -> raise (Arg.Bad "")) "echo [option]*";
 
   let listens = [Address.make ~addr:!addr ~port:!port ()] in
-  let server = S.create ~listens ~max_connections:!j () in
+  let server = Server.create ~listens ~max_connections:!j () in
   let filter_stat, get_stats = filter_stat () in
   let filter_zip =
     Simple_httpd_camlzip.filter ~compress_above:1024 ~buf_size:(16*1024) ()
   in
-  let filter = S.compose_cross filter_zip filter_stat in
+  let filter = Route.compose_cross filter_zip filter_stat in
 
   (* say hello *)
-  S.add_route_handler ~meth:GET server ~filter
-    S.Route.(exact "hello" @/ string @/ return)
-    (fun name _req -> S.Response.make_string ("hello " ^name ^"!\n"));
+  Server.add_route_handler ~meth:GET server ~filter
+    Route.(exact "hello" @/ string @/ return)
+    (fun name _req -> Response.make_string ("hello " ^name ^"!\n"));
 
   (* compressed file access *)
-  S.add_route_handler ~meth:GET server
-    S.Route.(exact "zcat" @/ string @/ return)
+  Server.add_route_handler ~meth:GET server
+    Route.(exact "zcat" @/ string @/ return)
     (fun path _req ->
         let ic = open_in path in
-        let str = S.Input.of_chan ic in
+        let str = Input.of_chan ic in
         let mime_type =
           try
             let p = Unix.open_process_in (Printf.sprintf "file -i -b %S" path) in
@@ -72,52 +72,52 @@ let () =
             with _ -> ignore @@ Unix.close_process_in p; []
           with _ -> []
         in
-        S.Response.make_stream ~headers:mime_type str
+        Response.make_stream ~headers:mime_type str
       );
 
   (* echo request *)
-  S.add_route_handler server
-    S.Route.(exact "echo" @/ return)
+  Server.add_route_handler server
+    Route.(exact "echo" @/ return)
     (fun req ->
         let q =
-          S.Request.query req |> List.map (fun (k,v) -> Printf.sprintf "%S = %S" k v)
+          Request.query req |> List.map (fun (k,v) -> Printf.sprintf "%S = %S" k v)
           |> String.concat ";"
         in
-        S.Response.make_string
-          (Format.asprintf "echo:@ %a@ (query: %s)@." S.Request.pp req q));
+        Response.make_string
+          (Format.asprintf "echo:@ %a@ (query: %s)@." Request.pp req q));
 
   (* file upload *)
-  S.add_route_handler_stream ~meth:PUT server
-    S.Route.(exact "upload" @/ string @/ return)
+  Server.add_route_handler_stream ~meth:PUT server
+    Route.(exact "upload" @/ string @/ return)
     (fun path req ->
-        S.log (fun k->k "start upload %S, headers:\n%s\n\n%!" path
-                     (Format.asprintf "%a" S.Headers.pp (S.Request.headers req)));
+        Log.f (fun k->k "start upload %S, headers:\n%s\n\n%!" path
+                     (Format.asprintf "%a" Headers.pp (Request.headers req)));
         try
           let oc = open_out @@ "/tmp/" ^ path in
-          S.Input.to_chan oc req.S.Request.body;
+          Input.to_chan oc (Request.body req);
           flush oc;
-          S.Response.make_string "uploaded file"
+          Response.make_string "uploaded file"
         with e ->
-          S.Response.fail ~code:500 "couldn't upload file: %s" (Printexc.to_string e)
+          Response.fail ~code:500 "couldn't upload file: %s" (Printexc.to_string e)
       );
 
   (* stats *)
-  S.add_route_handler server S.Route.(exact "stats" @/ return)
+  Server.add_route_handler server Route.(exact "stats" @/ return)
     (fun _req ->
        let stats = get_stats() in
-       S.Response.make_string stats
+       Response.make_string stats
     );
 
   (* VFS *)
-  Simple_httpd_dir.add_vfs server
-    ~config:(Simple_httpd_dir.config ~download:true
-               ~dir_behavior:Simple_httpd_dir.Index_or_lists ())
+  Dir.add_vfs server
+    ~config:(Dir.config ~download:true
+               ~dir_behavior:Dir.Index_or_lists ())
     ~vfs:Vfs.vfs ~prefix:"vfs";
 
   (* main page *)
-  S.add_route_handler server S.Route.(return)
+  Server.add_route_handler server Route.(return)
     (fun _req ->
-       let open Simple_httpd_html in
+       let open Html in
        let h = html [] [
            head[][title[][txt "index of echo"]];
            body[][
@@ -133,11 +133,11 @@ let () =
              ]
            ]
          ] in
-       let s = to_string_top h in
-       S.Response.make_string ~headers:[H.Content_Type, "text/html"] s);
+       let s = to_string ~top:true h in
+       Response.make_string ~headers:[H.Content_Type, "text/html"] s);
 
   Array.iter (fun l ->
     let open Address in
-    Printf.printf "listening on http://%s:%d\n%!" l.addr l.port) (S.listens server);
+    Printf.printf "listening on http://%s:%d\n%!" l.addr l.port) (Server.listens server);
 
-  S.run server
+  Server.run server

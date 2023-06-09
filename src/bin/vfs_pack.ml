@@ -32,11 +32,11 @@ let is_url s =
   is_prefix "http://" s || is_prefix "https://" s
 
 let emit oc (l:entry list) : unit =
-  fpf oc "let embedded_fs = Simple_httpd_dir.Embedded_fs.create ~mtime:%f ()\n" now_;
+  fpf oc "let embedded_fs = Simple_httpd.Dir.Embedded_fs.create ~mtime:%f ()\n" now_;
 
   let add_vfs ~mtime vfs_path content =
     fpf oc
-      "let () = Simple_httpd_dir.Embedded_fs.add_file embedded_fs \n  \
+      "let () = Simple_httpd.Dir.Embedded_fs.add_file embedded_fs \n  \
        ~mtime:%h ~path:%S\n  \
        %S\n"
       mtime vfs_path content
@@ -98,13 +98,13 @@ let emit oc (l:entry list) : unit =
   in
   List.iter add_entry l;
 
-  fpf oc "let vfs = Simple_httpd_dir.Embedded_fs.to_vfs embedded_fs\n";
+  fpf oc "let vfs = Simple_httpd.Dir.Embedded_fs.to_vfs embedded_fs\n";
   ()
 
 
 let help = {|vfs-pack [opt]+
 
-Builds an OCaml module containing a `Simple_httpd_dir.Embedded_fs.t`
+Builds an OCaml module containing a `Simple_httpd.Dir.Embedded_fs.t`
 virtual file system. This is useful to pack assets into an OCaml binary,
 for example.
 

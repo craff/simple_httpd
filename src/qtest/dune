@@ -6,9 +6,10 @@
   (libraries qcheck-core qcheck ounit2 simple_httpd))
 
 (rule
- (deps (glob_files ../*.ml{,i}))
+ (deps (glob_files ../*.ml{,i}) preamble.ml)
  (targets qtest.ml)
- (action (run qtest extract --quiet %{deps} -o %{targets})))
+ (action (run qtest --preamble-file preamble.ml
+   extract --quiet %{deps} -o %{targets})))
 
 (rule
   (alias runtest)

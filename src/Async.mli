@@ -10,8 +10,8 @@
       be identified as one session using session cookies.
  *)
 
-(** Connection status. Holds the number of clients per domain.  We support
-    several simultaneous server: each server would have its own status.  *)
+
+(** Connection status. Holds the number of clients per domain.  *)
 type status = {
     nb_connections : int Atomic.t array
   }
@@ -20,11 +20,11 @@ val string_status : status -> string
 
 (** Simple_httpd notion of mutex. You must be careful with server wide mutex:
     a DoS attack could try to hold such a mutex. A mutex per session may be a good
-    idea. A mutex per client is useless (client are treated sequentially.
+    idea. A mutex per client is useless (client are treated sequentially).
 
     FIXME: there is a global mutex for file cache. It is holded very shortly and
     once the file is in the cache it is not used anymore, so this is OK.
-*)
+ *)
 module Mutex : sig
   type t
 
@@ -41,7 +41,7 @@ type session_data = ..
 type session_data += NoData
 
 (** Record describing clients *)
-type client = {
+type client = private {
     id : int;                         (** Unique identifier *)
     mutable connected : bool;         (** Is the client still connected *)
     sock : Unix.file_descr;           (** The sockect for the client *)
@@ -68,10 +68,13 @@ and session_info = (* FIXME: force protection by mutex making the type private *
   ; mutable cookies : (string * string) list
   }
 
-and session = session_info Simple_httpd_util.LinkedList.cell
+and session = session_info Util.LinkedList.cell
 
 (** only to please qtest *)
 val fake_client : client
+
+(** Set the session of a client *)
+val set_session : ?session:session -> client -> unit
 
 (** The scheduling primitives *)
 val read  : client -> Bytes.t -> int -> int -> int
@@ -122,7 +125,9 @@ val run : nb_threads:int -> listens:Address.t array -> maxc:int ->
 
 val printexn : exn -> string
 
-val set_log_lvl : int -> unit
-val set_log_folder : ?basename:string -> ?perm:int -> string -> int -> unit
-val log : ?lvl:int ->
+module Log : sig
+  val set_log_lvl : int -> unit
+  val set_log_folder : ?basename:string -> ?perm:int -> string -> int -> unit
+  val f : ?lvl:int ->
           ((('a, out_channel, unit, unit) format4 -> 'a) -> unit) -> unit
+end

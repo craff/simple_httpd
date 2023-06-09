@@ -1,11 +1,6 @@
-module S = Simple_httpd_server
-module U = Simple_httpd_util
-module D = Simple_httpd_domain
-module H = S.Headers
-module Html = Simple_httpd_html
-module Pf = Printf
-module Mutex = D.Mutex
-module Input = Simple_httpd_input
+module Mutex = Async.Mutex
+
+let log = Log.f
 
 type dir_behavior =
   | Index | Lists | Index_or_lists | Forbidden
@@ -77,10 +72,10 @@ let human_size (x:int) : string =
   else if x >= 1_000 then Printf.sprintf "%d.%dk" (x/1000) ((x/100) mod 100)
   else Printf.sprintf "%db" x
 
-let header_html = H.Content_Type, "text/html"
+let header_html = Headers.Content_Type, "text/html"
 let (//) = Filename.concat
 
-let encode_path s = U.percent_encode ~skip:(function '/' -> true|_->false) s
+let encode_path s = Util.percent_encode ~skip:(function '/' -> true|_->false) s
 
 let is_hidden s = String.length s>0 && s.[0] = '.'
 
@@ -92,7 +87,7 @@ module type VFS = sig
   val delete : string -> unit
   val create : string -> (bytes -> int -> int -> unit) * (unit -> unit)
   val read_file_content : string -> string
-  val read_file_stream : string -> Simple_httpd_input.t
+  val read_file_stream : string -> Input.t
   val read_file_fd : string -> int * Unix.file_descr
   val file_size : string -> int option
   val file_mtime : string -> float option
@@ -213,19 +208,19 @@ let html_list_dir (module VFS:VFS) ~prefix ~parent d : Html.elt =
 let add_vfs_ ?addresses ?hostnames ?(filter=(fun x -> (x, fun r -> r)))
                ?(config=default_config ())
                ?(prefix="") ~vfs:((module VFS:VFS) as vfs) server : unit=
-  let search_cache : (string -> S.Response.t)
-                     -> cache_key * string -> S.Response.t =
+  let search_cache : (string -> Response.t)
+                     -> cache_key * string -> Response.t =
     let cache_mutex = Mutex.create () in
     let cache = Hashtbl.create 128 in
-    let tmp_rep = S.Response.make_raw ~code:400 "" in
+    let tmp_rep = Response.make_raw ~code:400 "" in
     fun fn (_,filename as key) ->
     try
       let (ready, mtime, ptr) = Hashtbl.find cache key in
-      while not (Atomic.get ready) do D.sleep 0.01; done; (* FIXME *)
+      while not (Atomic.get ready) do Async.sleep 0.01; done; (* FIXME *)
       let mtime' = VFS.file_mtime filename in
       if mtime' <> mtime then
         begin
-          (match (!ptr).S.Response.body with
+          (match (!ptr).Response.body with
            | File(_,fd,_) -> (try Unix.close fd with _ -> ())
            | _ -> ());
           raise Not_found;
@@ -246,42 +241,42 @@ let add_vfs_ ?addresses ?hostnames ?(filter=(fun x -> (x, fun r -> r)))
       x
   in
   let route () =
-    if prefix="" then S.Route.rest
-    else S.Route.exact_path prefix S.Route.rest
+    if prefix="" then Route.rest
+    else Route.exact_path prefix Route.rest
   in
   if config.delete then (
-    S.add_route_handler ?addresses ?hostnames ~filter ~meth:DELETE server (route())
+    Server.add_route_handler ?addresses ?hostnames ~filter ~meth:DELETE server (route())
       (fun path _req ->
          let path = String.concat "/" path in
          if contains_dot_dot path then (
-           D.log ~lvl:2 (fun k->k "delete fails %s (dotdot)" path);
-           S.Response.fail_raise ~code:403 "invalid path in delete"
+           Log.f ~lvl:2 (fun k->k "delete fails %s (dotdot)" path);
+           Response.fail_raise ~code:403 "invalid path in delete"
          ) else (
-           S.Response.make_string
+           Response.make_string
              (try
-                S.log ~lvl:2 (fun k->k "done delete %s" path);
+                log ~lvl:2 (fun k->k "done delete %s" path);
                 VFS.delete path; "file deleted successfully"
               with e ->
-                S.log ~lvl:2 (fun k->k "delete fails %s (%s)" path
-                                         (D.printexn e));
-                S.Response.fail_raise ~code:500
-                  "delete fails: %s (%s)" path (D.printexn e))
+                log ~lvl:2 (fun k->k "delete fails %s (%s)" path
+                                         (Async.printexn e));
+                Response.fail_raise ~code:500
+                  "delete fails: %s (%s)" path (Async.printexn e))
       )))
     else (
-      S.add_route_handler ~filter server ~meth:DELETE (route())
+      Server.add_route_handler ~filter server ~meth:DELETE (route())
         (fun _ _  ->
-          S.Response.fail_raise ~code:405 "delete not allowed");
+          Response.fail_raise ~code:405 "delete not allowed");
     );
 
   if config.upload then (
-    S.add_route_handler_stream server ~meth:PUT (route())
+    Server.add_route_handler_stream server ~meth:PUT (route())
       ~filter:(fun req ->
-          match S.Request.get_header_int req H.Content_Length with
+          match Request.get_header_int req Headers.Content_Length with
           | Some n when n > config.max_upload_size ->
-             S.Response.fail_raise ~code:403
+             Response.fail_raise ~code:403
                "max upload size is %d" config.max_upload_size
-          | Some _ when contains_dot_dot req.S.Request.path ->
-             S.Response.fail_raise ~code:403 "invalid path (contains '..')"
+          | Some _ when contains_dot_dot req.Request.path ->
+             Response.fail_raise ~code:403 "invalid path (contains '..')"
           | _ -> filter req
         )
       (fun path req ->
@@ -289,39 +284,39 @@ let add_vfs_ ?addresses ?hostnames ?(filter=(fun x -> (x, fun r -> r)))
          let write, close =
            try VFS.create path
            with e ->
-             S.log ~lvl:2 (fun k->k "fail uploading %s (%s)"
-                                      path (D.printexn e));
-             S.Response.fail_raise ~code:403 "cannot upload to %S: %s"
-               path (D.printexn e)
+             log ~lvl:2 (fun k->k "fail uploading %s (%s)"
+                                      path (Async.printexn e));
+             Response.fail_raise ~code:403 "cannot upload to %S: %s"
+               path (Async.printexn e)
          in
-         let req = S.Request.limit_body_size ~max_size:config.max_upload_size req in
-         Input.iter write req.S.Request.body;
+         let req = Request.limit_body_size ~max_size:config.max_upload_size req in
+         Input.iter write req.Request.body;
          close ();
-         S.log ~lvl:2 (fun k->k "done uploading %s" path);
-         S.Response.make_raw ~code:201 "upload successful"
+         log ~lvl:2 (fun k->k "done uploading %s" path);
+         Response.make_raw ~code:201 "upload successful"
       )
   ) else (
-    S.add_route_handler ~filter server ~meth:PUT (route())
-      (fun _ _  -> S.Response.make_raw ~code:405 "upload not allowed");
+    Server.add_route_handler ~filter server ~meth:PUT (route())
+      (fun _ _  -> Response.make_raw ~code:405 "upload not allowed");
   );
 
   if config.download then (
-    S.add_route_handler ~filter server ~meth:GET (route())
+    Server.add_route_handler ~filter server ~meth:GET (route())
       (fun path req ->
         let path = String.concat "/" path in
         let mtime = lazy (
                         match VFS.file_mtime path with
-                        | None -> S.Response.fail_raise ~code:403 "Cannot access file"
+                        | None -> Response.fail_raise ~code:403 "Cannot access file"
                         | Some t -> Printf.sprintf "mtime: %.4f" t
                       ) in
         if contains_dot_dot path then (
-          S.log ~lvl:2 (fun k->k "download fails %s (dotdot)" path);
-          S.Response.fail ~code:403 "Path is forbidden";
+          log ~lvl:2 (fun k->k "download fails %s (dotdot)" path);
+          Response.fail ~code:403 "Path is forbidden";
         ) else if not (VFS.contains path) then (
-          S.log ~lvl:2 (fun k->k "download fails %s (not found)" path);
-          S.Response.fail ~code:404 "File not found";
-        ) else if S.Request.get_header req H.If_None_Match = Some (Lazy.force mtime) then (
-          S.Response.make_raw ~code:304 ""
+          log ~lvl:2 (fun k->k "download fails %s (not found)" path);
+          Response.fail ~code:404 "File not found";
+        ) else if Request.get_header req Headers.If_None_Match = Some (Lazy.force mtime) then (
+          Response.make_raw ~code:304 ""
         ) else if VFS.is_directory path then (
           let parent = Filename.(dirname path) in
           let parent = if Filename.basename path <> "." then Some parent else None in
@@ -329,26 +324,26 @@ let add_vfs_ ?addresses ?hostnames ?(filter=(fun x -> (x, fun r -> r)))
             | Index | Index_or_lists when VFS.contains (path // "index.html") ->
                (* redirect using path, not full path *)
                let new_path = "/" // prefix // path // "index.html" in
-               S.log ~lvl:2 (fun k->k "download redirect %s" path);
-               S.Response.make_raw ~code:301 "No Body"
-                 ~headers:S.Headers.(empty |> set H.Location new_path
-                                     |> set H.Content_Type "text/plain")
+               log ~lvl:2 (fun k->k "download redirect %s" path);
+               Response.make_raw ~code:301 "No Body"
+                 ~headers:Headers.(empty |> set Headers.Location new_path
+                                     |> set Headers.Content_Type "text/plain")
             | Lists | Index_or_lists ->
                let body = html_list_dir ~prefix vfs path ~parent
                           |> Html.to_string_top in
-               S.log ~lvl:2 (fun k->k "download index %s" path);
-               S.Response.make_string
-                 ~headers:[header_html; H.ETag, Lazy.force mtime]
+               log ~lvl:2 (fun k->k "download index %s" path);
+               Response.make_string
+                 ~headers:[header_html; Headers.ETag, Lazy.force mtime]
                  body
             | Forbidden | Index ->
-               S.log ~lvl:2 (fun k->k "download index fails %s (forbidden)" path);
-               S.Response.make_raw ~code:405 "listing dir not allowed"
+               log ~lvl:2 (fun k->k "download index fails %s (forbidden)" path);
+               Response.make_raw ~code:405 "listing dir not allowed"
         ) else (
           let mime =  Magic_mime.lookup path in
-          let mime_type = (H.Content_Type,mime) in
+          let mime_type = (Headers.Content_Type,mime) in
           let size = VFS.file_size path in
           let accept_encoding =
-            match S.Request.(get_header req H.Accept_Encoding)
+            match Request.(get_header req Headers.Accept_Encoding)
             with None -> []
                | Some l -> List.map String.trim (String.split_on_char ',' l)
           in
@@ -358,53 +353,53 @@ let add_vfs_ ?addresses ?hostnames ?(filter=(fun x -> (x, fun r -> r)))
               match cache with
               | MemCache ->
                  let string = VFS.read_file_content path in
-                 S.log ~lvl:2 (fun k->k "download ok %s" path);
-                 S.Response.make_raw
-                   ~headers:(mime_type::[(H.ETag, Lazy.force mtime)])
+                 log ~lvl:2 (fun k->k "download ok %s" path);
+                 Response.make_raw
+                   ~headers:(mime_type::[(Headers.ETag, Lazy.force mtime)])
                    ~code:200 string
               | CompressCache(encoding,cmp) ->
                  let string = cmp (VFS.read_file_content path) in
-                 S.log ~lvl:2 (fun k->k "download ok %s" path);
-                 S.Response.make_raw
-                   ~headers:(mime_type::[(H.ETag, Lazy.force mtime)
-                                       ;(H.Content_Encoding, encoding)])
+                 log ~lvl:2 (fun k->k "download ok %s" path);
+                 Response.make_raw
+                   ~headers:(mime_type::[(Headers.ETag, Lazy.force mtime)
+                                       ;(Headers.Content_Encoding, encoding)])
                    ~code:200 string
               | SendFileCache ->
                  let (size, stream) = VFS.read_file_fd path in
                  (*if size > 50_000 then*)
                    begin
-                     S.log ~lvl:2 (fun k->k "download ok %s" path);
-                     S.Response.make_raw_file
-                       ~headers:(mime_type::[(H.ETag, Lazy.force mtime)])
+                     log ~lvl:2 (fun k->k "download ok %s" path);
+                     Response.make_raw_file
+                       ~headers:(mime_type::[(Headers.ETag, Lazy.force mtime)])
                        ~code:200 ~close:false size stream
                    end
               | NoCache | SendFile -> assert false
             with e ->
-              S.log ~lvl:2 (fun k->k "download fails %s (%s)" path (D.printexn e));
-              S.Response.fail ~code:500 "error while reading file: %s" (D.printexn e)
+              log ~lvl:2 (fun k->k "download fails %s (%s)" path (Async.printexn e));
+              Response.fail ~code:500 "error while reading file: %s" (Async.printexn e)
           in
           match cache with
           | NoCache ->
              let stream = VFS.read_file_stream path in
-             S.log ~lvl:2 (fun k->k "download ok %s" path);
-             S.Response.make_raw_stream
-               ~headers:(mime_type::[(H.ETag, Lazy.force mtime)])
+             log ~lvl:2 (fun k->k "download ok %s" path);
+             Response.make_raw_stream
+               ~headers:(mime_type::[(Headers.ETag, Lazy.force mtime)])
                ~code:200 stream
           | SendFile ->
              let (size, stream) = VFS.read_file_fd path in
              (*if size > 50_000 then*)
              begin
-               S.log ~lvl:2 (fun k->k "download ok %s" path);
-               S.Response.make_raw_file
-                 ~headers:(mime_type::[(H.ETag, Lazy.force mtime)])
+               log ~lvl:2 (fun k->k "download ok %s" path);
+               Response.make_raw_file
+                 ~headers:(mime_type::[(Headers.ETag, Lazy.force mtime)])
                  ~code:200 ~close:true size stream
              end
           | _ -> search_cache fn (cache_key cache,path)
         )
       )
   ) else (
-    S.add_route_handler server ~filter ~meth:GET (route())
-      (fun _ _  -> S.Response.make_raw ~code:405 "download not allowed");
+    Server.add_route_handler server ~filter ~meth:GET (route())
+      (fun _ _  -> Response.make_raw ~code:405 "download not allowed");
   );
   ()
 

@@ -113,7 +113,7 @@ let _ = fn true tree ""
 
 let _ = Printf.printf "%s\n%!"
 "let parse self =
-  let open Simple_httpd_input in
+  let open Input in
   let acc = ref cell_0 in
   try
     while true do

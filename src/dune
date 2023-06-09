@@ -6,19 +6,20 @@
   (flags :standard -safe-string -warn-error -a+8)
   (ocamlopt_flags -O3)
   (foreign_stubs (language c) (names stubs))
-  (wrapped false))
+  (private_modules headers_ html_)
+  (wrapped true))
 
 (rule
-  (targets Simple_httpd_html_.ml)
+  (targets Html_.ml)
   (deps (:bin ./gen/gentags.exe))
   (action (with-stdout-to %{targets} (run %{bin}))))
 
 (rule
-  (targets Simple_httpd_header.ml)
+  (targets Headers_.ml)
   (deps (:bin ./gen/compile_headers_fun.exe) field-names.csv)
   (action (with-stdout-to %{targets} (run %{bin} field-names.csv))))
 
 (rule
-  (targets Simple_httpd_header.mli)
+  (targets Headers_.mli)
   (deps (:bin ./gen/compile_headers_mli.exe) field-names.csv)
   (action (with-stdout-to %{targets} (run %{bin} field-names.csv))))

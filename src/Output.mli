@@ -3,7 +3,7 @@
 
 type t
 
-val create : ?buf_size:int -> Simple_httpd_domain.client -> t
+val create : ?buf_size:int -> Async.client -> t
 val flush : t -> unit
 val close : t -> unit
 val add_char : t -> char -> unit
@@ -16,7 +16,7 @@ val add_subbytes : t -> bytes -> int -> int -> unit
 
 val printf : t -> ('a, unit, string, unit) format4 -> 'a
 
-val output_chunked : t -> Simple_httpd_input.t -> unit
+val output_chunked : t -> Input.t -> unit
 (** Write the stream into the channel, using the chunked encoding. *)
 
 val output_str   : t -> string -> unit

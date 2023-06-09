@@ -68,7 +68,7 @@ let of_fd_ ?(buf_size=16 * 1024) ~close ic : t =
     ~fill:(fun self ->
         if self.off >= self.len then (
           self.off <- 0;
-          self.len <- Simple_httpd_util.read ic self.bs 0 (Bytes.length self.bs));
+          self.len <- Util.read ic self.bs 0 (Bytes.length self.bs));
         )
     ()
 
@@ -84,14 +84,14 @@ let of_client_ ?(buf_size=16 * 1024) ~close ic : t =
     ~fill:(fun self ->
         if self.off >= self.len then (
           self.off <- 0;
-          self.len <- Simple_httpd_domain.(read ic self.bs 0 (Bytes.length self.bs));
+          self.len <- Async.(read ic self.bs 0 (Bytes.length self.bs));
         )
       )
     ()
 
-let of_client = of_client_ ~close:(fun c -> Simple_httpd_domain.close c)
+let of_client = of_client_ ~close:(fun c -> Async.close c)
 
-module Io = Simple_httpd_domain.Io
+module Io = Async.Io
 
 let of_client_fd_ ?(buf_size=16 * 1024) ~close (sock:Io.t) : t =
   make

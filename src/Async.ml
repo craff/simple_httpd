@@ -2,8 +2,6 @@ open Effect
 open Effect.Deep
 open Domain
 
-module U = Simple_httpd_util
-
 type status = {
     nb_connections : int Atomic.t array
   }
@@ -60,7 +58,7 @@ and session_info =
   ; mutable cookies : (string * string) list
   }
 
-and session = session_info U.LinkedList.cell
+and session = session_info Util.LinkedList.cell
 
 let fake_client =
     { sock = Unix.stdout;
@@ -74,6 +72,9 @@ let fake_client =
       locks = [];
       accept_by = 0;
     }
+
+let set_session ?session client =
+  client.session <- session
 
 type _ Effect.t +=
    | Io  : { sock: Unix.file_descr; fn: (unit -> int) }
@@ -157,38 +158,42 @@ let global_get_client () =
   let id = Domain.self () in
   all_domain_info.((id :> int)).cur_client
 
-let log_lvl = ref (
-  match int_of_string (Sys.getenv "HTTP_DBG") with
-  | n -> n | exception _ -> 0)
-let set_log_lvl n = log_lvl := n
+module Log = struct
+  let log_lvl =
+    ref (match int_of_string (Sys.getenv "HTTP_DBG") with
+         | n -> n | exception _ -> 0)
 
-let log_files = ref [||]
-let set_log_folder ?(basename="log") ?(perm=0o700) folder nb_dom =
-  if not (Sys.file_exists folder) then Sys.mkdir folder perm;
-  if not (Sys.is_directory folder) then invalid_arg "set_log_folder";
-  try
-    let a = Array.init nb_dom (fun i ->
-                let filename = Filename.concat folder
-                                 (basename ^ "-" ^ string_of_int i ^ ".log")
-                in
-                open_out_gen [Open_wronly; Open_append; Open_creat] perm filename)
-    in
-    log_files := a
-  with e -> failwith ("set_log_folder: " ^ Printexc.to_string e)
+  let set_log_lvl n = log_lvl := n
 
-let log ?(lvl=1) k =
-  if !log_lvl >= lvl then (
-    k (fun fmt->
-        let id = Domain.((self() :> int)) in
-        let ch = if id < Array.length !log_files then !log_files.(id)
-                 else stdout
-        in
-        let cl = global_get_client () in
-        if is_client cl then
-          Printf.fprintf ch "%.6f %3d %10d: "
-            (Unix.gettimeofday ()) id cl.id;
-        Printf.kfprintf (fun oc -> Printf.fprintf oc "\n%!") ch fmt)
-  )
+  let log_files = ref [||]
+
+  let set_log_folder ?(basename="log") ?(perm=0o700) folder nb_dom =
+    if not (Sys.file_exists folder) then Sys.mkdir folder perm;
+    if not (Sys.is_directory folder) then invalid_arg "set_log_folder";
+    try
+      let a = Array.init nb_dom (fun i ->
+                  let filename = Filename.concat folder
+                                   (basename ^ "-" ^ string_of_int i ^ ".log")
+                  in
+                  open_out_gen [Open_wronly; Open_append; Open_creat] perm filename)
+      in
+      log_files := a
+    with e -> failwith ("set_log_folder: " ^ Printexc.to_string e)
+
+  let f ?(lvl=1) k =
+    if !log_lvl >= lvl then (
+      k (fun fmt->
+          let id = Domain.((self() :> int)) in
+          let ch = if id < Array.length !log_files then !log_files.(id)
+                   else stdout
+          in
+          let cl = global_get_client () in
+          if is_client cl then
+            Printf.fprintf ch "%.6f %3d %10d: "
+              (Unix.gettimeofday ()) id cl.id;
+          Printf.kfprintf (fun oc -> Printf.fprintf oc "\n%!") ch fmt)
+    )
+end
 
 
 let string_status st =
@@ -238,7 +243,7 @@ module Mutex : sig
     in
     let finalise r =
       if r.owner <> None then
-        log ~lvl:1 (fun k -> k "Mutex collected before unlock!");
+        Log.f ~lvl:1 (fun k -> k "Mutex collected before unlock!");
       Unix.close r.eventfd
     in
     Gc.finalise finalise r;
@@ -256,11 +261,11 @@ module Mutex : sig
          failwith "unlock a not locked mutex"
     end;
     lk.owner <- None;
-    assert (Simple_httpd_util.single_write lk.eventfd one 0 8 = 8)
+    assert (Util.single_write lk.eventfd one 0 8 = 8)
 
   let try_lock lk =
     let buf = Bytes.create 8 in
-    try assert(Simple_httpd_util.read lk.eventfd buf 0 8 = 8);
+    try assert(Util.read lk.eventfd buf 0 8 = 8);
         lk.owner <- Some (global_get_client ());
         true
     with Unix.(Unix_error((EAGAIN | EWOULDBLOCK), _, _)) -> false
@@ -273,7 +278,7 @@ module Ssl = struct include Ssl include Ssl.Runtime_lock end
 
 let rec read c s o l =
   try
-    apply c U.read Ssl.read s o l
+    apply c Util.read Ssl.read s o l
   with Unix.(Unix_error((EAGAIN|EWOULDBLOCK),_,_))
      | Ssl.(Read_error(Error_want_read|Error_want_accept|
                        Error_want_connect|Error_want_write|Error_zero_return)) ->
@@ -286,7 +291,7 @@ and perform_read c s o l =
 
 let rec write c s o l =
   try
-    apply c U.single_write Ssl.write s o l
+    apply c Util.single_write Ssl.write s o l
   with Unix.(Unix_error((EAGAIN|EWOULDBLOCK),_,_))
      | Ssl.(Write_error(Error_want_write|Error_want_read|
                         Error_want_accept|Error_want_connect|Error_zero_return)) ->
@@ -305,7 +310,7 @@ let sendfile_ssl c fd o l =
 
 let rec sendfile c fd o l =
   try
-    apply c U.sendfile sendfile_ssl fd o l
+    apply c Util.sendfile sendfile_ssl fd o l
   with Unix.(Unix_error((EAGAIN|EWOULDBLOCK),_,_)) ->
         perform_sendfile c fd o l
      | exn -> clientError c exn
@@ -339,7 +344,7 @@ module Io = struct
     let i = all_domain_info.((Domain.self () :> int)) in
     Hashtbl.remove i.pendings s;
     try Polly.(del i.poll_list s)
-    with e -> log ~lvl:1 (fun k -> k "UNEXPECTED EXCEPTION IN EPOLL_DEL: %s"
+    with e -> Log.f ~lvl:1 (fun k -> k "UNEXPECTED EXCEPTION IN EPOLL_DEL: %s"
                                          (printexn e))
   let close (s:t) =
     s.unregister ();
@@ -349,7 +354,7 @@ module Io = struct
     let i = all_domain_info.((Domain.self () :> int)) in
     Hashtbl.add i.pendings s { ty = Io r; pd = NoEvent };
     try Polly.(add i.poll_list s Events.(inp lor out lor et))
-    with e -> log ~lvl:1 (fun k -> k "UNEXPECTED EXCEPTION IN EPOLL_ADD: %s"
+    with e -> Log.f ~lvl:1 (fun k -> k "UNEXPECTED EXCEPTION IN EPOLL_ADD: %s"
                                          (printexn e));
               raise e
 
@@ -363,14 +368,14 @@ module Io = struct
 
   let rec read (io:t) s o l =
   try
-    U.read io.sock  s o l
+    Util.read io.sock  s o l
   with Unix.(Unix_error((EAGAIN|EWOULDBLOCK),_,_)) ->
         schedule_io io.sock (fun () -> read io s o l)
      | exn -> ioError io exn
 
   let rec write (io:t) s o l =
   try
-    U.single_write io.sock s o l
+    Util.single_write io.sock s o l
   with Unix.(Unix_error((EAGAIN|EWOULDBLOCK),_,_)) ->
         schedule_io io.sock (fun () -> write io s o l)
      | exn -> ioError io exn
@@ -426,7 +431,7 @@ let loop id st listens pipe timeout handler () =
   let unregister s =
     Hashtbl.remove pendings s;
     try Polly.(del poll_list s)
-    with e -> log (fun k -> k "Unexpected exception in epoll_del: %s"
+    with e -> Log.f (fun k -> k "Unexpected exception in epoll_del: %s"
                                   (printexn e))
   in
 
@@ -456,7 +461,7 @@ let loop id st listens pipe timeout handler () =
       | (t,cont,cl)::l when t <= now ->
          if cl.connected then
            begin
-             log ~lvl:3 (fun k -> k "[%d] end sleep" cl.id);
+             Log.f ~lvl:3 (fun k -> k "[%d] end sleep" cl.id);
              add_ready (Yield(cont,cl,now));
            end;
          fn l
@@ -492,7 +497,7 @@ let loop id st listens pipe timeout handler () =
 
   let close ?client exn =
     let c = match client with None -> get_client () | Some c -> c in
-    log ~lvl:1 (fun k -> k "closing because exception: %s. connected: %b (%d)"
+    Log.f ~lvl:1 (fun k -> k "closing because exception: %s. connected: %b (%d)"
                                (printexn exn) c.connected
                                (Atomic.get st.nb_connections.(id)));
     assert c.connected;
@@ -509,7 +514,7 @@ let loop id st listens pipe timeout handler () =
       match c.session with
       | None -> ()
       | Some sess ->
-         let sess = U.LinkedList.get sess in
+         let sess = Util.LinkedList.get sess in
          Mutex.lock sess.mutex;
          sess.clients <- List.filter (fun c' -> c != c') sess.clients;
          Mutex.unlock sess.mutex;
@@ -545,13 +550,13 @@ let loop id st listens pipe timeout handler () =
            begin
              try
                while true do
-                 assert (U.read pipe pipe_buf 0 8 = 8);
+                 assert (Util.read pipe pipe_buf 0 8 = 8);
                  let sock : Unix.file_descr =
                    Obj.magic (Int32.to_int (Bytes.get_int32_ne pipe_buf 0))
                  in
                  let index = Int32.to_int (Bytes.get_int32_ne pipe_buf 4) in
                  let l = listens.(index) in
-                 log ~lvl:1 (fun k -> k "received accepted socket");
+                 Log.f ~lvl:1 (fun k -> k "received accepted socket");
                  add_ready (Accept (index, sock, l))
                done
              with Unix.Unix_error((EAGAIN|EWOULDBLOCK),_,_) -> ()
@@ -567,20 +572,20 @@ let loop id st listens pipe timeout handler () =
            let e = Polly.Events.((err lor hup) land evt <> empty) in
            p.pd <- TooSoon (b || e)
       in
-      log ~lvl:4 (fun k -> k "entering poll");
+      Log.f ~lvl:4 (fun k -> k "entering poll");
       try
         ignore (Polly.wait poll_list 1000 select_timeout fn);
-        log ~lvl:4 (fun k -> k "exiting poll");
+        Log.f ~lvl:4 (fun k -> k "exiting poll");
         add_ready Wait
       with e -> add_ready Wait; raise e
     with
-    | exn -> log ~lvl:1 (fun k -> k "UNEXPECTED EXCEPTION IN POLL: %s\n%!"
+    | exn -> Log.f ~lvl:1 (fun k -> k "UNEXPECTED EXCEPTION IN POLL: %s\n%!"
                                         (printexn exn));
              (*check now;*) poll () (* FIXME: which exception *)
   in
   let step v =
     try
-      log ~lvl:4 (fun k -> k "step");
+      Log.f ~lvl:4 (fun k -> k "step");
       match v with
       | Wait ->
          poll ()
@@ -596,7 +601,7 @@ let loop id st listens pipe timeout handler () =
                     ; pd = NoEvent
                     }
          in
-         log ~lvl:2 (fun k -> k "[%d] accept connection (%a)" client.id print_status st);
+         Log.f ~lvl:2 (fun k -> k "[%d] accept connection (%a)" client.id print_status st);
          Unix.set_nonblock sock;
          Unix.(setsockopt_float sock SO_RCVTIMEO timeout);
          Unix.(setsockopt_float sock SO_SNDTIMEO timeout);
@@ -616,7 +621,7 @@ let loop id st listens pipe timeout handler () =
               in
               ignore (fn ());
               client.ssl <- Some chan;
-              log ~lvl:2 (fun k -> k "[%d] ssl connection established" client.id);
+              Log.f ~lvl:2 (fun k -> k "[%d] ssl connection established" client.id);
            | None -> ()
 
          end;
@@ -630,12 +635,12 @@ let loop id st listens pipe timeout handler () =
              cl.acont <- N;
              if e then
                begin
-                 log ~lvl:3 (fun k -> k "[%d] discontinue io" cl.id);
+                 Log.f ~lvl:3 (fun k -> k "[%d] discontinue io" cl.id);
                  discontinue cont (Unix.Unix_error(EPIPE, "error_in_poll", ""))
                end
              else
                begin
-                 log ~lvl:3 (fun k -> k "[%d] continue io" cl.id);
+                 Log.f ~lvl:3 (fun k -> k "[%d] continue io" cl.id);
                  let n = fn () in
                  continue cont n;
                end
@@ -645,11 +650,11 @@ let loop id st listens pipe timeout handler () =
            begin
              dinfo.cur_client <- cl;
              cl.acont <- N;
-             log ~lvl:3 (fun k -> k "[%d] continue yield" cl.id);
+             Log.f ~lvl:3 (fun k -> k "[%d] continue yield" cl.id);
              continue cont ();
            end
     with e -> (try close e
-               with e -> log ~lvl:1 (fun k -> k "exception during close: %s"
+               with e -> Log.f ~lvl:1 (fun k -> k "exception during close: %s"
                                                 (Printexc.to_string e)))
 
   in
@@ -684,7 +689,7 @@ let loop id st listens pipe timeout handler () =
     )}
   in
   while true do
-    log ~lvl:4 (fun k -> k "step handler");
+    Log.f ~lvl:4 (fun k -> k "step handler");
     step_handler (Queue.take ready)
   done
 
@@ -738,12 +743,12 @@ let accept_loop status listens pipes maxc =
         to_close := Some lsock;
         Bytes.set_int32_ne pipe_buf 0 (Int32.of_int (Obj.magic (Obj.repr lsock)));
         Bytes.set_int32_ne pipe_buf 4 (Int32.of_int index);
-        assert(U.single_write pipe pipe_buf 0 8 = 8);
-        log ~lvl:2 (fun k -> k "send accepted socket to domain %d" did);
+        assert(Util.single_write pipe pipe_buf 0 8 = 8);
+        Log.f ~lvl:2 (fun k -> k "send accepted socket to domain %d" did);
         Atomic.incr status.nb_connections.(did);
       with
       | Full ->
-         log ~lvl:1 (fun k -> k "REJECT: TOO MANY CLIENTS");
+         Log.f ~lvl:1 (fun k -> k "REJECT: TOO MANY CLIENTS");
          let (lsock, _) = Unix.accept sock in
          Unix.close lsock
       | Unix.Unix_error((EAGAIN|EWOULDBLOCK),_,_) -> continue := false
@@ -753,7 +758,7 @@ let accept_loop status listens pipes maxc =
            | None -> ()
            | Some s -> try Unix.close s with Unix.Unix_error _ -> ()
          end;
-         log ~lvl:1 (fun k -> k "ERROR DURING ACCEPT: %s" (printexn exn))
+         Log.f ~lvl:1 (fun k -> k "ERROR DURING ACCEPT: %s" (printexn exn))
     done
   in
   let nb_socks = Array.length listens in
@@ -762,7 +767,7 @@ let accept_loop status listens pipes maxc =
     with
     | Unix.Unix_error((EAGAIN|EWOULDBLOCK),_,_) -> ()
     | exn ->
-       log (fun k -> k "ERROR DURING EPOLL_WAIT: %s" (printexn exn))
+       Log.f (fun k -> k "ERROR DURING EPOLL_WAIT: %s" (printexn exn))
   done
 
 let run ~nb_threads ~listens ~maxc ~timeout ~status handler =
@@ -792,7 +797,7 @@ let rec ssl_flush s =
 let flush c = apply c (fun _ -> ()) (fun s -> ignore (ssl_flush s))
 
 (* All close above where because of error or socket closed on client side.
-   close in Simple_httpd_server may be because there is no keep alive and
-   the server close, so we flush before closing to handle the (very rare)
-   ssl_flush exception above *)
+   close in Server may be because there is no keep alive and the server close,
+   so we flush before closing to handle the (very rare) ssl_flush exception
+   above *)
 let close c = flush c; raise ClosedByHandler

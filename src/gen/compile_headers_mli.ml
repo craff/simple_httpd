@@ -41,5 +41,5 @@ val to_string : header -> string
 exception Invalid_header of string
 exception End_of_headers
 
-val parse : Simple_httpd_input.t -> header
+val parse : Input.t -> header
 "

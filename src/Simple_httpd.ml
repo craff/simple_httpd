@@ -11,30 +11,44 @@
     it can handle hundreds of request simultaneously.
 *)
 
-module Input = Simple_httpd_input
+module Util = Util
 
-module Output = Simple_httpd_output
+module Input = Input
 
-include Simple_httpd_server
+module Output = Output
 
-let yield = Simple_httpd_domain.yield
+module Address = Address
 
-(*let schedule = Simple_httpd_domain.schedule*)
+module Async = Async
 
-let sleep = Simple_httpd_domain.sleep
+module type Io = Async.Io
 
-module Io = Simple_httpd_domain.Io
+module Io = Async.Io
 
-let schedule_io = Simple_httpd_domain.schedule_io
+module Log = Async.Log
 
-module Mutex = Simple_httpd_domain.Mutex
+module Mutex = Async.Mutex
 
-module Util = Simple_httpd_util
+module Response_code = Response_code
 
-module Dir = Simple_httpd_dir
+module Method = Method
 
-module Html = Simple_httpd_html
+module Headers = Headers
 
-module Domain = Simple_httpd_domain
+module Cookies = Cookies
 
-module Session = Simple_httpd_session
+module Request = Request
+
+module Response = Response
+
+module Route = Route
+
+module Session = Session
+
+module Dir = Dir
+
+module Html = Html
+
+module Server = Server
+
+module Host = Host

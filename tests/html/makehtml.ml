@@ -1,4 +1,4 @@
-open Simple_httpd_html
+open Simple_httpd.Html
 let spf = Printf.sprintf
 
 let list_init n f =
@@ -32,7 +32,7 @@ let t2() =
   ]
 
 let render t =
-  print_endline @@ to_string_top @@ t
+  print_endline @@ to_string ~top:true @@ t
 
 let () =
   match Sys.argv.(1) with

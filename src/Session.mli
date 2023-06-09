@@ -1,4 +1,5 @@
-open Simple_httpd_domain
+type session = Async.session
+type session_data = Async.session_data
 
 (** Managment of sessions using cookies *)
 
@@ -6,7 +7,7 @@ val check : ?session_life_time:float ->
             ?init:(unit -> session_data) ->
             ?check:(session -> bool) ->
             ?error:(int*string) ->
-            Simple_httpd_server.filter
+            Route.filter
 
 val do_session_data : (session_data -> 'a) -> session -> 'a
 

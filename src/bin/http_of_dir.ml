@@ -1,10 +1,9 @@
-module S = Simple_httpd
-module D = S.Dir
+open Simple_httpd
+module D = Dir
 module Pf = Printf
 
 let send_status status _req =
-  let open Simple_httpd_domain in
-  S.Response.make_string (string_status status ^ "\n")
+  Response.make_string (Async.string_status status ^ "\n")
 
 let parse_size s : int =
   try Scanf.sscanf s "%dM" (fun n -> n * 1_024 * 1_024)
@@ -50,7 +49,7 @@ let _ =
       "--cache-zlib", Unit (fun () -> config.cache <- deflate_cache), " cache compressed files in memory";
       "--ssl", Tuple[Set_string ssl_cert; Set_string ssl_priv], " give ssl certificate and private key";
       "--dir", Set_string dir, " directory to serve (default: \".\")";
-      "--log", Int S.set_log_lvl, " log level";
+      "--log", Int Log.set_log_lvl, " log level";
       "--log-folder", Set_string log_folder, " log folder";
       "--log-basename", Set_string log_basename, " log basename";
       "--log-perm", Set_int log_perm, " log permission";
@@ -85,7 +84,7 @@ let ssl =
 
 let _ =
   if !log_folder <> "" then
-    S.set_log_folder ~basename:!log_basename ~perm:!log_perm !log_folder (!t + 1)
+    Log.set_log_folder ~basename:!log_basename ~perm:!log_perm !log_folder (!t + 1)
 
 open Host
 
@@ -96,8 +95,8 @@ module Main = struct
   module Init(I:HostInit) = struct
     open I
     let _ = add_dir_path ~config ~prefix:"" !dir
-    let _ = add_route_handler S.Route.(exact "status" @/ return)
-                 (send_status (S.status server));
+    let _ = add_route_handler Route.(exact "status" @/ return)
+                 (send_status (Server.status server));
   end
 end
 

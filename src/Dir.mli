@@ -92,11 +92,11 @@ val config :
 val add_dir_path :
   ?addresses: Address.t list ->
   ?hostnames: string list ->
-  ?filter:Simple_httpd_server.filter ->
+  ?filter:Route.filter ->
   ?prefix:string ->
   ?config:config ->
   dir:string ->
-  Simple_httpd_server.t -> unit
+  Server.t -> unit
 
 (** Virtual file system.
 
@@ -130,7 +130,7 @@ module type VFS = sig
   val read_file_content : string -> string
   (** Read content of a file *)
 
-  val read_file_stream : string -> Simple_httpd_input.t
+  val read_file_stream : string -> Input.t
   (** Read content of a file as a stream *)
 
   val read_file_fd : string -> int * Unix.file_descr
@@ -151,11 +151,11 @@ val vfs_of_dir : string -> (module VFS)
 val add_vfs :
   ?addresses: Address.t list ->
   ?hostnames: string list ->
-  ?filter:Simple_httpd_server.filter ->
+  ?filter:Route.filter ->
   ?prefix:string ->
   ?config:config ->
   vfs:(module VFS) ->
-  Simple_httpd_server.t -> unit
+  Server.t -> unit
 (** Similar to {!add_dir_path} but using a virtual file system instead.
 *)
 
