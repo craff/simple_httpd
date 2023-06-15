@@ -2,38 +2,54 @@
 open Simple_httpd
 module H = Headers
 
-let now_ = Unix.gettimeofday
+let now = Unix.gettimeofday
 
-(* util: a little middleware collecting statistics *)
+(** add a missing [add_float] function to Atomic *)
+module Atomic = struct
+  include Atomic
+  let add_float a x =
+    let fn () =
+      let v = Atomic.get a in
+      Atomic.compare_and_set a v (v +. x)
+    in
+    while not (fn ()) do () done;
+end
+
+(** [Simple_httpd] provides filter for request, that can be used to collecting
+    statistics. Currently, we can not cound the time to output the response. *)
 let filter_stat () : Route.filter * (unit -> string) =
-  let n_req = ref 0 in
-  let total_time_ = ref 0. in
-  let parse_time_ = ref 0. in
-  let build_time_ = ref 0. in
+  (* We must use atomic for this to work with domains! *)
+  let nb_req     = Atomic.make 0  in
+  let total_time = Atomic.make 0. in
+  let parse_time = Atomic.make 0. in
+  let build_time = Atomic.make 0. in
 
-  let m req =
-    incr n_req;
+  let measure req =
+    Atomic.incr nb_req;
     let t1 = Request.start_time req in
-    let t2 = now_ () in
+    let t2 = now () in
     (req, fun response ->
-        let t3 = now_ () in
-        total_time_ := !total_time_ +. (t3 -. t1);
-        parse_time_ := !parse_time_ +. (t2 -. t1);
-        build_time_ := !build_time_ +. (t3 -. t2);
+        let t3 = now () in
+        Atomic.add_float total_time (t3 -. t1);
+        Atomic.add_float parse_time (t2 -. t1);
+        Atomic.add_float build_time (t3 -. t2);
         response)
   and get_stat () =
+    let nb = Atomic.get nb_req in
     Printf.sprintf "%d requests (average response time: %.3fms = %.3fms + %.3fms)"
-      !n_req (!total_time_ /. float !n_req *. 1e3)
-             (!parse_time_ /. float !n_req *. 1e3)
-             (!build_time_ /. float !n_req *. 1e3)
+      nb (Atomic.get total_time /. float nb *. 1e3)
+         (Atomic.get parse_time /. float nb *. 1e3)
+         (Atomic.get build_time /. float nb *. 1e3)
   in
-  m, get_stat
+  (measure, get_stat)
 
+(** default address, port and maximum number of connections *)
+let addr = ref "127.0.0.1"
+let port = ref 8080
+let j = ref 32
 
-let () =
-  let addr = ref "127.0.0.1" in
-  let port = ref 8080 in
-  let j = ref 32 in
+(** parse command line option *)
+let _ =
   Arg.parse (Arg.align [
       "--addr", Arg.Set_string addr, " set address";
       "-a", Arg.Set_string addr, " set address";
@@ -41,22 +57,29 @@ let () =
       "-p", Arg.Set_int port, " set port";
       "--log", Arg.Int (fun n -> Log.set_log_lvl n), " set debug lvl";
       "-j", Arg.Set_int j, " maximum number of connections";
-    ]) (fun _ -> raise (Arg.Bad "")) "echo [option]*";
+    ]) (fun _ -> raise (Arg.Bad "")) "echo [option]*"
 
-  let listens = [Address.make ~addr:!addr ~port:!port ()] in
-  let server = Server.create ~listens ~max_connections:!j () in
+(** Server initialisation *)
+let listens = [Address.make ~addr:!addr ~port:!port ()]
+let server = Server.create ~listens ~max_connections:!j ()
+
+(** Compose the above filter with the compression filter
+    provided by [Simple_httpd_camlzip] *)
+let filter, get_stats =
   let filter_stat, get_stats = filter_stat () in
   let filter_zip =
-    Simple_httpd_camlzip.filter ~compress_above:1024 ~buf_size:(16*1024) ()
-  in
-  let filter = Route.compose_cross filter_zip filter_stat in
+    Simple_httpd_camlzip.filter ~compress_above:1024 ~buf_size:(16*1024) () in
+  (Route.compose_cross filter_zip filter_stat, get_stats)
 
-  (* say hello *)
+(** Add a route answering 'Hello' *)
+let _ =
   Server.add_route_handler ~meth:GET server ~filter
     Route.(exact "hello" @/ string @/ return)
-    (fun name _req -> Response.make_string ("hello " ^name ^"!\n"));
+    (fun name _req -> Response.make_string ("hello " ^name ^"!\n"))
 
-  (* compressed file access *)
+(** Add a route sending a compressed stream for the given file in the current
+    directory *)
+let _ =
   Server.add_route_handler ~meth:GET server
     Route.(exact "zcat" @/ string @/ return)
     (fun path _req ->
@@ -73,20 +96,22 @@ let () =
           with _ -> []
         in
         Response.make_stream ~headers:mime_type str
-      );
+      )
 
-  (* echo request *)
+(** Add an echo request *)
+let _ =
   Server.add_route_handler server
     Route.(exact "echo" @/ return)
     (fun req ->
-        let q =
-          Request.query req |> List.map (fun (k,v) -> Printf.sprintf "%S = %S" k v)
-          |> String.concat ";"
-        in
-        Response.make_string
-          (Format.asprintf "echo:@ %a@ (query: %s)@." Request.pp req q));
+      let q =
+        Request.query req |> List.map (fun (k,v) -> Printf.sprintf "%S = %S" k v)
+        |> String.concat ";"
+      in
+      Response.make_string
+        (Format.asprintf "echo:@ %a@ (query: %s)@." Request.pp req q))
 
-  (* file upload *)
+(** Add file upload *)
+let _ =
   Server.add_route_handler_stream ~meth:PUT server
     Route.(exact "upload" @/ string @/ return)
     (fun path req ->
@@ -99,23 +124,27 @@ let () =
           Response.make_string "uploaded file"
         with e ->
           Response.fail ~code:500 "couldn't upload file: %s" (Printexc.to_string e)
-      );
+      )
 
-  (* stats *)
+(** Access to the statistics *)
+let _ =
   Server.add_route_handler server Route.(exact "stats" @/ return)
     (fun _req ->
        let stats = get_stats() in
        Response.make_string stats
-    );
+    )
 
-  (* VFS *)
+(** Add a virtual file system VFS, produced by [simple-httpd-vfs-pack] from
+    an actual folger *)
+let _ =
   Dir.add_vfs server
     ~config:(Dir.config ~download:true
                ~dir_behavior:Dir.Index_or_lists ())
-    ~vfs:Vfs.vfs ~prefix:"vfs";
+    ~vfs:Vfs.vfs ~prefix:"vfs"
 
-  (* main page *)
-  Server.add_route_handler server Route.(return)
+(** Main pagen using the Html module*)
+let _ =
+  Server.add_route_handler server Route.return
     (fun _req ->
        let open Html in
        let h = html [] [
@@ -134,10 +163,14 @@ let () =
            ]
          ] in
        let s = to_string ~top:true h in
-       Response.make_string ~headers:[H.Content_Type, "text/html"] s);
+       Response.make_string ~headers:[H.Content_Type, "text/html"] s)
 
+(** Output a message before starting the server *)
+let _ =
   Array.iter (fun l ->
     let open Address in
-    Printf.printf "listening on http://%s:%d\n%!" l.addr l.port) (Server.listens server);
+    Printf.printf "listening on http://%s:%d\n%!" l.addr l.port) (Server.listens server)
 
+(** Start the server *)
+let _ =
   Server.run server

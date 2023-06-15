@@ -21,8 +21,6 @@ module Address = Address
 
 module Async = Async
 
-module type Io = Async.Io
-
 module Io = Async.Io
 
 module Log = Async.Log

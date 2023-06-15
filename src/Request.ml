@@ -229,8 +229,13 @@ let read_body_full ~buf (self:Input.t t) : string t =
   | e -> bad_reqf 500 "failed to read body: %s" (Async.printexn e)
 
 (*$R
+  let module Request = Simple_httpd__Request in
+  let module Async   = Simple_httpd__Async in
+  let module Input   = Simple_httpd__Input in
+  let module Output  = Simple_httpd__Output in
+  let module Headers = Simple_httpd__Headers in
   let q = "GET hello HTTP/1.1\r\nHost: coucou\r\nContent-Length: 11\r\n\r\nsalutationsSOMEJUNK" in
-  let str = Simple_httpd.Input.of_string q in
+  let str = Input.of_string q in
   let buf = Buffer.create 256 in
   let r = Request.parse_req_start ~buf ~client:Async.fake_client
              str in

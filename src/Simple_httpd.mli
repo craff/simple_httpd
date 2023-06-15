@@ -2,10 +2,7 @@
 
 (** Some tools, like url encoding *)
 module Util : sig
-  (** {1 Some utils for writing web servers}
-
-      @since 0.2
-   *)
+  (** {1 Some utils for writing web servers} *)
 
   val percent_encode : ?skip:(char -> bool) -> string -> string
   (** Encode the string into a valid path following
@@ -20,187 +17,26 @@ module Util : sig
 
   val pp_date : Format.formatter -> Unix.tm -> unit
   (** Print date (given in GMT) in the expected format for http (for instance
-      for expiration date of cookies.
-      @since 0.12
-   *)
+      for expiration date of cookies. *)
 
   val split_query : string -> string * string
-  (** Split a path between the path and the query
-      @since 0.5 *)
+  (** Split a path between the path and the query. *)
 
   val split_on_slash : string -> string list
-  (** Split a string on ['/'], remove the trailing ['/'] if any.
-      @since 0.6 *)
+  (** Split a string on ['/'], remove the trailing ['/'] if any. *)
 
   val get_non_query_path : string -> string
-  (** get the part of the path that is not the query parameters.
-      @since 0.5 *)
+  (** get the part of the path that is not the query parameters. *)
 
   val get_query : string -> string
-  (** Obtain the query part of a path.
-      @since 0.4 *)
+  (** Obtain the query part of a path. *)
 
   val parse_query : string -> ((string*string) list, string) result
   (** Parse a query as a list of ['&'] or [';'] separated [key=value] pairs.
-      The order might not be preserved.
-      @since 0.3
-   *)
+      The order might not be preserved.  *)
 end
 
-module Input : sig
-  (** Input streams are used to represent a series of bytes that can arrive
-    progressively.  For example, an uploaded file will be sent as a series of
-    chunks and also for output streams. *)
-
-  type hidden
-  type t = {
-      mutable bs: bytes;
-      (** The bytes *)
-
-      mutable off : int;
-      (** Beginning of valid slice in {!bs} *)
-
-      mutable len : int;
-      (** Length of valid slice in {!bs}. If [len = 0] after
-          a call to {!fill_buf}, then the stream is finished. *)
-
-      fill_buf: unit -> unit;
-      (** See the current slice of the internal buffer as [bytes, i, len],
-          where the slice is [bytes[i] .. [bytes[i+len-1]]].
-          Can block to refill the buffer if there is currently no content.
-          If [len=0] then there is no more data. *)
-
-      consume: int -> unit;
-      (** Consume [n] bytes from the buffer.
-          This should only be called with [n <= len]. *)
-
-      close: unit -> unit;
-      (** Close the stream. *)
-
-      _rest: hidden;
-      (** Use {!make} to build a stream. *)
-    }
-  (** A buffered stream, with a view into the current buffer (or refill if empty),
-      and a function to consume [n] bytes. *)
-
-
-  val close : t -> unit
-  (** Close stream *)
-
-  val empty : t
-  (** Stream with 0 bytes inside *)
-
-  val make :
-    ?bs:bytes ->
-    ?close:(t -> unit) ->
-    consume:(t -> int -> unit) ->
-    fill:(t -> unit) ->
-    unit -> t
-  (** [make ~fill ()] creates a byte stream.
-      @param fill is used to refill the buffer, and is called initially.
-      @param close optional closing.
-      @param init_size size of the buffer.
-   *)
-
-  val of_chan : ?buf_size:int -> in_channel -> t
-  (** Make a buffered stream from the given channel. *)
-
-  val of_fd : ?buf_size:int -> Unix.file_descr -> t
-  (** Make a buffered stream from the given file descriptor. *)
-
-  val of_client : ?buf_size:int -> Async.client -> t
-  (** Make a buffered stream from the given http client. *)
-
-  val of_client_fd : ?buf_size:int -> Async.Io.t -> t
-  (** Allow a to Make a buffered stream from the given descriptor.
-      The call will be scheduled if read blocks. *)
-
-  val of_bytes : ?i:int -> ?len:int -> bytes -> t
-  (** A stream that just returns the slice of bytes starting from [i]
-      and of length [len]. *)
-
-  val of_string : string -> t
-
-  val iter : (bytes -> int -> int -> unit) -> t -> unit
-  (** Iterate on the chunks of the stream. *)
-
-  val to_chan : out_channel -> t -> unit
-  (** Write the stream to the channel. *)
-
-  val with_file : ?buf_size:int -> string -> (t -> 'a) -> 'a
-  (** Open a file with given name, and obtain an input stream
-      on its content. When the function returns, the stream (and file) are closed. *)
-
-  val read_char : t -> char
-
-  val read_line : buf:Buffer.t -> t -> string
-  (** Read a line from the stream.
-      @param buf a buffer to (re)use. Its content will be cleared. *)
-
-  val read_all : buf:Buffer.t -> t -> string
-  (** Read the whole stream into a string.
-      @param buf a buffer to (re)use. Its content will be cleared. *)
-
-  val read_until : buf:Buffer.t -> target:string -> t -> unit
-  (** Advance in the stream until in meet the given target.
-      @param buf a buffer to (re)use. Its content will be cleared. *)
-
-  val read_exactly :
-    close_rec:bool -> size:int -> too_short:(int -> unit) ->
-    t -> t
-  (** [read_exactly ~size bs] returns a new stream that reads exactly
-      [size] bytes from [bs], and then closes.
-      @param close_rec if true, closing the resulting stream also closes
-        [bs]
-        @param too_short is called if [bs] closes with still [n] bytes remaining
-   *)
-end
-
-module Output : sig
-  (** Module holding the response stream for a client request. We cannot use
-      out_channel, because we need our own write function. You should not need
-      to use it directly. *)
-
-  (** Type of output stream *)
-  type t
-
-  (** Flush the output *)
-  val flush : t -> unit
-
-  (** Close the channel connection *)
-  val close : t -> unit
-
-  (** Add a charactere *)
-
-  val add_char : t -> char -> unit
-
-  (** Add an integer in decimal representation *)
-  val add_decimal : t -> int -> unit
-
-  (** Add an integer in hexadecimal representation *)
-  val add_hexa : t -> int -> unit
-
-  (** Add a string *)
-  val add_string : t -> string -> unit
-
-  (** Add a sybstring *)
-  val add_substring : t -> string -> int -> int -> unit
-
-  (** Add a byte sequence *)
-  val add_bytes : t -> bytes -> unit
-
-  (** Add a subbyte sequance *)
-  val add_subbytes : t -> bytes -> int -> int -> unit
-
-  (** Like [Printf.printf] *)
-  val printf : t -> ('a, unit, string, unit) format4 -> 'a
-
-  val sendfile: t -> int -> Unix.file_descr -> unit
-  (** Try to send n bytes from the given file descriptor using sendfile linux
-      system call. Note: the descriptor can be use by several thread as its
-      internal offset is not updated. *)
-end
-
+(** Module for declaring address and port to listen to *)
 module Address : sig
   (** Module for declaring address and port to listen to *)
 
@@ -222,6 +58,7 @@ module Address : sig
              ?reuse:bool -> unit -> t
 end
 
+(** Module dealing with the asynchronous treatment of clients by each domain *)
 module Async : sig
   (** {1 Cooperative threading} *)
 
@@ -279,18 +116,6 @@ module Async : sig
   val flush : client -> unit
   (** Flushes clients output *)
 
-  (** Module with function similar to Unix.read and Unix.single_write
-    but that will perform scheduling instead of blocking. This can be used to
-    access your database. It has been tested with OCaml's bindings to [libpq]. *)
-  module type Io = sig
-    type t
-
-    val create : Unix.file_descr -> t
-    val close : t -> unit
-    val read : t -> Bytes.t -> int -> int -> int
-    val write : t -> Bytes.t -> int -> int -> int
-  end
-
   (** [schedule_io sock action] should be called when a non blocking read/write
       operation would have blocked. When read become possible, [action ()] will
       be called.  The return value should be (if possible) the number of bytes
@@ -302,25 +127,153 @@ module Async : sig
       blocking mode. For just reading a socket, use the Io module above.
    *)
   val schedule_io : Unix.file_descr -> (unit -> int) -> int
-
-  (**/**)
-  (** internal use for qtest **)
-  val fake_client : client
-  (**/**)
 end
 
-module type Io = Async.Io
+(** Module with function similar to Unix.read and Unix.single_write
+    but that will perform scheduling instead of blocking. This can be used to
+    access your database. It has been tested with OCaml's bindings to [libpq]. *)
+module Io : sig
+    type t
 
-module Io : Io
+    val create : Unix.file_descr -> t
+    val close : t -> unit
+    val read : t -> Bytes.t -> int -> int -> int
+    val write : t -> Bytes.t -> int -> int -> int
+  end
 
+(** Representation of input streams, can be generated from string, file, ... *)
+module Input : sig
+  (** Input streams are used to represent a series of bytes that can arrive
+    progressively.  For example, an uploaded file will be sent as a series of
+    chunks and also for output streams. *)
+
+  type hidden
+  type t = {
+      mutable bs: bytes;
+      (** The bytes *)
+
+      mutable off : int;
+      (** Beginning of valid slice in {!bs} *)
+
+      mutable len : int;
+      (** Length of valid slice in {!bs}. If [len = 0] after
+          a call to {!fill_buf}, then the stream is finished. *)
+
+      fill_buf: unit -> unit;
+      (** See the current slice of the internal buffer as [bytes, i, len],
+          where the slice is [bytes[i] .. [bytes[i+len-1]]].
+          Can block to refill the buffer if there is currently no content.
+          If [len=0] then there is no more data. *)
+
+      consume: int -> unit;
+      (** Consume [n] bytes from the buffer.
+          This should only be called with [n <= len]. *)
+
+      close: unit -> unit;
+      (** Close the stream. *)
+
+      _rest: hidden;
+      (** Use {!make} to build a stream. *)
+    }
+  (** A buffered stream, with a view into the current buffer (or refill if empty),
+      and a function to consume [n] bytes. *)
+
+  val close : t -> unit
+  (** Close stream *)
+
+  val empty : t
+  (** Stream with 0 bytes inside *)
+
+  val make :
+    ?bs:bytes ->
+    ?close:(t -> unit) ->
+    consume:(t -> int -> unit) ->
+    fill:(t -> unit) ->
+    unit -> t
+  (** [make ~fill ()] creates a byte stream.
+      @param fill is used to refill the buffer, and is called initially.
+      @param close optional closing.
+      @param init_size size of the buffer.
+   *)
+
+  val of_chan : ?buf_size:int -> in_channel -> t
+  (** Make a buffered stream from the given channel. *)
+
+  val of_fd : ?buf_size:int -> Unix.file_descr -> t
+  (** Make a buffered stream from the given file descriptor. *)
+
+  val of_client : ?buf_size:int -> Async.client -> t
+  (** Make a buffered stream from the given http client. *)
+
+  val of_client_fd : ?buf_size:int -> Io.t -> t
+  (** Allow a to Make a buffered stream from the given descriptor.
+      The call will be scheduled if read blocks. *)
+
+  val of_bytes : ?i:int -> ?len:int -> bytes -> t
+  (** A stream that just returns the slice of bytes starting from [i]
+      and of length [len]. *)
+
+  val of_string : string -> t
+
+  val iter : (bytes -> int -> int -> unit) -> t -> unit
+  (** Iterate on the chunks of the stream. *)
+
+  val to_chan : out_channel -> t -> unit
+  (** Write the stream to the channel. *)
+
+  val with_file : ?buf_size:int -> string -> (t -> 'a) -> 'a
+  (** Open a file with given name, and obtain an input stream
+      on its content. When the function returns, the stream (and file) are closed. *)
+
+  val read_char : t -> char
+
+  val read_line : buf:Buffer.t -> t -> string
+  (** Read a line from the stream.
+      @param buf a buffer to (re)use. Its content will be cleared. *)
+
+  val read_all : buf:Buffer.t -> t -> string
+  (** Read the whole stream into a string.
+      @param buf a buffer to (re)use. Its content will be cleared. *)
+
+  val read_until : buf:Buffer.t -> target:string -> t -> unit
+  (** Advance in the stream until in meet the given target.
+      @param buf a buffer to (re)use. Its content will be cleared. *)
+
+  val read_exactly :
+    close_rec:bool -> size:int -> too_short:(int -> unit) ->
+    t -> t
+  (** [read_exactly ~size bs] returns a new stream that reads exactly
+      [size] bytes from [bs], and then closes.
+      @param close_rec if true, closing the resulting stream also closes
+        [bs]
+        @param too_short is called if [bs] closes with still [n] bytes remaining
+   *)
+end
+
+(** Module providing logging facilities *)
 module Log : sig
   (** Server Logging facility *)
+
+  (** Currently there is a log level, you can set with this function.
+      The default level is 1 and produces only errors (0 is totally silent).
+      TODO: We plan a more explicit notion of logs *)
   val set_log_lvl : int -> unit
+
+  (** With asynchronous communication, log can be mixed between domain.
+      To address this issue, each domain will use a different file inside
+      a provided log folder using [set_log_folder]. Logs contains the unix time
+      and can be reordered if needed
+      TODO: We plan to write tool to extract log information associated to
+      a given client/session/request/... *)
   val set_log_folder : ?basename:string -> ?perm:int -> string -> int -> unit
+
+  (** The log function. It must be used as
+      [ Log.f ~lvl:n (fun k -> k fmt ...) ] using [ Printf ] format. *)
   val f : ?lvl:int ->
           ((('a, out_channel, unit, unit) format4 -> 'a) -> unit) -> unit
 end
 
+(** Module providing Mutex thats works with our [Async] module above *)
 module Mutex : sig
   (** Simple_httpd notion of mutex. You must be careful with server wide mutex:
       a DoS attack could try to hold such a mutex. A mutex per session may be a good
@@ -339,11 +292,12 @@ module Mutex : sig
   val unlock : t -> unit
 end
 
+(** Module defining HTML response codes *)
 module Response_code : sig
   (** {1 Response Codes}
 
     Response code allows client to know if a request failed and give a reason.
-    This module is not complete (yet). *)
+    TODO: This module is not complete (yet). *)
 
   type t = int
   (** A standard HTTP code.
@@ -364,6 +318,7 @@ module Response_code : sig
   val bad_reqf : t -> ('a, unit, string, 'b) format4 -> 'a
 end
 
+(** Module defining HTML methods (GET,PUT,...) *)
 module Method : sig
   (** {1 Methods}
 
@@ -385,6 +340,7 @@ module Method : sig
   val of_string : string -> t
 end
 
+(** Module to hanbdle request and response headers *)
 module Headers : sig
   (** {1 Headers}
 
@@ -430,6 +386,7 @@ module Headers : sig
   (** Pretty print the headers. *)
 end
 
+(** Module to handle cookies *)
 module Cookies : sig
   (** {1 Cookies}
 
@@ -462,6 +419,7 @@ module Cookies : sig
   val delete_all : t -> t
 end
 
+(** Module handling HTML requests *)
 module Request : sig
   (** {1 Requests}
 
@@ -516,7 +474,7 @@ module Request : sig
   (** Request client *)
 
   val query : _ t -> (string*string) list
-  (** Decode the query part of the {!field-path} field *)
+  (** Decode the query part of an url *)
 
   val start_time : _ t -> float
   (** time stamp (from [Unix.gettimeofday]) after parsing the first line of
@@ -531,15 +489,9 @@ module Request : sig
 
   val read_body_full : buf:Buffer.t -> Input.t t -> string t
   (** Read the whole body into a string. *)
-
-  (**/**)
-  (** internals, for qtest *)
-  val parse_req_start :  client:Async.client -> buf:Buffer.t ->
-                         Input.t -> Input.t t option
-  val parse_body : buf:Buffer.t -> Input.t t -> Input.t t
-  (**/**)
 end
 
+(** Module handling HTML responses *)
 module Response : sig
   (** {1 Responses}
 
@@ -660,6 +612,7 @@ module Response : sig
   (** Pretty print the response. *)
 end
 
+(** Module defining Routes to select which function will answer a request *)
 module Route : sig
   (** {1 Routing}
 
@@ -703,11 +656,11 @@ module Route : sig
 
   (** Type of request filters. These filters may transform both the request and
       the response. Several method may share filter passed as optional parameters
-      to function like {!add_route_handler}.
+      to function like {!Server.add_route_handler}.
 
       The transformation of the response may depend on the request, Hence the
       type. For instance the filter provided by the optional module
-      {{:../../simple_httpd_camlzip/Simple_httpd_camlzip/index.html}Simple_httpd_camlzip} uses this to compress the
+      {{:../../simple_httpd_caml*zip/Simple_httpd_camlzip/index.html}Simple_httpd_camlzip} uses this to compress the
       response only if [deflate] is allowed using the header named
     {!Headers.Accept_Encoding}. *)
 
@@ -732,6 +685,7 @@ module Route : sig
       the response will be passed first to [f1], then to [f2] **)
 end
 
+(** Module to handle session data *)
 module Session : sig
   (** This module allows to mange session which are common to several client
       and can survive a deconnection of the clients. This do not provide
@@ -757,6 +711,7 @@ module Session : sig
   val delete_session : session -> unit
 end
 
+(** Some HTML combinators *)
 module Html : sig
   (** HTML combinators.
 
@@ -782,6 +737,7 @@ module Html : sig
   val to_stream : elt -> Input.t
 end
 
+(** Module to create a server and run it *)
 module Server : sig
   (** {1 Main Server type} *)
 
@@ -935,6 +891,7 @@ module Server : sig
 
 end
 
+(** Module to server directory structure (real of virtual) *)
 module Dir : sig
   (** Serving static content from directories
 
@@ -1115,6 +1072,7 @@ module Dir : sig
   end
 end
 
+(** Hight level module to write server handling multiple hosts/addresses *)
 module Host : sig
   open Server
   open Dir
