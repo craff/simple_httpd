@@ -17,8 +17,11 @@ list directory &quot;Embedded_fs&quot;
 </head>
 <body>
 <h2>
-Index of &quot;&quot;
+Index of &quot;vfs/&quot;
 </h2>
+<a href="/.">
+(parent directory)
+</a>
 <ul>
 <li>
 <a href="/vfs/a.txt">
