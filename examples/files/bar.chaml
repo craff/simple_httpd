@@ -1,0 +1,39 @@
+<ML>
+  open Simple_httpd
+  type Async.session_data += Count of int
+(*  let filter = Some (fun req -> Session.check ~init:(fun () -> Count 0) req)*)
+</ML>
+<!DOCTYPE html>
+<html>
+  <head>
+
+  </head>
+  <body>
+
+    <h1>dynamic hello!</h1>
+    <ul>
+      <li> item 1 </li>
+      <li> item 2 </li>
+      <li> item 3 </li>
+      <li> item 4 </li>
+      <li> views: <ML>
+	  (*let session = Session.get_session request
+	  let n = match Session.get_session_data session with
+	    | Count n -> n
+	    | _ -> assert false
+	  let _ = echo (string_of_int n)
+	  let _ = Session.set_session_data session (Count(n+1))*)
+	</ML>
+      </li>
+    </ul>
+
+    <a href="."> escape from this file </a>
+
+    <br>
+
+    request: <ML>
+      printf "%a" Simple_httpd.Request.pp request
+    </ML>
+
+  </body>
+</html>

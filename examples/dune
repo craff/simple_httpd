@@ -12,7 +12,7 @@
 (executable
   (name echo)
   (flags :standard -warn-error -a+8)
-  (modules globals echo vfs)
+  (modules echo vfs)
   (libraries simple_httpd))
 
 (executable
