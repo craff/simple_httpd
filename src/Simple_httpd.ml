@@ -35,6 +35,8 @@ module Headers = Headers
 
 module Cookies = Cookies
 
+module Camlzip = Camlzip
+
 module Request = Request
 
 module Response = Response

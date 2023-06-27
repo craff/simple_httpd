@@ -21,27 +21,6 @@ type dir_behavior =
   | Forbidden
   (** Forbid access to directory. This is suited for serving assets, for example. *)
 
-(** Static files can be cached/served in various ways *)
-type cache = NoCache  (** No cache: serve directly the file from its location *)
-           | MemCache (** Cache a string in memory *)
-           | CompressCache of string * (string -> string)
-           (** Cache a compressed string in memory. The first parameter
-               must be the Transfer-Encoding name of the compression algorithme
-               and the second argument is the compression function *)
-           | SendFile
-           (** Require to use sendfile linux system call. Faster, but
-               useless with SSL. *)
-           | SendFileCache
-           (** Cache a file descriptor to be used with sendfile linux system
-               call. It you indent to serve thousand of simultaneous
-               connection, [SendFile] or [NoCache] will require one socket per
-               connection while [SendFileCache] will use one socket per static
-               file. *)
-
-(** type of the function deciding which cache policy to use *)
-type choose_cache = size:int option -> mime:string -> accept_encoding:string list
-                    -> cache
-
 (** configuration for static file handlers. This might get
     more fields over time. *)
 type config = {
@@ -60,9 +39,6 @@ type config = {
   mutable max_upload_size: int;
   (** If {!upload} is true, this is the maximum size in bytes for
       uploaded files. *)
-
-  mutable cache: choose_cache;
-  (** Cache download of file. *)
 }
 
 (** default configuration: [
@@ -71,7 +47,6 @@ type config = {
   ; delete=false
   ; upload=false
   ; max_upload_size = 10 * 1024 * 1024
-  ; cache=false
   }] *)
 val default_config : unit -> config
 
@@ -81,7 +56,6 @@ val config :
   ?delete:bool ->
   ?upload:bool ->
   ?max_upload_size:int ->
-  ?cache:choose_cache ->
   unit ->
   config
 (** Build a config from {!default_config}. *)
@@ -92,11 +66,29 @@ val config :
 val add_dir_path :
   ?addresses: Address.t list ->
   ?hostnames: string list ->
-  ?filter:Route.filter ->
+  ?filter:Input.t Route.filter ->
   ?prefix:string ->
   ?config:config ->
   dir:string ->
   Server.t -> unit
+
+type dynamic = { input : string Request.t -> Input.t
+               ; filter : 'a. 'a Route.filter option }
+type 'a content =
+  | String of string * string option
+  | Path   of string * (string * int) option
+  | Dynamic of dynamic
+  | Stream of Input.t
+  | Fd of Unix.file_descr
+  | Dir of 'a
+
+type file_info =
+  FI : { content : 'a content
+  ; size : int option
+  ; dsize : int option
+  ; mtime : float option
+  ; headers : Headers.t
+  } -> file_info
 
 (** Virtual file system.
 
@@ -106,7 +98,7 @@ val add_dir_path :
     Remark: the diffrence between VFS and cache is that caches are updated
     when the modification time of the file changes. Thus, VFS do not do any
     system call.
-*)
+ *)
 module type VFS = sig
   val descr : string
   (** Description of the VFS *)
@@ -127,20 +119,8 @@ module type VFS = sig
   val create : string -> (bytes -> int -> int -> unit) * (unit -> unit)
   (** Create a file and obtain a pair [write, close] *)
 
-  val read_file_content : string -> string
+  val read_file : string -> file_info
   (** Read content of a file *)
-
-  val read_file_stream : string -> Input.t
-  (** Read content of a file as a stream *)
-
-  val read_file_fd : string -> int * Unix.file_descr
-  (** Read content of a file as a size and file_descriptor *)
-
-  val file_size : string -> int option
-  (** File size, e.g. using "stat" *)
-
-  val file_mtime : string -> float option
-  (** File modification time, e.g. using "stat" *)
 end
 
 val vfs_of_dir : string -> (module VFS)
@@ -151,7 +131,7 @@ val vfs_of_dir : string -> (module VFS)
 val add_vfs :
   ?addresses: Address.t list ->
   ?hostnames: string list ->
-  ?filter:Route.filter ->
+  ?filter:Input.t Route.filter ->
   ?prefix:string ->
   ?config:config ->
   vfs:(module VFS) ->
@@ -167,12 +147,18 @@ module Embedded_fs : sig
   type t
   (** The pseudo-filesystem *)
 
-  val create : ?mtime:float -> unit -> t
+  val create : ?top:string -> ?mtime:float -> unit -> t
 
-  val add_file : ?mtime:float -> t -> path:string -> string -> unit
+  val add_file : t -> path:string -> ?mtime:float -> headers:Headers.t -> string -> unit
   (** Add file to the virtual file system.
       @raise Invalid_argument if the path contains '..' or if it tries to
       make a directory out of an existing path that is a file. *)
+
+  val add_dynamic : t -> path:string ->
+                    ?mtime: float -> headers:Headers.t -> dynamic -> unit
+
+  val add_path : t -> path:string ->
+                 ?mtime:float -> headers:Headers.t -> ?deflate:string -> string -> unit
 
   val to_vfs : t -> (module VFS)
 end

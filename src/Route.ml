@@ -158,10 +158,9 @@ type 'a treatment = Output.t ->
                  Input.t Request.t ->
                  resp:(Response.t -> unit) -> 'a
 
-type filter = Input.t Request.t -> Input.t Request.t * (Response.t -> Response.t)
+type 'a filter = 'a Request.t -> 'a Request.t * (Response.t -> Response.t)
 
-let decode_request : (Input.t -> Input.t) -> (Headers.t -> Headers.t) ->
-                     filter =
+let decode_request : ('a -> 'a) -> (Headers.t -> Headers.t) -> 'a filter =
   (* turn it into a middleware *)
   fun tb th req ->
     let open Request in
@@ -169,25 +168,25 @@ let decode_request : (Input.t -> Input.t) -> (Headers.t -> Headers.t) ->
     ({req with body = tb req.body; headers = th req.headers }, fun r -> r)
 
 let encode_response : (Response.body -> Response.body) ->
-                      (Headers.t -> Headers.t) -> filter =
+                      (Headers.t -> Headers.t) -> 'a filter =
   fun tb th req ->
     (req, fun resp ->
       let open Response in
       { resp with body = tb resp.body; headers = th resp.headers })
 
-let compose_embrace : filter -> filter -> filter =
+let compose_embrace : 'a filter -> 'a filter -> 'a filter =
   fun f1 f2 req ->
     let (req, f2) = f2 req in
     let (req, f1) = f1 req in
     (req, fun resp -> f1 (f2 resp))
 
-let compose_cross : filter -> filter -> filter =
+let compose_cross : 'a filter -> 'a filter -> 'a filter =
   fun f1 f2 req ->
     let (req, f2) = f2 req in
     let (req, f1) = f1 req in
     (req, fun resp -> f2 (f1 resp))
 
-type path_handler = filter * (path -> unit treatment)
+type path_handler = Input.t filter * (path -> unit treatment)
 
 type handler = path_handler tree * (string, path_handler tree) Hashtbl.t
 
@@ -198,7 +197,7 @@ type handlers = handler array
    and makes it into a handler. *)
 let add_route_handler
       ?addresses ?hostnames ?meth
-      ?(filter=(fun x -> (x, fun x -> x) : filter))
+      ?(filter=(fun x -> (x, fun x -> x) : Input.t filter))
       ~(tr_req : 'a treatment) (handlers : handlers) route f =
   let fn route =
     let ph path =

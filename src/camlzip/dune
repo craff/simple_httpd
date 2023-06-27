@@ -1,8 +1,0 @@
-
-(library
-  (name simple_httpd_camlzip)
-  (public_name simple_httpd_camlzip)
-  (synopsis "A wrapper around camlzip to bring compression to Simple_httpd")
-  (flags :standard -safe-string -warn-error -a+8)
-  (ocamlopt_flags -O3)
-  (libraries simple_httpd camlzip))

@@ -27,6 +27,18 @@ a.txt
  (12b)
 </li>
 <li>
+<a href="/vfs/bar.html">
+bar.html
+</a>
+
+</li>
+<li>
+<a href="/vfs/big">
+big
+</a>
+ (1.48M)
+</li>
+<li>
 <a href="/vfs/foo.html">
 foo.html
 </a>

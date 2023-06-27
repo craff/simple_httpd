@@ -3,7 +3,7 @@
   (name qtest)
   (modes native)
   (flags :standard -warn-error -a+8 -w -33)
-  (libraries qcheck-core qcheck ounit2 simple_httpd))
+  (libraries qcheck-core qcheck ounit2 simple_httpd camlzip))
 
 (rule
  (deps (glob_files ../*.ml{,i}) preamble.ml)

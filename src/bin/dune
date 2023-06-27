@@ -2,18 +2,17 @@
 (executable
   (name http_of_dir)
   (public_name http_of_dir)
-  (package simple_httpd_camlzip)
   (modules http_of_dir)
   (flags :standard -warn-error -3)
   (ocamlopt_flags -O3)
-  (libraries simple_httpd simple_httpd_camlzip magic-mime))
+  (libraries simple_httpd magic-mime))
 
 (executable
   (name vfs_pack)
   (public_name simple-httpd-vfs-pack)
   (package simple_httpd)
-  (modules vfs_pack curly http)
-  (libraries result unix)
+  (modules vfs_pack curly http html5)
+  (libraries result unix simple_httpd markup)
   (flags :standard -warn-error -3)
   (ocamlopt_flags -O3))
 

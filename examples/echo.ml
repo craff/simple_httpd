@@ -17,7 +17,7 @@ end
 
 (** [Simple_httpd] provides filter for request, that can be used to collecting
     statistics. Currently, we can not cound the time to output the response. *)
-let filter_stat () : Route.filter * (unit -> string) =
+let filter_stat () : 'a Route.filter * (unit -> string) =
   (* We must use atomic for this to work with domains! *)
   let nb_req     = Atomic.make 0  in
   let total_time = Atomic.make 0. in
@@ -47,6 +47,7 @@ let filter_stat () : Route.filter * (unit -> string) =
 let addr = ref "127.0.0.1"
 let port = ref 8080
 let j = ref 32
+let top_dir = ref None
 
 (** parse command line option *)
 let _ =
@@ -56,6 +57,7 @@ let _ =
       "--port", Arg.Set_int port, " set port";
       "-p", Arg.Set_int port, " set port";
       "--log", Arg.Int (fun n -> Log.set_log_lvl n), " set debug lvl";
+      "--dir", Arg.String (fun s -> top_dir := Some s), " set the top dir for file path";
       "-j", Arg.Set_int j, " maximum number of connections";
     ]) (fun _ -> raise (Arg.Bad "")) "echo [option]*"
 
@@ -64,11 +66,11 @@ let listens = [Address.make ~addr:!addr ~port:!port ()]
 let server = Server.create ~listens ~max_connections:!j ()
 
 (** Compose the above filter with the compression filter
-    provided by [Simple_httpd_camlzip] *)
+    provided by [Simple_httpd.Camlzip] *)
 let filter, get_stats =
   let filter_stat, get_stats = filter_stat () in
   let filter_zip =
-    Simple_httpd_camlzip.filter ~compress_above:1024 ~buf_size:(16*1024) () in
+    Camlzip.filter ~compress_above:1024 ~buf_size:(16*1024) () in
   (Route.compose_cross filter_zip filter_stat, get_stats)
 
 (** Add a route answering 'Hello' *)
@@ -80,7 +82,7 @@ let _ =
 (** Add a route sending a compressed stream for the given file in the current
     directory *)
 let _ =
-  Server.add_route_handler ~meth:GET server
+  Server.add_route_handler ~meth:GET server ~filter
     Route.(exact "zcat" @/ string @/ return)
     (fun path _req ->
         let ic = open_in path in
@@ -100,7 +102,7 @@ let _ =
 
 (** Add an echo request *)
 let _ =
-  Server.add_route_handler server
+  Server.add_route_handler server ~filter
     Route.(exact "echo" @/ return)
     (fun req ->
       let q =
@@ -112,7 +114,7 @@ let _ =
 
 (** Add file upload *)
 let _ =
-  Server.add_route_handler_stream ~meth:PUT server
+  Server.add_route_handler_stream ~meth:PUT server ~filter
     Route.(exact "upload" @/ string @/ return)
     (fun path req ->
         Log.f (fun k->k "start upload %S, headers:\n%s\n\n%!" path
@@ -128,7 +130,7 @@ let _ =
 
 (** Access to the statistics *)
 let _ =
-  Server.add_route_handler server Route.(exact "stats" @/ return)
+  Server.add_route_handler server ~filter Route.(exact "stats" @/ return)
     (fun _req ->
        let stats = get_stats() in
        Response.make_string stats
@@ -137,14 +139,15 @@ let _ =
 (** Add a virtual file system VFS, produced by [simple-httpd-vfs-pack] from
     an actual folger *)
 let _ =
+  let vfs = Vfs.make ?top_dir:!top_dir () in
   Dir.add_vfs server
     ~config:(Dir.config ~download:true
                ~dir_behavior:Dir.Index_or_lists ())
-    ~vfs:Vfs.vfs ~prefix:"vfs"
+    ~vfs:vfs ~prefix:"vfs"
 
 (** Main pagen using the Html module*)
 let _ =
-  Server.add_route_handler server Route.return
+  Server.add_route_handler server ~filter Route.return
     (fun _req ->
        let open Html in
        let h = html [] [

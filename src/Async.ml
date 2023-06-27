@@ -39,6 +39,9 @@ type client =
   ; mutable start_time : float (* last time request started *)
   ; mutable locks : mutex list
   ; buf : Buffer.t (* used to parse headers *)
+  ; mutable read : Bytes.t -> int -> int -> int
+  ; mutable write : Bytes.t -> int -> int -> int
+  ; mutable sendfile : Unix.file_descr -> int -> int -> int
   }
 
 and mutex =
@@ -71,6 +74,9 @@ let fake_client =
       start_time = 0.0;
       locks = [];
       accept_by = 0;
+      read = (fun _ -> assert false);
+      write = (fun _ -> assert false);
+      sendfile = (fun _ -> assert false);
     }
 
 let set_session ?session client =
@@ -143,8 +149,7 @@ type domain_info =
   }
 
 let fake_domain_info =
-  { (*schedule = 0.0
-  ; *)cur_client = fake_client
+  { cur_client = fake_client
   ; pendings = Hashtbl.create 16
   ; poll_list = Polly.create ()
   ; bytes = Bytes.create 0
@@ -152,7 +157,7 @@ let fake_domain_info =
 
 let all_domain_info = Array.make max_domain fake_domain_info
 
-let is_client cl = cl <> fake_client
+let is_client cl = cl.id <> fake_client.id
 
 let global_get_client () =
   let id = Domain.self () in
@@ -278,41 +283,43 @@ module Ssl = struct include Ssl include Ssl.Runtime_lock end
 
 let rec read c s o l =
   try
-    apply c Util.read Ssl.read s o l
+    c.read s o l
   with Unix.(Unix_error((EAGAIN|EWOULDBLOCK),_,_))
-     | Ssl.(Read_error(Error_want_read|Error_want_accept|
-                       Error_want_connect|Error_want_write|Error_zero_return)) ->
-        perform_read c s o l
-     | exn ->
-        clientError c exn
+     | Ssl.(Read_error(Error_want_read|Error_want_write
+                        |Error_want_connect|Error_want_accept|Error_zero_return)) ->        perform_read c s o l
+       | exn ->
+          clientError c exn
 
 and perform_read c s o l =
   perform (Io {sock = c.sock; fn = (fun () -> read c s o l) })
 
 let rec write c s o l =
   try
-    apply c Util.single_write Ssl.write s o l
+    c.write s o l
   with Unix.(Unix_error((EAGAIN|EWOULDBLOCK),_,_))
-     | Ssl.(Write_error(Error_want_write|Error_want_read|
-                        Error_want_accept|Error_want_connect|Error_zero_return)) ->
-        perform_write c s o l
-     | exn -> clientError c exn
+    | Ssl.(Write_error(Error_want_read|Error_want_write
+                       |Error_want_connect|Error_want_accept|Error_zero_return)) ->
+     perform_write c s o l
+  | exn -> clientError c exn
 
 and perform_write c s o l =
   perform (Io {sock = c.sock; fn = (fun () -> write c s o l) })
 
 (* Note: sendfile together with SSL, not really efficient *)
-let sendfile_ssl c fd o l =
+let ssl_sendfile c fd o l =
   let buf = all_domain_info.((Domain.self () :> int)).bytes in
   let len = Bytes.length buf in
+  let _ = Unix.(lseek fd o SEEK_SET) in
   let w = Unix.read fd buf 0 (min l len) in
-  Ssl.write c buf o w
+  Ssl.write c buf 0 w
 
 let rec sendfile c fd o l =
   try
-    apply c Util.sendfile sendfile_ssl fd o l
-  with Unix.(Unix_error((EAGAIN|EWOULDBLOCK),_,_)) ->
-        perform_sendfile c fd o l
+    c.sendfile  fd o l
+  with Unix.(Unix_error((EAGAIN|EWOULDBLOCK),_,_))
+     | Ssl.(Write_error(Error_want_read|Error_want_write
+                        |Error_want_connect|Error_want_accept|Error_zero_return)) ->
+          perform_sendfile c fd o l
      | exn -> clientError c exn
 
 and perform_sendfile c fd o l =
@@ -342,10 +349,9 @@ module Io = struct
 
   let unregister s =
     let i = all_domain_info.((Domain.self () :> int)) in
-    Hashtbl.remove i.pendings s;
-    try Polly.(del i.poll_list s)
-    with e -> Log.f ~lvl:1 (fun k -> k "UNEXPECTED EXCEPTION IN EPOLL_DEL: %s"
-                                         (printexn e))
+    Hashtbl.remove i.pendings s
+    (* NOTE: no need for epoll_del on closed socket *)
+
   let close (s:t) =
     s.unregister ();
     Unix.close s.sock
@@ -428,12 +434,7 @@ let loop id st listens pipe timeout handler () =
   all_domain_info.((did :> int)) <- dinfo;
 
 
-  let unregister s =
-    Hashtbl.remove pendings s;
-    try Polly.(del poll_list s)
-    with e -> Log.f (fun k -> k "Unexpected exception in epoll_del: %s"
-                                  (printexn e))
-  in
+  let unregister s = Hashtbl.remove pendings s in
 
   (* Queue for ready sockets *)
   let ready = Queue.create () in
@@ -595,6 +596,9 @@ let loop id st listens pipe timeout handler () =
                         start_time = now (); locks = [];
                         acont = N; buf = Buffer.create 4_096;
                         accept_by = index;
+                        read = (fun _ -> assert false);
+                        write = (fun _ -> assert false);
+                        sendfile = (fun _ -> assert false);
                       } in
          dinfo.cur_client <- client;
          let info = { ty = Client client
@@ -613,7 +617,8 @@ let loop id st listens pipe timeout handler () =
            | Some ctx ->
               let chan = Ssl.embed_socket sock ctx in
               let rec fn () =
-                try Ssl.accept chan; 1
+                try
+                  Ssl.accept chan; 1
                 with
                 | Ssl.(Accept_error(Error_want_read|Error_want_write
                                    |Error_want_connect|Error_want_accept|Error_zero_return)) ->
@@ -621,8 +626,29 @@ let loop id st listens pipe timeout handler () =
               in
               ignore (fn ());
               client.ssl <- Some chan;
+              if Ssl.ktls_send_available chan then
+                begin
+                  Log.f ~lvl:2 (fun k -> k "use ktls for send\n%!");
+                  client.write <- Unix.single_write sock;
+                  client.sendfile <- Util.ssl_sendfile chan
+                end
+              else
+                begin
+                  client.write <- Ssl.write chan;
+                  client.sendfile <- ssl_sendfile chan;
+                end;
+              if Ssl.ktls_recv_available chan then
+                begin
+                  Log.f ~lvl:2 (fun k -> k "use ktls for receive\n%!");
+                  client.read <- Unix.read sock
+                end
+              else
+                client.read <- Ssl.read chan;
               Log.f ~lvl:2 (fun k -> k "[%d] ssl connection established" client.id);
-           | None -> ()
+           | None ->
+              client.read <- Unix.read sock;
+              client.write <- Unix.single_write sock;
+              client.sendfile <- Util.sendfile sock
 
          end;
          handler client; close EndHandling

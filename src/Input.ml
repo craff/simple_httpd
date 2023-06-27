@@ -49,7 +49,7 @@ let of_chan_ ?(buf_size=16 * 1024) ~close ic : t =
         self.off <- self.off + n;
         self.len <- self.len - n)
     ~fill:(fun self ->
-        if self.off >= self.len then (
+        if self.len <= 0 then (
           self.off <- 0;
           self.len <- input ic self.bs 0 (Bytes.length self.bs);
         )
@@ -66,7 +66,7 @@ let of_fd_ ?(buf_size=16 * 1024) ~close ic : t =
         self.off <- self.off + n;
         self.len <- self.len - n)
     ~fill:(fun self ->
-        if self.off >= self.len then (
+        if self.len <= 0 then (
           self.off <- 0;
           self.len <- Util.read ic self.bs 0 (Bytes.length self.bs));
         )
@@ -82,7 +82,7 @@ let of_client_ ?(buf_size=16 * 1024) ~close ic : t =
         self.off <- self.off + n;
         self.len <- self.len - n)
     ~fill:(fun self ->
-        if self.off >= self.len then (
+        if self.len <= 0 then (
           self.off <- 0;
           self.len <- Async.(read ic self.bs 0 (Bytes.length self.bs));
         )
@@ -101,7 +101,7 @@ let of_client_fd_ ?(buf_size=16 * 1024) ~close (sock:Io.t) : t =
         self.off <- self.off + n;
         self.len <- self.len - n)
     ~fill:(fun self ->
-        if self.off >= self.len then (
+        if self.len <= 0 then (
           self.off <- 0;
           self.len <-
             Io.read sock self.bs 0 (Bytes.length self.bs);
@@ -121,8 +121,7 @@ let rec iter f (self:t) : unit =
     (iter [@tailcall]) f self
   )
 
-let to_chan (oc:out_channel) (self:t) =
-  iter (fun s i len -> output oc s i len) self
+let to_chan (oc:out_channel) (self:t) = iter (output oc) self
 
 let of_bytes ?(i=0) ?len (bs:bytes) : t =
   (* invariant: !i+!len is constant *)
@@ -151,6 +150,82 @@ let of_bytes ?(i=0) ?len (bs:bytes) : t =
 let of_string s : t =
   of_bytes (Bytes.unsafe_of_string s)
 
+module type Output = sig
+  val echo : string -> unit
+  val printf : ('a, Format.formatter, unit, unit) format4 -> 'a
+end
+
+type 'a cont_state =
+  Begin | Cont of 'a | End
+
+let of_output fn : t =
+  let module T = struct
+      type _ Effect.t += Fill : string -> unit Effect.t
+    end
+  in
+  let output s =
+    Effect.perform (T.Fill s)
+  in
+  let module Output = struct
+      let echo = output
+      let buffer = Buffer.create 4096
+      let fmt = Format.formatter_of_buffer buffer
+      let printf fstr =
+        let cont _ =
+          output (Buffer.contents buffer);
+          Buffer.clear buffer
+        in
+        Buffer.clear buffer;
+        Format.kfprintf cont fmt fstr
+    end
+  in
+
+  let ktop : (unit, unit) Effect.Deep.continuation cont_state ref = ref Begin in
+
+  let rec self : t = {
+      bs = Bytes.create 0;
+      off = 0;
+      len = 0;
+      fill_buf = fill;
+      consume = consume;
+      close = ignore;
+      _rest = ()
+    }
+
+  and consume n =
+    self.off <- self.off + n;
+    self.len <- self.len - n
+
+  and handler : type c. c Effect.t
+                     -> ((c,unit) Effect.Deep.continuation -> unit) option =
+    fun e ->
+           match e with
+           | T.Fill s ->
+              Some (fun k ->
+                  ktop := Cont k;
+                  self.bs <- Bytes.unsafe_of_string s;
+                  self.off <- 0;
+                  self.len <- String.length s);
+           | _ -> None
+  and fill () =
+    let open Effect.Deep in
+    match !ktop with
+    | Begin ->
+       match_with fn (module Output : Output)
+         { retc = (fun () -> ())
+         ; exnc = (fun e -> raise e)
+         ; effc = handler
+         }
+    | Cont k ->
+       ktop := End;
+       continue k ()
+    | End ->
+       ()
+  in
+
+  self
+
+
 let with_file ?buf_size file f =
   let ic = Unix.(openfile file [O_RDONLY] 0) in
   try
@@ -162,18 +237,7 @@ let with_file ?buf_size file f =
     raise e
 
 let read_all ~buf (self:t) : string =
-  let continue = ref true in
-  while !continue do
-    self.fill_buf();
-    if self.len > 0 then (
-      Buffer.add_subbytes buf self.bs self.off self.len;
-      self.consume self.len;
-    );
-    assert (self.len >= 0);
-    if self.len = 0 then (
-      continue := false
-    )
-  done;
+  iter (Buffer.add_subbytes buf) self;
   let r = Buffer.contents buf in
   Buffer.clear buf;
   r
@@ -349,12 +413,11 @@ let read_chunked ~buf ~fail ~trailer (bs:t) : t=
     ~bs:(Bytes.create (16 * 4_096))
     ~fill:(fun self ->
         (* do we need to refill? *)
-        if self.off >= self.len then (
+        if self.len <= 0 then (
           if !chunk_size = 0 && !refill then (
             chunk_size := read_next_chunk_len();
           );
           self.off <- 0;
-          self.len <- 0;
           if !chunk_size > 0 then (
             (* read the whole chunk, or [Bytes.length bytes] of it *)
             let to_read = min !chunk_size (Bytes.length self.bs) in
@@ -378,3 +441,8 @@ let read_chunked ~buf ~fail ~trailer (bs:t) : t=
         refill:= false;
       )
     ()
+
+(*$= & ~printer:Q.(Print.string)
+  "tototitititutux" (of_output (fun (module O) -> O.echo "tototi"; O.echo "tititutu"; O.echo "x") |> read_all ~buf:(Buffer.create 16))
+
+ *)

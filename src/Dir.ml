@@ -5,34 +5,12 @@ let log = Log.f
 type dir_behavior =
   | Index | Lists | Index_or_lists | Forbidden
 
-type cache = NoCache
-           | MemCache
-           | CompressCache of string * (string -> string)
-           | SendFile
-           | SendFileCache
-
-
-type cache_key =
-           | MemCacheKey
-           | CompressCacheKey of string
-           | SendFileCacheKey
-
-let cache_key = function
-  | NoCache | SendFile -> assert false
-  | MemCache -> MemCacheKey
-  | CompressCache (s,_) -> CompressCacheKey s
-  | SendFileCache -> SendFileCacheKey
-
-type choose_cache = size:int option -> mime:string -> accept_encoding:string list
-                    -> cache
-
 type config = {
   mutable download: bool;
   mutable dir_behavior: dir_behavior;
   mutable delete: bool;
   mutable upload: bool;
   mutable max_upload_size: int;
-  mutable cache: choose_cache;
 }
 
 let default_config_ : config =
@@ -41,7 +19,6 @@ let default_config_ : config =
     delete=false;
     upload=false;
     max_upload_size = 10 * 1024 * 1024;
-    cache=(fun ~size:_ ~mime:_ ~accept_encoding:_ -> NoCache);
   }
 
 let default_config () = default_config_
@@ -51,10 +28,8 @@ let config
     ?(delete=default_config_.delete)
     ?(upload=default_config_.upload)
     ?(max_upload_size=default_config_.max_upload_size)
-    ?(cache=default_config_.cache)
     () : config =
-  { download; dir_behavior; delete; upload; max_upload_size;
-    cache; }
+  { download; dir_behavior; delete; upload; max_upload_size }
 
 let contains_dot_dot s =
   try
@@ -79,6 +54,24 @@ let encode_path s = Util.percent_encode ~skip:(function '/' -> true|_->false) s
 
 let is_hidden s = String.length s>0 && s.[0] = '.'
 
+type dynamic = { input : string Request.t -> Input.t
+               ; filter : 'a. 'a Route.filter option }
+type 'a content =
+  | String of string * string option
+  | Path   of string * (string * int) option
+  | Dynamic of dynamic
+  | Stream of Input.t
+  | Fd of Unix.file_descr
+  | Dir of 'a
+
+type file_info =
+  FI : { content : 'a content
+       ; size : int option
+       ; dsize : int option
+       ; mtime : float option
+       ; headers : Headers.t } -> file_info
+
+
 module type VFS = sig
   val descr : string
   val is_directory : string -> bool
@@ -86,11 +79,7 @@ module type VFS = sig
   val list_dir : string -> string array
   val delete : string -> unit
   val create : string -> (bytes -> int -> int -> unit) * (unit -> unit)
-  val read_file_content : string -> string
-  val read_file_stream : string -> Input.t
-  val read_file_fd : string -> int * Unix.file_descr
-  val file_size : string -> int option
-  val file_mtime : string -> float option
+  val read_file : string -> file_info
 end
 
 type vfs = (module VFS)
@@ -102,41 +91,24 @@ let vfs_of_dir (top:string) : vfs =
     let is_directory f = Sys.is_directory (top // f)
     let contains f = Sys.file_exists (top // f)
     let list_dir f = Sys.readdir (top // f)
-    let read_file_content f =
-      let f = top // f in
-      let open Unix in
-      let stats = stat f in
-      if stats.st_kind <> S_REG then raise Not_found;
-      let ch = open_in f in
-      let buf = Bytes.make stats.st_size ' ' in
-      try
-        really_input ch buf 0 stats.st_size;
-        close_in ch;
-        Bytes.unsafe_to_string buf
-      with
-        e -> close_in ch; raise e
-    let read_file_stream f =
-      let fd = Unix.(openfile (top // f) [O_RDONLY] 0) in
-      Input.of_fd fd
-      (* Remark: epoll is illegal on regular file, can not
-         use of_client_fd*)
-    let read_file_fd f =
-      let open Unix in
-      let stat = stat (top // f) in
-      let fd = openfile (top // f) [O_RDONLY] 0 in
-      (stat.st_size, fd)
     let create f =
       let oc = open_out_bin (top // f) in
       let write = output oc in
       let close() = close_out oc in
       write, close
     let delete f = Sys.remove (top // f)
-    let file_size f =
-      try Some (Unix.stat (top // f)).Unix.st_size
-      with _ -> None
-    let file_mtime f =
-      try Some (Unix.stat (top // f)).Unix.st_mtime
-      with _ -> None
+    let read_file f =
+      let oc = Unix.openfile (top // f) [O_RDONLY] 0 in
+      let stats = Unix.fstat oc in
+      let content = Fd(oc) in
+      let size = if stats.st_kind = S_REG then
+                   Some stats.st_size else None
+      in
+      let dsize = None in
+      let mtime = Some stats.st_mtime in
+      let mime =  Magic_mime.lookup f in
+      let headers = [(Headers.Content_Type,mime)] in
+      FI { content; size; dsize; mtime; headers }
   end in
   (module M)
 
@@ -162,9 +134,11 @@ let html_list_dir (module VFS:VFS) ~prefix ~parent d : Html.elt =
         Some (li[][txtf "%s [invalid file]" f])
       ) else (
         let size =
-          match VFS.file_size fpath with
-          | Some f -> Printf.sprintf " (%s)" @@ human_size f
-          | None -> ""
+          try
+            match VFS.read_file fpath with
+            | FI { size = Some f ; _ } -> Printf.sprintf " (%s)" @@ human_size f
+            | _ -> ""
+          with _ -> ""
         in
         Some (li'[] [
           sub_e @@ a[A.href ("/" // prefix // fpath)][txt f];
@@ -176,12 +150,13 @@ let html_list_dir (module VFS:VFS) ~prefix ~parent d : Html.elt =
   in
 
   let body = body'[] [
-    sub_e @@ h2[][txtf "Index of %S" d];
+    sub_e @@ h2[][txtf "Index of %S" (prefix // d)];
     begin match parent with
       | None -> sub_empty
       | Some p ->
+         Printf.eprintf "XXX => %S %S\n%!" p prefix;
         sub_e @@
-        a[A.href (encode_path ("/" // prefix // p))][txt"(parent directory)"]
+        a[A.href (encode_path ("/" // p))][txt"(parent directory)"]
     end;
 
     sub_e @@ ul' [] [
@@ -208,38 +183,6 @@ let html_list_dir (module VFS:VFS) ~prefix ~parent d : Html.elt =
 let add_vfs_ ?addresses ?hostnames ?(filter=(fun x -> (x, fun r -> r)))
                ?(config=default_config ())
                ?(prefix="") ~vfs:((module VFS:VFS) as vfs) server : unit=
-  let search_cache : (string -> Response.t)
-                     -> cache_key * string -> Response.t =
-    let cache_mutex = Mutex.create () in
-    let cache = Hashtbl.create 128 in
-    let tmp_rep = Response.make_raw ~code:400 "" in
-    fun fn (_,filename as key) ->
-    try
-      let (ready, mtime, ptr) = Hashtbl.find cache key in
-      while not (Atomic.get ready) do Async.sleep 0.01; done; (* FIXME *)
-      let mtime' = VFS.file_mtime filename in
-      if mtime' <> mtime then
-        begin
-          (match (!ptr).Response.body with
-           | File(_,fd,_) -> (try Unix.close fd with _ -> ())
-           | _ -> ());
-          raise Not_found;
-        end;
-      !ptr
-    with Not_found ->
-      let ready = Atomic.make false in
-      let mtime = VFS.file_mtime filename in
-      let ptr = ref tmp_rep in
-      Mutex.lock cache_mutex;
-      Hashtbl.replace cache key (ready, mtime, ptr);
-      Mutex.unlock cache_mutex;
-      let x = fn filename in
-      Mutex.lock cache_mutex;
-      ptr := x;
-      Atomic.set ready true;
-      Mutex.unlock cache_mutex;
-      x
-  in
   let route () =
     if prefix="" then Route.rest
     else Route.exact_path prefix Route.rest
@@ -304,22 +247,25 @@ let add_vfs_ ?addresses ?hostnames ?(filter=(fun x -> (x, fun r -> r)))
     Server.add_route_handler ~filter server ~meth:GET (route())
       (fun path req ->
         let path = String.concat "/" path in
-        let mtime = lazy (
-                        match VFS.file_mtime path with
-                        | None -> Response.fail_raise ~code:403 "Cannot access file"
-                        | Some t -> Printf.sprintf "mtime: %.4f" t
-                      ) in
         if contains_dot_dot path then (
           log ~lvl:2 (fun k->k "download fails %s (dotdot)" path);
-          Response.fail ~code:403 "Path is forbidden";
-        ) else if not (VFS.contains path) then (
-          log ~lvl:2 (fun k->k "download fails %s (not found)" path);
-          Response.fail ~code:404 "File not found";
-        ) else if Request.get_header req Headers.If_None_Match = Some (Lazy.force mtime) then (
-          Response.make_raw ~code:304 ""
-        ) else if VFS.is_directory path then (
-          let parent = Filename.(dirname path) in
-          let parent = if Filename.basename path <> "." then Some parent else None in
+          Response.fail_raise ~code:403 "Path is forbidden");
+        let FI info = VFS.read_file path in
+        let mtime =  match info.mtime with
+          | None -> None
+          | Some t -> Some (Printf.sprintf "mtime: %.4f" t)
+        in
+        let may_cache () =
+          mtime <> None && Request.get_header req Headers.If_None_Match = mtime
+        in
+        if may_cache () then Response.make_raw ~code:304 "" else
+        let cache_control () =
+          match mtime with
+          | None -> (Headers.Cache_Control, "no-store")
+          | Some mtime -> (Headers.ETag, mtime)
+        in
+        if VFS.is_directory path then (
+          let parent = Some (Filename.(dirname (prefix // path))) in
           match config.dir_behavior with
             | Index | Index_or_lists when VFS.contains (path // "index.html") ->
                (* redirect using path, not full path *)
@@ -332,69 +278,67 @@ let add_vfs_ ?addresses ?hostnames ?(filter=(fun x -> (x, fun r -> r)))
                let body = html_list_dir ~prefix vfs path ~parent
                           |> Html.to_string_top in
                log ~lvl:2 (fun k->k "download index %s" path);
-               Response.make_string
-                 ~headers:[header_html; Headers.ETag, Lazy.force mtime]
-                 body
+               Response.make_string ~headers:[header_html] body
             | Forbidden | Index ->
                log ~lvl:2 (fun k->k "download index fails %s (forbidden)" path);
                Response.make_raw ~code:405 "listing dir not allowed"
         ) else (
-          let mime =  Magic_mime.lookup path in
-          let mime_type = (Headers.Content_Type,mime) in
-          let size = VFS.file_size path in
           let accept_encoding =
             match Request.(get_header req Headers.Accept_Encoding)
             with None -> []
                | Some l -> List.map String.trim (String.split_on_char ',' l)
           in
-          let cache = config.cache ~size ~mime ~accept_encoding in
-          let fn path =
-            try
-              match cache with
-              | MemCache ->
-                 let string = VFS.read_file_content path in
-                 log ~lvl:2 (fun k->k "download ok %s" path);
-                 Response.make_raw
-                   ~headers:(mime_type::[(Headers.ETag, Lazy.force mtime)])
-                   ~code:200 string
-              | CompressCache(encoding,cmp) ->
-                 let string = cmp (VFS.read_file_content path) in
-                 log ~lvl:2 (fun k->k "download ok %s" path);
-                 Response.make_raw
-                   ~headers:(mime_type::[(Headers.ETag, Lazy.force mtime)
-                                       ;(Headers.Content_Encoding, encoding)])
-                   ~code:200 string
-              | SendFileCache ->
-                 let (size, stream) = VFS.read_file_fd path in
-                 (*if size > 50_000 then*)
-                   begin
-                     log ~lvl:2 (fun k->k "download ok %s" path);
-                     Response.make_raw_file
-                       ~headers:(mime_type::[(Headers.ETag, Lazy.force mtime)])
-                       ~code:200 ~close:false size stream
-                   end
-              | NoCache | SendFile -> assert false
-            with e ->
-              log ~lvl:2 (fun k->k "download fails %s (%s)" path (Async.printexn e));
-              Response.fail ~code:500 "error while reading file: %s" (Async.printexn e)
-          in
-          match cache with
-          | NoCache ->
-             let stream = VFS.read_file_stream path in
+          let deflate = List.mem "deflate" accept_encoding in
+          match info.content with
+          | Path(_, Some (fz, size)) when deflate ->
+             let fd = Unix.openfile fz [O_RDONLY] 0 in
+             log ~lvl:2 (fun k->k "download ok %s" path);
+             Response.make_raw_file
+               ~headers:(cache_control ()::
+                         (Headers.Content_Encoding, "deflate")::info.headers)
+               ~code:200 ~close:false size fd
+          | Path(f, _) ->
+             let fd = Unix.openfile f [O_RDONLY] 0 in
+             let size = match info.size with Some s -> s | None -> assert false in
+             log ~lvl:2 (fun k->k "download ok %s" path);
+             Response.make_raw_file
+               ~headers:(cache_control ()::info.headers)
+               ~code:200 ~close:false size fd
+          | Fd(fd) ->
+             let size = Unix.(fstat fd).st_size in
+             log ~lvl:2 (fun k->k "download ok %s" path);
+             Response.make_raw_file
+               ~headers:(cache_control ()::info.headers)
+               ~code:200 ~close:true size fd
+          | String(_, Some sz) when deflate ->
+             log ~lvl:2 (fun k->k "download ok %s" path);
+             Response.make_raw
+               ~headers:(cache_control ()::
+                         (Headers.Content_Encoding, "deflate")::info.headers)
+               ~code:200 sz
+          | String(s, _) ->
+             log ~lvl:2 (fun k->k "download ok %s" path);
+             Response.make_raw
+               ~headers:(cache_control ()::info.headers)
+               ~code:200 s
+          | Dynamic { input; filter } ->
+             let headers = cache_control ()::info.headers in
+             let req, gn = match filter with
+               | None -> (req, fun x -> x)
+               | Some f -> f req
+             in
+             let input = input req in
+             log ~lvl:2 (fun k->k "download ok %s" path);
+             gn (Response.make_raw_stream
+                   ~headers ~code:200 input)
+          | Stream input ->
              log ~lvl:2 (fun k->k "download ok %s" path);
              Response.make_raw_stream
-               ~headers:(mime_type::[(Headers.ETag, Lazy.force mtime)])
-               ~code:200 stream
-          | SendFile ->
-             let (size, stream) = VFS.read_file_fd path in
-             (*if size > 50_000 then*)
-             begin
-               log ~lvl:2 (fun k->k "download ok %s" path);
-               Response.make_raw_file
-                 ~headers:(mime_type::[(Headers.ETag, Lazy.force mtime)])
-                 ~code:200 ~close:true size stream
-             end
-          | _ -> search_cache fn (cache_key cache,path)
+               ~headers:(cache_control ()::info.headers)
+               ~code:200 input
+
+          | Dir _ -> assert false
+
         )
       )
   ) else (
@@ -410,106 +354,134 @@ let add_dir_path ?addresses ?hostnames ?filter ?prefix ?config ~dir server : uni
   add_vfs_ ?addresses ?hostnames ?filter ?prefix ?config ~vfs:(vfs_of_dir dir) server
 
 module Embedded_fs = struct
-  module Str_map = Map.Make(String)
 
   type t = {
-    mtime: float;
-    mutable entries: entry Str_map.t
+    emtime: float;
+    entries: (string,entry) Hashtbl.t;
+    top : string
   }
 
-  and entry =
-    | File of {
-        content: string;
-        mtime: float;
-      }
-    | Dir of t
+  and entry = {
+      mtime : float option;
+      mutable size: int option;
+      kind : kind;
+      headers: Headers.t
+    }
 
-  let create ?(mtime=Unix.gettimeofday()) () : t = {
-    mtime;
-    entries=Str_map.empty;
-  }
+  and kind = t content
 
-  let split_path_ (path:string) : string list * string =
-    let basename = Filename.basename path in
-    let dirname =
-      Filename.dirname path
-      |> String.split_on_char '/'
-      |> List.filter (function "" | "." -> false | _ -> true) in
-    dirname, basename
+  let create ?(top="") ?(mtime=Unix.gettimeofday()) () : t = {
+    emtime=mtime;
+    entries=Hashtbl.create 128;
+    top;
+    }
 
-  let add_file ?mtime (self:t) ~path content : unit =
-    let mtime = match mtime with Some t -> t | None -> self.mtime in
-    let dir_path, basename = split_path_ path in
+  let split_path_ (path:string) : string list =
+    String.split_on_char '/' path
+
+  let add_file_gen (self:t) ~path content : unit =
+    let dir_path = split_path_ path in
     if List.mem ".." dir_path then (
       invalid_arg "add_file: '..' is not allowed";
     );
 
-    let rec loop self dir = match dir with
-      | [] ->
-        self.entries <- Str_map.add basename (File {mtime; content}) self.entries
+    let rec loop (self:t) dir = match dir with
+      | [] -> assert false
+      | [basename] ->
+         Hashtbl.replace self.entries basename content
+      | "." :: ds -> loop self ds
       | d :: ds ->
         let sub =
-          match Str_map.find d self.entries with
+          match (Hashtbl.find self.entries d).kind with
           | Dir sub -> sub
-          | File _ ->
+          | _ ->
             invalid_arg
               (Printf.sprintf "in path %S, %S is a file, not a directory" path d)
           | exception Not_found ->
-            let sub = create ~mtime:self.mtime () in
-            self.entries <- Str_map.add d (Dir sub) self.entries;
-            sub
+             let sub = create ~mtime:self.emtime () in
+             let entry =
+               { kind = Dir sub; mtime = Some self.emtime;
+                 size = None; headers = [] }
+             in
+             Hashtbl.add self.entries d entry;
+             sub
         in
         loop sub ds
     in
     loop self dir_path
 
+  let add_file (self:t) ~path ?mtime ~headers content : unit =
+    let mtime = match mtime with Some t -> t | None -> self.emtime in
+    let size = String.length content in
+    let sz = Camlzip.deflate_string content in
+    let sz =
+      if float (String.length sz) > 0.9 *. float size then
+        None else Some sz
+    in
+    let kind = String(content, sz) in
+    let entry = { mtime = Some mtime; headers; size = Some size; kind } in
+    add_file_gen (self:t) ~path entry
+
+  let add_dynamic (self:t) ~path ?mtime ~headers content : unit =
+    let entry = { mtime; headers; size = None; kind = Dynamic content} in
+    add_file_gen (self:t) ~path entry
+
+  let add_path (self:t) ~path ?mtime ~headers ?deflate rpath : unit =
+    (*let fz = rpath ^".zlib" in *)
+    let deflate = Option.map (fun x ->
+                      let size = (Unix.stat x).st_size in
+                      x, size) deflate in
+    let content = Path(rpath, deflate) in
+    let size = Some (Unix.stat rpath).st_size in
+    let entry = { mtime; headers; size; kind = content} in
+    add_file_gen (self:t) ~path entry
+
   (* find entry *)
   let find_ self path : entry option =
-    let dir_path, basename = split_path_ path in
+    let dir_path = split_path_ path in
     let rec loop self dir_name = match dir_name with
-      | [] -> (try Some (Str_map.find basename self.entries) with _ -> None)
+      | [] -> assert false
+      | [basename] -> (try Some (Hashtbl.find self.entries basename) with _ -> None)
+      | "." :: ds -> loop self ds
       | d :: ds ->
-        match Str_map.find d self.entries with
-        | exception Not_found -> None
-        | File _ -> None
+        match (Hashtbl.find self.entries d).kind with
         | Dir sub -> loop sub ds
+        | _ -> None
+        | exception Not_found -> None
     in
-    if path="" then Some (Dir self)
+    if path="" then Some { mtime = Some self.emtime;
+                           size = None;
+                           kind = Dir self;
+                           headers =[] }
     else loop self dir_path
 
   let to_vfs self : vfs =
     let module M = struct
       let descr = "Embedded_fs"
-      let file_mtime p = match find_ self p with
-        | Some (File {mtime;_}) -> Some mtime
-        | Some (Dir _) -> Some self.mtime
-        | _ -> None
 
-      let file_size p = match find_ self p with
-        | Some (File {content;_}) -> Some (String.length content)
-        | _ -> None
+      let read_file p =
+        match find_ self p with
+        | Some { mtime; headers; kind = content; size } ->
+           let dsize = match content with
+             | String(_, Some sz) ->
+                Some (String.length sz)
+             | Path (_, Some (_, size)) -> Some size
+             | _ -> None
+           in
+           FI { content; mtime; size; dsize; headers }
+        | _ -> Response.fail_raise ~code:404 "File %s not found" p
 
       let contains p = match find_ self p with
         | Some _ -> true
         | None -> false
 
       let is_directory p = match find_ self p with
-        | Some (Dir _) -> true
+        | Some { kind = Dir _; _ } -> true
         | _ -> false
 
-      let read_file_content p = match find_ self p with
-        | Some (File {content;_}) -> content
-        | _ -> failwith (Printf.sprintf "no such file: %S" p)
-
-      let read_file_stream p = match find_ self p with
-        | Some (File {content;_}) -> Input.of_string content
-        | _ -> failwith (Printf.sprintf "no such file: %S" p)
-
-      let read_file_fd _ = failwith "read_file_fd not available"
-
       let list_dir p = match find_ self p with
-        | Some (Dir sub) ->
-          Str_map.fold (fun sub _ acc -> sub::acc) sub.entries [] |> Array.of_list
+        | Some { kind = Dir sub; _ } ->
+          Hashtbl.fold (fun sub _ acc -> sub::acc) sub.entries [] |> Array.of_list
         | _ -> failwith (Printf.sprintf "no such directory: %S" p)
 
       let create _ = failwith "Embedded_fs is read-only"

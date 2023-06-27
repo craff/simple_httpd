@@ -2,7 +2,7 @@
 
 SERVER=$1
 PORT=8444
-"$SERVER" . -p $PORT --cache-zlib --ssl domain.crt domain.key > /dev/null &
+"$SERVER" . -p $PORT --ssl domain.crt domain.key > /dev/null &
 PID=$!
 
 # need to sleep to make sure server is ready before first curl

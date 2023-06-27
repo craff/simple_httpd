@@ -2,7 +2,7 @@
 
 SERVER=$1
 PORT=8088
-"$SERVER" . -p $PORT --cache-zlib &
+"$SERVER" . -p $PORT &
 PID=$!
 
 # need to sleep to make sure server is ready before first curl

@@ -28,15 +28,7 @@ let t        = ref (Domain.recommended_domain_count () - 1)
 let log_folder = ref ""
 let log_basename = ref "log"
 let log_perm = ref 0o700
-
-let send_file ~size:_ ~mime:_ ~accept_encoding:__ = D.SendFile
-let mem_cache ~size:_ ~mime:_ ~accept_encoding:_ = D.MemCache
-let deflate_cache ~size ~mime:_ ~accept_encoding =
-  if (match size with None -> false | Some s -> s > 4_096)
-     && List.mem "deflate" accept_encoding then
-    D.CompressCache ("deflate",Simple_httpd_camlzip.deflate_string)
-  else
-    D.MemCache
+let ktls     = ref false
 
 let _ =
   Arg.parse (Arg.align [
@@ -44,9 +36,6 @@ let _ =
       "-a", Set_string addr, " alias to --listen";
       "--port", Set_int port, " port to listen on";
       "-p", Set_int port, " alias to --port";
-      "--send-file", Unit (fun () -> config.cache <- send_file), " use sendfile, not compatible with SSL but fast";
-      "--cache", Unit (fun () -> config.cache <- mem_cache), " cache files in memory";
-      "--cache-zlib", Unit (fun () -> config.cache <- deflate_cache), " cache compressed files in memory";
       "--ssl", Tuple[Set_string ssl_cert; Set_string ssl_priv], " give ssl certificate and private key";
       "--dir", Set_string dir, " directory to serve (default: \".\")";
       "--log", Int Log.set_log_lvl, " log level";
@@ -68,6 +57,7 @@ let _ =
       "--delete", Unit (fun () -> config.delete <- true), " enable `delete` on files";
       "--no-delete", Unit (fun () -> config.delete <- false), " disable `delete` on files";
       "--maxc", Set_int maxc, " maximum number of simultaneous connections (default 100)";
+      "--ktls", Set ktls, " use ktls over ssl";
       "-t", Set_int t, " maximum number of threads";
     ]) (fun s -> dir := s) "http_of_dir [options] [dir]"
 
@@ -76,7 +66,7 @@ let ssl =
   if !ssl_cert <> "" then
     begin
       Ssl_threads.init (); Ssl.init ();
-      let ctx = Ssl.create_context Ssl.TLSv1_2 Ssl.Server_context in
+      let ctx = Ssl.create_context ~ktls:!ktls Ssl.TLSv1_2 Ssl.Server_context in
       Ssl.use_certificate ctx !ssl_cert !ssl_priv;
       Some ctx
     end

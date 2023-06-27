@@ -89,6 +89,8 @@ module Async : sig
       be identified as one session using session cookies.
    *)
 
+  type session_data = ..
+  type session_data += NoData
 
   (** Connection status. Holds the number of clients per domain.  *)
   type status = {
@@ -214,6 +216,16 @@ module Input : sig
       and of length [len]. *)
 
   val of_string : string -> t
+  (** Make a buffered stream from the given string *)
+
+  module type Output = sig
+    val echo : string -> unit
+    val printf : ('a, Format.formatter, unit, unit) format4 -> 'a
+  end
+
+  val of_output : ((module Output) -> unit) -> t
+  (** Make a buffered stream from a function that will call the [echo] and
+      [printf] function from the provided module *)
 
   val iter : (bytes -> int -> int -> unit) -> t -> unit
   (** Iterate on the chunks of the stream. *)
@@ -664,25 +676,43 @@ module Route : sig
       response only if [deflate] is allowed using the header named
     {!Headers.Accept_Encoding}. *)
 
-  type filter = Input.t Request.t -> Input.t Request.t * (Response.t -> Response.t)
+  type 'a filter = 'a Request.t -> 'a Request.t * (Response.t -> Response.t)
 
-  val decode_request : (Input.t -> Input.t) -> (Headers.t -> Headers.t)
-                       -> filter
+  val decode_request : ('a -> 'a) -> (Headers.t -> Headers.t)
+                       -> 'a filter
   (** helper to create a filter transforming only the request. *)
 
   val encode_response : (Response.body -> Response.body) -> (Headers.t -> Headers.t)
-                        -> filter
+                        -> 'a filter
   (** helper to create a filter transforming only the resposne. *)
 
-  val compose_embrace : filter -> filter -> filter
+  val compose_embrace : 'a filter -> 'a filter -> 'a filter
   (** [compose_embrace f1 f2] compose two filters:
       the request will be passed first to [f2], then to [f1],
       the response will be passed first to [f2], then to [f1] **)
 
-  val compose_cross : filter -> filter -> filter
+  val compose_cross : 'a filter -> 'a filter -> 'a filter
   (** [compose_cross f1 f2] compose two filters:
       the request will be passed first to [f2], then to [f1],
       the response will be passed first to [f1], then to [f2] **)
+end
+
+module Camlzip : sig
+  val filter :
+    ?compress_above:int ->
+    ?buf_size:int -> unit -> Input.t Route.filter
+  (** Middleware responsible for deflate compression/decompression.
+    @since 0.11 *)
+
+  val deflate_string : ?buf_size:int -> string -> string
+  (** zlib string compression *)
+
+  val accept_deflate : 'a Request.t -> bool
+  (** check if request accept deplate *)
+
+  val file_deflate : string -> string -> unit
+  (** [file_deflate file1 file2] Compress file1 into file2. file2 is erased *)
+
 end
 
 (** Module to handle session data *)
@@ -693,22 +723,35 @@ module Session : sig
       authentication. *)
 
   type session
-  type session_data
+  type session_data = Async.session_data
 
   val check : ?session_life_time:float ->
               ?init:(unit -> session_data) ->
               ?check:(session -> bool) ->
               ?error:(int*string) ->
-              Route.filter
+              'a Route.filter
 
-  val do_session_data : (session_data -> 'a) -> session -> 'a
 
-  val set_session_data : session -> session_data -> (session_data -> unit) -> unit
+  (** get the client session. The session must have been initialized with check
+     filter, otherwise NoSession is raised *)
+  val get_session : 'a Request.t -> session
+  exception NoSession
+
+  val get_session_data : session -> session_data
+
+  val set_session_data : ?finalizer:(session_data -> unit)
+                         -> session -> session_data -> unit
+
+  val do_session_data_locked :
+    session -> (session_data -> 'a * session_data) -> 'a
+
+  val get_session_cookie : session -> string -> string option
 
   val set_session_cookie : session -> string -> string -> unit
 
   (** remove all server side session data *)
   val delete_session : session -> unit
+
 end
 
 (** Some HTML combinators *)
@@ -791,7 +834,7 @@ module Server : sig
     ?addresses:Address.t list ->
     ?hostnames:string list ->
     ?meth:Method.t ->
-    ?filter:Route.filter ->
+    ?filter:Input.t Route.filter ->
     t ->
     ('a, string Request.t -> Response.t) Route.t -> 'a ->
     unit
@@ -825,7 +868,7 @@ module Server : sig
     ?addresses:Address.t list ->
     ?hostnames:string list ->
     ?meth:Method.t ->
-    ?filter:Route.filter ->
+    ?filter:Input.t Route.filter ->
     t ->
     ('a, Input.t Request.t -> Response.t) Route.t -> 'a ->
     unit
@@ -868,7 +911,7 @@ module Server : sig
   (** Server-sent event generator *)
 
   val add_route_server_sent_handler :
-    ?filter:Route.filter ->
+    ?filter:Input.t Route.filter ->
     t ->
     ('a, string Request.t -> server_sent_generator -> unit) Route.t -> 'a ->
     unit
@@ -915,27 +958,6 @@ module Dir : sig
     | Forbidden
   (** Forbid access to directory. This is suited for serving assets, for example. *)
 
-  (** Static files can be cached/served in various ways *)
-  type cache = NoCache  (** No cache: serve directly the file from its location *)
-             | MemCache (** Cache a string in memory *)
-             | CompressCache of string * (string -> string)
-             (** Cache a compressed string in memory. The first parameter
-                 must be the Transfer-Encoding name of the compression algorithme
-                 and the second argument is the compression function *)
-             | SendFile
-             (** Require to use sendfile linux system call. Faster, but
-                 useless with SSL. *)
-             | SendFileCache
-             (** Cache a file descriptor to be used with sendfile linux system
-                 call. It you indent to serve thousand of simultaneous
-                 connection, [SendFile] or [NoCache] will require one socket per
-                 connection while [SendFileCache] will use one socket per static
-                 file. *)
-
-  (** type of the function deciding which cache policy to use *)
-  type choose_cache = size:int option -> mime:string -> accept_encoding:string list
-                      -> cache
-
   (** configuration for static file handlers. This might get
       more fields over time. *)
   type config = {
@@ -954,9 +976,6 @@ module Dir : sig
       mutable max_upload_size: int;
       (** If {!upload} is true, this is the maximum size in bytes for
           uploaded files. *)
-
-      mutable cache: choose_cache;
-      (** Cache download of file. *)
     }
 
   (** default configuration: [
@@ -965,7 +984,6 @@ module Dir : sig
       ; delete=false
       ; upload=false
       ; max_upload_size = 10 * 1024 * 1024
-      ; cache=false
       }] *)
   val default_config : unit -> config
 
@@ -975,7 +993,6 @@ module Dir : sig
     ?delete:bool ->
     ?upload:bool ->
     ?max_upload_size:int ->
-    ?cache:choose_cache ->
     unit ->
     config
   (** Build a config from {!default_config}. *)
@@ -986,11 +1003,30 @@ module Dir : sig
   val add_dir_path :
     ?addresses: Address.t list ->
     ?hostnames: string list ->
-    ?filter:Route.filter ->
+    ?filter:Input.t Route.filter ->
     ?prefix:string ->
     ?config:config ->
     dir:string ->
     Server.t -> unit
+
+  type dynamic = { input : string Request.t -> Input.t
+                 ; filter : 'a. 'a Route.filter option }
+
+  type 'a content =
+    | String of string * string option
+    | Path   of string * (string * int) option
+    | Dynamic of dynamic
+    | Stream of Input.t
+    | Fd of Unix.file_descr
+    | Dir of 'a
+
+  type file_info =
+    FI : { content : 'a content
+    ; size : int option
+    ; dsize : int option
+    ; mtime : float option
+    ; headers : Headers.t
+    } -> file_info
 
   (** Virtual file system.
 
@@ -1021,20 +1057,9 @@ module Dir : sig
     val create : string -> (bytes -> int -> int -> unit) * (unit -> unit)
     (** Create a file and obtain a pair [write, close] *)
 
-    val read_file_content : string -> string
+    val read_file : string -> file_info
     (** Read content of a file *)
 
-    val read_file_stream : string -> Input.t
-    (** Read content of a file as a stream *)
-
-    val read_file_fd : string -> int * Unix.file_descr
-    (** Read content of a file as a size and file_descriptor *)
-
-    val file_size : string -> int option
-    (** File size, e.g. using "stat" *)
-
-    val file_mtime : string -> float option
-    (** File modification time, e.g. using "stat" *)
   end
 
   val vfs_of_dir : string -> (module VFS)
@@ -1045,7 +1070,7 @@ module Dir : sig
   val add_vfs :
     ?addresses: Address.t list ->
     ?hostnames: string list ->
-    ?filter:Route.filter ->
+    ?filter:Input.t Route.filter ->
     ?prefix:string ->
     ?config:config ->
     vfs:(module VFS) ->
@@ -1061,12 +1086,18 @@ module Dir : sig
     type t
     (** The pseudo-filesystem *)
 
-    val create : ?mtime:float -> unit -> t
+    val create : ?top:string -> ?mtime:float -> unit -> t
 
-    val add_file : ?mtime:float -> t -> path:string -> string -> unit
+    val add_file : t -> path:string -> ?mtime:float -> headers:Headers.t -> string -> unit
     (** Add file to the virtual file system.
         @raise Invalid_argument if the path contains '..' or if it tries to
           make a directory out of an existing path that is a file. *)
+
+    val add_dynamic : t -> path:string ->
+                      ?mtime: float -> headers:Headers.t -> dynamic -> unit
+
+    val add_path : t -> path:string ->
+                   ?mtime:float -> headers:Headers.t -> ?deflate:string -> string -> unit
 
     val to_vfs : t -> (module VFS)
   end
@@ -1082,22 +1113,22 @@ module Host : sig
 
     val add_route_handler :
       ?meth:Method.t ->
-      ?filter:Route.filter ->
+      ?filter:Input.t Route.filter ->
       ('a, string Request.t -> Response.t) Route.t -> 'a -> unit
 
     val add_route_handler_stream :
       ?meth:Method.t ->
-      ?filter:Route.filter ->
+      ?filter:Input.t Route.filter ->
       ('a, Input.t Request.t -> Response.t) Route.t -> 'a -> unit
 
     val add_dir_path :
-      ?filter:Route.filter ->
+      ?filter:Input.t Route.filter ->
       ?prefix:string ->
       ?config:config ->
       string -> unit
 
     val add_vfs :
-      ?filter:Route.filter ->
+      ?filter:Input.t Route.filter ->
       ?prefix:string ->
       ?config:config ->
       (module VFS) -> unit

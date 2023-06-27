@@ -88,27 +88,36 @@ let get_session, delete_session =
             Hashtbl.add sessions_tbl key session;
             (session, false)
     with e ->
-      Mutex.unlock mutex_tbl; raise e
+      (try Mutex.unlock mutex_tbl with _ -> ()); raise e
   in
   (get_session, delete_session)
 
-let do_session_data fn (sess : Async.session) =
+let get_session_data (sess : Async.session) =
   let session = LinkedList.get sess in
   Mutex.lock session.mutex;
-  try
-    let r = fn session.data in
-    Mutex.unlock session.mutex;
-    r
-  with e ->
-    Mutex.unlock session.mutex;
-    raise e
+  let r = session.data in
+  Mutex.unlock session.mutex;
+  r
 
-let set_session_data (sess : Async.session) data cleanup =
+let do_session_data_locked : Async.session ->  (session_data -> 'a * session_data) -> 'a  =
+  fun (sess : Async.session) fn ->
+    let session = LinkedList.get sess in
+    Mutex.lock session.mutex;
+    try
+      let (r, data) = fn session.data in
+      session.data <- data;
+      Mutex.unlock session.mutex;
+      r
+    with e ->
+      Mutex.unlock session.mutex;
+      raise e
+
+let set_session_data ?(finalizer=fun _ -> ()) (sess : Async.session) data =
   let session = LinkedList.get sess in
   Mutex.lock session.mutex;
   session.cleanup session.data;
   session.data <- data;
-  session.cleanup <- cleanup;
+  session.cleanup <- finalizer;
   Mutex.unlock session.mutex
 
 let set_session_cookie (sess : Async.session) cname value =
@@ -117,6 +126,13 @@ let set_session_cookie (sess : Async.session) cname value =
   let cs = List.filter (fun (n,_) -> n <> cname) session.cookies in
   session.cookies <- (cname, value) :: cs;
   Mutex.unlock session.mutex
+
+let get_session_cookie (sess : Async.session) cname =
+  let session = LinkedList.get sess in
+  Mutex.lock session.mutex;
+  let r = List.assoc_opt cname session.cookies in
+  Mutex.unlock session.mutex;
+  r
 
 let mk_cookies (sess : Async.session) c =
   let session = LinkedList.get sess in
@@ -175,3 +191,14 @@ let check
                       (fun h -> Headers.set_cookies cookies h)
                       (Response.set_header Headers.Location redirect
                          (Response.fail ~code "logout"))))
+
+exception NoSession
+
+let get_session req =
+  let client = Request.client req in
+  let key = Option.map Http_cookie.value
+              (Request.get_cookie req "SESSION_KEY")
+  in
+  let init () = raise NoSession in
+  let (sess, _) = get_session client key init in
+  sess

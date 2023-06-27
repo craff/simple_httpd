@@ -38,9 +38,20 @@ external raw_sendfile : Unix.file_descr -> Unix.file_descr -> int -> int -> int
 
 external sendfile_error : unit -> 'a = "caml_sendfile_error"
 
+external raw_ssl_sendfile : Ssl.socket -> Unix.file_descr -> int -> int -> int
+  = "caml_ssl_sendfile" [@@noalloc]
+
+external get_error : Ssl.socket -> int -> Ssl.ssl_error = "ocaml_ssl_get_error_code"
+    [@@noalloc]
+
 let sendfile out in_ offset count =
   let ret = raw_sendfile out in_ offset count in
   if ret == -1 then sendfile_error ();
+  ret
+
+let ssl_sendfile out in_ offset count =
+  let ret = raw_ssl_sendfile out in_ offset count in
+  if ret <= 0 then raise Ssl.(Write_error (get_error out ret));
   ret
 
 let percent_encode ?(skip=fun _->false) s =
@@ -285,10 +296,11 @@ module LinkedList = struct
       | Cons r ->
          (match r.prev with
           | Nil -> assert (l.head == c); l.head <- r.next
-          | Cons p -> p.next <- r.next; r.next <- Nil);
+          | Cons p -> p.next <- r.next);
          (match r.next with
           | Nil -> assert (l.tail == c); l.tail <- r.prev
-          | Cons n -> n.prev <- r.prev; r.prev <- Nil)
+          | Cons n -> n.prev <- r.prev);
+         r.next <- Nil; r.prev <- Nil
 
   let insert_first : 'a cell -> 'a t -> unit =
     fun c l ->

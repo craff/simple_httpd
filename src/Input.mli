@@ -59,6 +59,13 @@ val of_bytes : ?i:int -> ?len:int -> bytes -> t
 
 val of_string : string -> t
 
+module type Output = sig
+  val echo : string -> unit
+  val printf : ('a, Format.formatter, unit, unit) format4 -> 'a
+end
+
+val of_output : ((module Output) -> unit) -> t
+
 val iter : (bytes -> int -> int -> unit) -> t -> unit
 (** Iterate on the chunks of the stream. *)
 

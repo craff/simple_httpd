@@ -16,6 +16,8 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <sys/sendfile.h>
+#include <openssl/ssl.h>
+#include <openssl/err.h>
 
 CAMLprim value caml_sendfile(value out_fd, value in_fd, value offset, value count) {
   CAMLparam0();
@@ -30,6 +32,16 @@ CAMLprim void caml_sendfile_error() {
   CAMLparam0();
   caml_uerror("sendfile", Nothing);
   CAMLreturn0;
+}
+
+#define SSL_val(v) (*((SSL **)Data_custom_val(v)))
+
+CAMLprim value caml_ssl_sendfile (value out_fd, value in_fd, value offset, value count) {
+  CAMLparam1(out_fd);
+  ERR_clear_error();
+  ssize_t w = SSL_sendfile(SSL_val(out_fd),Int_val(in_fd),
+			   Int_val(offset),Int_val(count), 0);
+  CAMLreturn(Val_int(w));
 }
 
 CAMLprim void caml_setsockopt_cork(value socket, value val)

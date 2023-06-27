@@ -5,12 +5,12 @@
   (deps (:bin ../examples/echo.exe) echo1.sh)
   (locks /port)
   (enabled_if (= %{system} "linux"))
-  (package simple_httpd_camlzip)
+  (package simple_httpd)
   (action (with-stdout-to %{targets} (run ./echo1.sh %{bin}))))
 
 (rule
   (alias runtest)
-  (package simple_httpd_camlzip)
+  (package simple_httpd)
   (enabled_if (= %{system} "linux"))
   (action (diff echo1.expect echo1.out)))
 
@@ -38,7 +38,7 @@
   (locks /port)
   (package simple_httpd)
   (enabled_if (= %{system} "linux"))
-  (action (with-stdout-to %{targets}
+  (action (with-stdout-to chunked-out
                           (run ./chunked.sh %{bin}))))
 
 (rule
@@ -109,3 +109,27 @@
   (enabled_if (= %{system} "linux"))
   (action
     (bash "openssl req -newkey rsa:2048 -keyout domain.key -x509 -days 365 -out domain.crt -nodes -subj '/C=/ST=/L=/O=/CN=localhost' 2> /dev/null")))
+
+; produce an embedded FS
+(rule
+  (targets vfs.ml)
+  (deps (source_tree files))
+  (enabled_if (= %{system} "linux"))
+  (action (run %{bin:simple-httpd-vfs-pack} -o %{targets}
+  	       -v
+	       --destination=/tmp/bigs
+               --mirror=files/
+               )))
+
+(executable
+  (name bench)
+  (flags :standard -warn-error -3)
+  (modules bench)
+  (libraries unix csv))
+
+(executable
+  (name serve_files)
+  (flags :standard -warn-error -3)
+  (ocamlopt_flags -O3)
+  (modules serve_files vfs)
+  (libraries simple_httpd))

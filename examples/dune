@@ -12,8 +12,8 @@
 (executable
   (name echo)
   (flags :standard -warn-error -a+8)
-  (modules echo vfs)
-  (libraries simple_httpd simple_httpd_camlzip))
+  (modules globals echo vfs)
+  (libraries simple_httpd))
 
 (executable
   (name minimal)
@@ -43,6 +43,7 @@
   (deps (source_tree files) (:out test_output.txt.expected))
   (enabled_if (= %{system} "linux"))
   (action (run %{bin:simple-httpd-vfs-pack} -o %{targets}
+	       --destination=/tmp/simple_httpd_echo
                --mirror=files/
                --file=test_out.txt,%{out}
                ; --url=example_dot_com,http://example.com ; this breaks tests in opam sandbox 😢

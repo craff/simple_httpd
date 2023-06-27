@@ -50,22 +50,22 @@ val to_string : _ t -> string
     response only if [deflate] is allowed using the header named
     {!Headers.Accept_Encoding}. *)
 
-type filter = Input.t Request.t -> Input.t Request.t * (Response.t -> Response.t)
+type 'a filter = 'a Request.t -> 'a Request.t * (Response.t -> Response.t)
 
-val decode_request : (Input.t -> Input.t) -> (Headers.t -> Headers.t)
-                     -> filter
+val decode_request : ('a -> 'a) -> (Headers.t -> Headers.t)
+                     -> 'a filter
 (** helper to create a filter transforming only the request. *)
 
 val encode_response : (Response.body -> Response.body) -> (Headers.t -> Headers.t)
-                      -> filter
+                      -> 'a filter
 (** helper to create a filter transforming only the resposne. *)
 
-val compose_embrace : filter -> filter -> filter
+val compose_embrace : 'a filter -> 'a filter -> 'a filter
 (** [compose_embrace f1 f2] compose two filters:
     the request will be passed first to [f2], then to [f1],
     the response will be passed first to [f2], then to [f1] **)
 
-val compose_cross : filter -> filter -> filter
+val compose_cross : 'a filter -> 'a filter -> 'a filter
 (** [compose_cross f1 f2] compose two filters:
     the request will be passed first to [f2], then to [f1],
     the response will be passed first to [f1], then to [f2] **)
@@ -83,7 +83,7 @@ val add_route_handler :
   ?addresses:Address.t list ->
   ?hostnames:string list ->
   ?meth:Method.t ->
-  ?filter:filter ->
+  ?filter:Input.t filter ->
   tr_req:('a -> unit) treatment ->
   handlers -> ('b, 'a) t -> 'b -> unit
 
