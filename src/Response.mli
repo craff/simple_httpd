@@ -110,7 +110,7 @@ val fail :
     Example: [fail ~code:404 "oh noes, %s not found" "waldo"].
  *)
 
-val fail_raise : code:int -> ('a, unit, string, 'b) format4 -> 'a
+val fail_raise : ?headers:Headers.t -> ?cookies:Cookies.t -> code:int -> ('a, unit, string, 'b) format4 -> 'a
 (** Similar to {!fail} but raises an exception that exits the current handler.
     This should not be used outside of a (path) handler.
     Example: [fail_raise ~code:404 "oh noes, %s not found" "waldo"; never_executed()]

@@ -2,9 +2,12 @@
 (** @inline *)
 include Headers_
 
-let bad_reqf = Response_code.bad_reqf
-
 type t = (header * string) list
+
+exception Bad_req of int * string * t * Cookies.t
+let fail_raise ?(headers=[]) ?(cookies=[]) ~code:c fmt =
+  Printf.ksprintf (fun s ->raise (Bad_req (c,s,headers,cookies))) fmt
+
 let empty = []
 let contains name headers =
   List.exists (fun (n, _) -> eq name n) headers
@@ -34,7 +37,7 @@ let parse_ ~buf (bs:Input.t) : t * Cookies.t =
        let v =
          try
            Input.read_line ~buf bs
-         with _ -> bad_reqf 400 "invalid header value: %S" (to_string k)
+         with _ -> fail_raise ~code:400 "invalid header value: %S" (to_string k)
        in
        let headers, cookies =
          if k = Cookie then

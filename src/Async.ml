@@ -44,20 +44,22 @@ type client =
   ; mutable sendfile : Unix.file_descr -> int -> int -> int
   }
 
+and mutex_state = Unlocked | Locked of client | Deleted
+
 and mutex =
   { mutable eventfd : Unix.file_descr
-  ; mutable owner   : client option
+  ; mutable owner   : mutex_state
+  ; waiting : bool array (* which domain has add the mutex to epoll *)
   }
 
 and session_info =
   { addr : string
   ; key : string
-  ; mutex : mutex
   ; life_time : float
+  ; clients : client list Atomic.t
+  ; data : session_data Atomic.t
+  ; cleanup : session_data -> unit
   ; mutable last_refresh : float
-  ; mutable clients : client list
-  ; mutable data : session_data
-  ; mutable cleanup : session_data -> unit
   ; mutable cookies : (string * string) list
   }
 
@@ -117,6 +119,12 @@ type socket_type =
   | Pipe
   | Lock of client
 
+let pp_sock_info = function
+  | Io _ -> "Io"
+  | Client cl -> Printf.sprintf "Client(%d)" cl.id
+  | Pipe -> "Pipe"
+  | Lock cl -> Printf.sprintf "Lock(%d)" cl.id
+
 exception SockError of socket_type * exn
 
 let printexn e =
@@ -130,10 +138,19 @@ let ioError s exn = raise(SockError(Io s,exn))
 type pending_status =
   NoEvent | Wait : 'a pending -> pending_status | TooSoon of bool
 
+let pp_status = function
+  | NoEvent -> "NoEvent"
+  | Wait _ -> "Wait"
+  | TooSoon _ -> "TooSoon"
+
 type socket_info =
   { ty : socket_type
   ; mutable pd : pending_status
   }
+
+let pp_pendings tbl =
+  Hashtbl.fold (fun _ v acc ->
+      acc ^ ", " ^ pp_sock_info v.ty ^ " " ^ pp_status v.pd) tbl ""
 
 let socket_client s = match s.ty with
   | Client c -> c
@@ -209,9 +226,9 @@ let string_status st =
                                 (if i = 0 then "" else ", ")
                                 (Atomic.get a)) st.nb_connections)
     (fun b ->
-      Array.iteri (fun i a -> Printf.bprintf b "%s%d"
-                                (if i = 0 then "" else ", ")
-                                (Hashtbl.length a.pendings)) all_domain_info);
+      Array.iteri (fun i a -> Printf.bprintf b "%s%s"
+                                (if i = 0 then "" else "|| ")
+                                (pp_pendings a.pendings)) all_domain_info);
   Buffer.contents b
 
 let print_status ch st =
@@ -231,27 +248,31 @@ module Mutex : sig
     val unlock : t -> unit
     val try_lock : t -> bool
     val lock : t -> unit
+    val delete : t -> unit
   end = struct
   external raw_eventfd  : int -> int -> Unix.file_descr = "caml_eventfd"
   (*external raw_efd_cloexec   : unit -> int = "caml_efd_cloexec"*)
   external raw_efd_nonblock  : unit -> int = "caml_efd_nonblock"
-  external raw_efd_semaphore : unit -> int = "caml_efd_semaphore"
 
-  let flags = raw_efd_nonblock() land raw_efd_semaphore()
+  let flags = raw_efd_nonblock()
 
   type t = mutex
+
+  let delete r =
+    match r.owner with
+    | Deleted -> ()
+    | Locked _ ->
+       Log.f ~lvl:1 (fun k -> k "Mutex collected before unlock!");
+    | Unlocked -> r.owner <- Deleted;
+                  try Unix.close r.eventfd with _ -> ()
 
   let create () =
     let r =
       { eventfd = raw_eventfd 1 flags
-      ; owner = None }
+      ; owner = Unlocked
+      ; waiting = Array.make max_domain false}
     in
-    let finalise r =
-      if r.owner <> None then
-        Log.f ~lvl:1 (fun k -> k "Mutex collected before unlock!");
-      Unix.close r.eventfd
-    in
-    Gc.finalise finalise r;
+    Gc.finalise delete r;
     r
 
   let one = let r = Bytes.create 8 in Bytes.set_int64_ne r 0 1L; r
@@ -259,19 +280,24 @@ module Mutex : sig
   let unlock lk =
     begin
       match lk.owner with
-      | Some cl ->
+      | Locked cl ->
          if cl != global_get_client () then
-           failwith "unlock by a client that did not lock the mutex"
-      | None ->
+           failwith "unlock by a client that did not lock the mutex";
+         cl.locks <- List.filter (fun x -> x != lk) cl.locks
+      | Unlocked ->
          failwith "unlock a not locked mutex"
+      | Deleted ->
+         failwith "unlock a deleted mutex"
     end;
-    lk.owner <- None;
+    lk.owner <- Unlocked;
     assert (Util.single_write lk.eventfd one 0 8 = 8)
 
   let try_lock lk =
     let buf = Bytes.create 8 in
     try assert(Util.read lk.eventfd buf 0 8 = 8);
-        lk.owner <- Some (global_get_client ());
+        let cl = global_get_client () in
+        lk.owner <- Locked cl;
+        cl.locks <- lk :: cl.locks;
         true
     with Unix.(Unix_error((EAGAIN | EWOULDBLOCK), _, _)) -> false
 
@@ -477,30 +503,26 @@ let loop id st listens pipe timeout handler () =
     fun lk fn cont ->
     let cl = get_client () in
     cl.acont <- C cont;
-    cl.locks <- lk :: cl.locks;
-    let fn () =
-      Hashtbl.remove pendings lk.eventfd;
-      Polly.(del poll_list lk.eventfd);
-      cl.locks <- List.filter (fun x -> x != lk) cl.locks;
-      fn lk
-    in
+    let fn () = fn lk in
     let info = { ty = Lock cl
                ; pd = Wait { fn; cont }
                }
     in
+    (* may be another client is already waiting *)
+    if not lk.waiting.((did :> int)) then
+      begin
+        Polly.(add poll_list lk.eventfd Events.(inp lor et));
+        lk.waiting.((did :> int)) <- true
+      end;
+
     Hashtbl.add pendings lk.eventfd info;
-    Polly.(add poll_list lk.eventfd Events.(inp lor et));
+
   in
 
-  let find s =
-    try Hashtbl.find pendings s with _ -> assert false
-  in
+  let find s = Hashtbl.find_all pendings s in
 
   let close ?client exn =
     let c = match client with None -> get_client () | Some c -> c in
-    Log.f ~lvl:1 (fun k -> k "closing because exception: %s. connected: %b (%d)"
-                               (printexn exn) c.connected
-                               (Atomic.get st.nb_connections.(id)));
     assert c.connected;
     begin
       let fn s =
@@ -511,24 +533,22 @@ let loop id st listens pipe timeout handler () =
     end;
     unregister c.sock;
     Atomic.decr st.nb_connections.(id);
+
     begin
       match c.session with
       | None -> ()
       | Some sess ->
          let sess = Util.LinkedList.get sess in
-         Mutex.lock sess.mutex;
-         sess.clients <- List.filter (fun c' -> c != c') sess.clients;
-         Mutex.unlock sess.mutex;
+         let fn clients = List.filter (fun c' -> c != c') clients in
+         Util.update_atomic sess.clients fn;
     end;
     begin
-      let fn lk =
-        Mutex.unlock lk;
-        Hashtbl.remove pendings lk.eventfd;
-        try Polly.(del poll_list lk.eventfd) with Unix.Unix_error _ -> ();
-      in
-      List.iter fn c.locks;
+      List.iter Mutex.unlock c.locks;
       c.locks <- []
     end;
+    Log.f ~lvl:2 (fun k -> k "[%d] closing because exception: %s. connected: %b (%d)"
+                               c.id (printexn exn) c.connected
+                               (Atomic.get st.nb_connections.(id)));
     c.connected <- false
   in
 
@@ -545,33 +565,41 @@ let loop id st listens pipe timeout handler () =
       in
       let select_timeout = int_of_float (1e3 *. select_timeout) in
       let fn _ sock evt =
-        let info = find sock in
-        match info with
-        | { ty = Pipe; _ } ->
-           begin
-             try
-               while true do
-                 assert (Util.read pipe pipe_buf 0 8 = 8);
-                 let sock : Unix.file_descr =
-                   Obj.magic (Int32.to_int (Bytes.get_int32_ne pipe_buf 0))
-                 in
-                 let index = Int32.to_int (Bytes.get_int32_ne pipe_buf 4) in
-                 let l = listens.(index) in
-                 Log.f ~lvl:1 (fun k -> k "received accepted socket");
-                 add_ready (Accept (index, sock, l))
-               done
-             with Unix.Unix_error((EAGAIN|EWOULDBLOCK),_,_) -> ()
-           end
-        | { pd = NoEvent ; _ } as r ->
-           let e = Polly.Events.((err lor hup) land evt <> empty) in
-           r.pd <- TooSoon e
-        | { pd = Wait a ; _ } as p ->
-           let e = Polly.Events.((err lor hup) land evt <> empty) in
-           add_ready (Action(a,p,e));
-           p.pd <- NoEvent;
-        | { pd = TooSoon b ; _ } as p ->
-           let e = Polly.Events.((err lor hup) land evt <> empty) in
-           p.pd <- TooSoon (b || e)
+        let fn info =
+          (match info with
+           | { ty = Lock _; _ } ->
+              Hashtbl.remove pendings sock;
+           | _ -> ());
+          match info with
+          | { ty = Pipe; _ } ->
+             begin
+               try
+                 while true do
+                   assert (Util.read pipe pipe_buf 0 8 = 8);
+                   let sock : Unix.file_descr =
+                     Obj.magic (Int32.to_int (Bytes.get_int32_ne pipe_buf 0))
+                   in
+                   let index = Int32.to_int (Bytes.get_int32_ne pipe_buf 4) in
+                   let l = listens.(index) in
+                   Log.f ~lvl:1 (fun k -> k "received accepted socket");
+                   add_ready (Accept (index, sock, l))
+                 done
+               with Unix.Unix_error((EAGAIN|EWOULDBLOCK),_,_) -> ()
+                  | e -> Log.f ~lvl:1 (fun k -> k "EXCEPTION IN ACCEPT RECPT: %s"
+                                                  (Printexc.to_string e))
+             end
+          | { pd = NoEvent ; _ } as r ->
+             let e = Polly.Events.((err lor hup) land evt <> empty) in
+             r.pd <- TooSoon e
+          | { pd = Wait a ; _ } as p ->
+             let e = Polly.Events.((err lor hup) land evt <> empty) in
+             add_ready (Action(a,p,e));
+             p.pd <- NoEvent;
+          | { pd = TooSoon b ; _ } as p ->
+             let e = Polly.Events.((err lor hup) land evt <> empty) in
+             p.pd <- TooSoon (b && e)
+        in
+        List.iter fn (find sock)
       in
       Log.f ~lvl:4 (fun k -> k "entering poll");
       try
@@ -701,16 +729,17 @@ let loop id st listens pipe timeout handler () =
                add_lock lk fn cont)
         | Io {sock; fn; _} ->
            Some (fun (cont : (c,_) continuation) ->
-               let info = find sock in
                (get_client ()).acont <- C cont;
-               begin
+               let infos = find sock in
+               let fn info =
                  match info.pd with
                  | NoEvent ->
                     info.pd <- Wait { fn; cont }
                  | TooSoon e ->
                     add_ready (Action({ fn; cont }, info, e))
                  | Wait _ -> assert false
-               end)
+               in
+               List.iter fn infos)
         | _ -> None
     )}
   in

@@ -1,7 +1,7 @@
 <ML>
   open Simple_httpd
   type Async.session_data += Count of int
-(*  let filter = Some (fun req -> Session.check ~init:(fun () -> Count 0) req)*)
+  let filter = Some (fun req -> Session.check ~init:(fun () -> Count 0) req)
 </ML>
 <!DOCTYPE html>
 <html>
@@ -17,12 +17,11 @@
       <li> item 3 </li>
       <li> item 4 </li>
       <li> views: <ML>
-	  (*let session = Session.get_session request
-	  let n = match Session.get_session_data session with
-	    | Count n -> n
-	    | _ -> assert false
+	  let session = Session.get_session request
+	  let n = Session.do_session_data session (function
+	  | Count old -> (old, Count (old + 1))
+	  | _ -> assert false)
 	  let _ = echo (string_of_int n)
-	  let _ = Session.set_session_data session (Count(n+1))*)
 	</ML>
       </li>
     </ul>

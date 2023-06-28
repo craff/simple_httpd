@@ -19,4 +19,4 @@ let of_string = function
   | "POST" -> POST
   | "HEAD" -> HEAD
   | "DELETE" -> DELETE
-  | s -> Response_code.bad_reqf 400 "unknown method %S" s
+  | s -> Headers.fail_raise ~code:400 "unknown method %S" s

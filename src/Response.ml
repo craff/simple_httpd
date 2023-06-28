@@ -1,5 +1,5 @@
 
-let bad_reqf = Response_code.bad_reqf
+let fail_raise = Headers.fail_raise
 let log      = Log.f
 
 type body = String of string
@@ -58,8 +58,6 @@ let make ?cookies ?headers r : t = match r with
 
 let fail ?cookies ?headers ~code fmt =
   Printf.ksprintf (fun msg -> make_raw ?cookies ?headers ~code msg) fmt
-let fail_raise ~code fmt =
-  Printf.ksprintf (fun msg -> bad_reqf code "%s" msg) fmt
 
 let pp out self : unit =
   let pp_body out = function

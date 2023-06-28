@@ -26,6 +26,3 @@ let descr = function
   | 501 -> "Not implemented"
   | 503 -> "Service unavailable"
   | n -> "Unknown response code " ^ string_of_int n (* TODO *)
-
-exception Bad_req of int * string
-let bad_reqf c fmt = Printf.ksprintf (fun s ->raise (Bad_req (c,s))) fmt

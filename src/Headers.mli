@@ -43,3 +43,7 @@ val pp : Format.formatter -> t -> unit
 
 val parse_ : buf:Buffer.t -> Input.t -> t * Cookies.t
 (** For internal use *)
+
+exception Bad_req of int * string * t * Cookies.t
+val fail_raise : ?headers:t -> ?cookies:Cookies.t ->
+               code:int -> ('a, unit, string, 'b) format4 -> 'a

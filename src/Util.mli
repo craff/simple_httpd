@@ -70,3 +70,6 @@ module LinkedList : sig
   val move_first : 'a cell -> 'a t -> unit
   val move_last : 'a cell -> 'a t -> unit
 end
+
+val update_atomic : 'a Atomic.t -> ('a -> 'a) -> unit
+val get_update_atomic : 'a Atomic.t -> ('a -> 'b * 'a) -> 'b

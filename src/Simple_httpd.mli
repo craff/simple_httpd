@@ -304,31 +304,6 @@ module Mutex : sig
   val unlock : t -> unit
 end
 
-(** Module defining HTML response codes *)
-module Response_code : sig
-  (** {1 Response Codes}
-
-    Response code allows client to know if a request failed and give a reason.
-    TODO: This module is not complete (yet). *)
-
-  type t = int
-  (** A standard HTTP code.
-
-      https://tools.ietf.org/html/rfc7231#section-6 *)
-
-  val ok : t
-  (** The code [200] *)
-
-  val not_found : t
-  (** The code [404] *)
-
-  val descr : t -> string
-  (** A description of some of the error codes.
-      NOTE: this is not complete (yet). *)
-
-  (** A function raising an exception with an error code and a string response *)
-  val bad_reqf : t -> ('a, unit, string, 'b) format4 -> 'a
-end
 
 (** Module defining HTML methods (GET,PUT,...) *)
 module Method : sig
@@ -503,6 +478,30 @@ module Request : sig
   (** Read the whole body into a string. *)
 end
 
+(** Module defining HTML response codes *)
+module Response_code : sig
+  (** {1 Response Codes}
+
+    Response code allows client to know if a request failed and give a reason.
+    TODO: This module is not complete (yet). *)
+
+  type t = int
+  (** A standard HTTP code.
+
+      https://tools.ietf.org/html/rfc7231#section-6 *)
+
+  val ok : t
+  (** The code [200] *)
+
+  val not_found : t
+  (** The code [404] *)
+
+  val descr : t -> string
+  (** A description of some of the error codes.
+      NOTE: this is not complete (yet). *)
+
+end
+
 (** Module handling HTML responses *)
 module Response : sig
   (** {1 Responses}
@@ -614,7 +613,8 @@ module Response : sig
       Example: [fail ~code:404 "oh noes, %s not found" "waldo"].
    *)
 
-  val fail_raise : code:int -> ('a, unit, string, 'b) format4 -> 'a
+  val fail_raise : ?headers:Headers.t -> ?cookies:Cookies.t -> code:int
+                   -> ('a, unit, string, 'b) format4 -> 'a
   (** Similar to {!fail} but raises an exception that exits the current handler.
       This should not be used outside of a (path) handler.
       Example: [fail_raise ~code:404 "oh noes, %s not found" "waldo"; never_executed()]
@@ -727,8 +727,9 @@ module Session : sig
 
   val check : ?session_life_time:float ->
               ?init:(unit -> session_data) ->
+              ?finalise:(session_data -> unit) ->
               ?check:(session -> bool) ->
-              ?error:(int*string) ->
+              ?error:(int*Headers.t) ->
               'a Route.filter
 
 
@@ -739,10 +740,9 @@ module Session : sig
 
   val get_session_data : session -> session_data
 
-  val set_session_data : ?finalizer:(session_data -> unit)
-                         -> session -> session_data -> unit
+  val set_session_data : session -> session_data -> unit
 
-  val do_session_data_locked :
+  val do_session_data :
     session -> (session_data -> 'a * session_data) -> 'a
 
   val get_session_cookie : session -> string -> string option

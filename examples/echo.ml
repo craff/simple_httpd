@@ -48,6 +48,7 @@ let addr = ref "127.0.0.1"
 let port = ref 8080
 let j = ref 32
 let top_dir = ref None
+let timeout = ref (-1.0)
 
 (** parse command line option *)
 let _ =
@@ -57,13 +58,14 @@ let _ =
       "--port", Arg.Set_int port, " set port";
       "-p", Arg.Set_int port, " set port";
       "--log", Arg.Int (fun n -> Log.set_log_lvl n), " set debug lvl";
+      "--timeout", Set_float timeout, " timeout in seconds, connection is closed after timeout second of inactivity (default: -1.0 means no timeout)";
       "--dir", Arg.String (fun s -> top_dir := Some s), " set the top dir for file path";
       "-j", Arg.Set_int j, " maximum number of connections";
     ]) (fun _ -> raise (Arg.Bad "")) "echo [option]*"
 
 (** Server initialisation *)
 let listens = [Address.make ~addr:!addr ~port:!port ()]
-let server = Server.create ~listens ~max_connections:!j ()
+let server = Server.create ~listens ~max_connections:!j ~timeout:!timeout ()
 
 (** Compose the above filter with the compression filter
     provided by [Simple_httpd.Camlzip] *)

@@ -360,3 +360,21 @@ module LinkedList = struct
     gn (Root l) l.head
 
 end
+
+let update_atomic a fn =
+  let rec gn () =
+    let old = Atomic.get a in
+    let b = fn old in
+    if Atomic.compare_and_set a old b then ()
+    else (Printf.eprintf "LOOP\n%!"; gn ())
+  in
+  gn ()
+
+let get_update_atomic a fn =
+  let rec gn () =
+    let old = Atomic.get a in
+    let (x, b) = fn old in
+    if Atomic.compare_and_set a old b then x
+    else (Printf.eprintf "LOOP\n%!"; gn ())
+  in
+  gn ()

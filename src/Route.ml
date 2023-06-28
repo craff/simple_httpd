@@ -251,7 +251,7 @@ let find (handlers : handlers) (req : Input.t Request.t) =
             with Not_found ->  [default]
   in
   let rec kn = function
-    | []           -> Response_code.bad_reqf 404 "not found"
+    | []           -> Response.fail_raise ~code:404 "not found"
     | tree :: rest ->
        let path, l = get req.Request.meth req.Request.path_components tree in
        let rec fn = function

@@ -32,6 +32,7 @@ module Mutex : sig
   val try_lock : t -> bool
   val lock : t -> unit
   val unlock : t -> unit
+  val delete : t -> unit
 end
 
 type any_continuation (** internal use only *)
@@ -62,12 +63,11 @@ type client = private {
 and session_info = (* FIXME: force protection by mutex making the type private *)
   { addr : string
   ; key : string
-  ; mutex : Mutex.t
   ; life_time : float
+  ; clients : client list Atomic.t
+  ; data : session_data Atomic.t
+  ; cleanup : session_data -> unit (* FIXME *)
   ; mutable last_refresh : float
-  ; mutable clients : client list
-  ; mutable data : session_data
-  ; mutable cleanup : session_data -> unit
   ; mutable cookies : (string * string) list
   }
 

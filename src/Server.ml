@@ -1,7 +1,6 @@
 
 type buf = Buffer.t
 
-let bad_reqf = Response_code.bad_reqf
 let log      = Log.f
 
 module type SERVER_SENT_GENERATOR = sig
@@ -148,7 +147,7 @@ let handle_client_ (self:t) (client:Async.client) : unit =
           | Some "100-continue" ->
             log ~lvl:2 (fun k->k "send back: 100 CONTINUE");
             Response.output_ oc (Response.make_raw ~code:100 "");
-          | Some s -> bad_reqf 417 "unknown expectation %s" s
+          | Some s -> Response.fail_raise ~code:417 "unknown expectation %s" s
           | None -> ()
         end;
 
@@ -180,24 +179,12 @@ let handle_client_ (self:t) (client:Async.client) : unit =
                                     (Async.printexn e));
          continue := false; (* connection broken somehow *)
 
-      | Response_code.Bad_req (c,s)
-           when (300 <= c && c <= 303) || (307 <= c && c <= 308) ->
+      | Headers.Bad_req (c,s,headers,cookies) ->
          log ~lvl:1 (fun k -> k "redirect request (%s)" s);
-         let res = Response.make_raw ~code:c "" in
-         let res = Response.set_header Headers.Location s res in
+         let res = Response.make_raw ~headers ~cookies ~code:c s in
          begin
            try Response.output_ oc res
            with Sys_error _ | Unix.Unix_error _ -> ()
-         end;
-         Async.yield ()
-
-      | Response_code.Bad_req (c,s) ->
-         (* connection error, close *)
-         log ~lvl:1 (fun k -> k "error handling request (%s)" s);
-         let res = Response.make_raw ~code:c s in
-         begin
-           try Response.output_ oc res
-         with Sys_error _ | Unix.Unix_error _ -> ()
          end;
          if not (c < 500) then continue := false else Async.yield ()
 

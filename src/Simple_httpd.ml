@@ -27,8 +27,6 @@ module Log = Async.Log
 
 module Mutex = Async.Mutex
 
-module Response_code = Response_code
-
 module Method = Method
 
 module Headers = Headers
@@ -38,6 +36,8 @@ module Cookies = Cookies
 module Camlzip = Camlzip
 
 module Request = Request
+
+module Response_code = Response_code
 
 module Response = Response
 
