@@ -296,14 +296,14 @@ let add_vfs_ ?addresses ?hostnames ?(filter=(fun x -> (x, fun r -> r)))
              Response.make_raw_file
                ~headers:(cache_control ()::
                          (Headers.Content_Encoding, "deflate")::info.headers)
-               ~code:200 ~close:false size fd
+               ~code:200 ~close:true size fd
           | Path(f, _) ->
              let fd = Unix.openfile f [O_RDONLY] 0 in
              let size = match info.size with Some s -> s | None -> assert false in
              log ~lvl:2 (fun k->k "download ok %s" path);
              Response.make_raw_file
                ~headers:(cache_control ()::info.headers)
-               ~code:200 ~close:false size fd
+               ~code:200 ~close:true size fd
           | Fd(fd) ->
              let size = Unix.(fstat fd).st_size in
              log ~lvl:2 (fun k->k "download ok %s" path);

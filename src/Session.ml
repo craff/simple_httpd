@@ -21,12 +21,12 @@ let get_session, delete_session =
     let session = LinkedList.get sess in
     Mutex.lock mutex_tbl;
     Hashtbl.remove sessions_tbl session.key;
+    Mutex.unlock mutex_tbl;
     let fn clients =
       List.iter (fun cl -> Async.set_session cl) clients;
       []
     in
     Util.update_atomic session.clients fn;
-    Mutex.unlock mutex_tbl;
     Mutex.lock mutex_list;
     (try LinkedList.remove_cell sess sessions_list;
          Mutex.unlock mutex_list
@@ -83,14 +83,15 @@ let get_session, delete_session =
             let now = Unix.gettimeofday () in
             let session_info =
               { addr; key; clients= Atomic.make [client]
-              ; data; cleanup; cookies = []; life_time = session_life_time
+              ; data; cleanup; cookies = Atomic.make []
+              ; life_time = session_life_time
               ; last_refresh = now }
             in
             Mutex.lock mutex_list;
             let session = LinkedList.add_first session_info sessions_list in
             Mutex.unlock mutex_list;
-            Mutex.lock mutex_tbl;
             Async.set_session ~session client;
+            Mutex.lock mutex_tbl;
             Hashtbl.add sessions_tbl key session;
             Mutex.unlock mutex_tbl;
             (session, false)
@@ -113,12 +114,12 @@ let set_session_data (sess : Async.session) data =
 
 let set_session_cookie (sess : Async.session) cname value =
   let session = LinkedList.get sess in
-  let cs = List.filter (fun (n,_) -> n <> cname) session.cookies in
-  session.cookies <- (cname, value) :: cs
+  Util.update_atomic session.cookies (
+      fun c -> (cname, value) :: List.filter (fun (n,_) -> n <> cname) c)
 
 let get_session_cookie (sess : Async.session) cname =
   let session = LinkedList.get sess in
-  List.assoc_opt cname session.cookies
+  List.assoc_opt cname (Atomic.get session.cookies)
 
 let mk_cookies (sess : Async.session) c =
   let session = LinkedList.get sess in
@@ -128,8 +129,10 @@ let mk_cookies (sess : Async.session) c =
   let c = Cookies.create ~name:"SESSION_ADDR" ~max_age
             ~same_site:`Strict session.addr c in
   let c = List.fold_left (fun c (name, value) ->
-               Cookies.create ~name ~max_age
-                 ~same_site:`Strict ~http_only:false value c) c session.cookies in
+              Cookies.create ~name ~max_age
+                ~same_site:`Strict ~http_only:false value c) c
+            (Atomic.get session.cookies)
+  in
   c
 
 let check

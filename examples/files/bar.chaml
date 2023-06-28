@@ -22,6 +22,9 @@
 	  | Count old -> (old, Count (old + 1))
 	  | _ -> assert false)
 	  let _ = echo (string_of_int n)
+	  let _ = echo (if n mod 2 = 0 then
+ 	                  <p>even (<ML> ^ string_of_int n ^ </ML>)</p>
+	                else <p>odd</p>)
 	</ML>
       </li>
     </ul>

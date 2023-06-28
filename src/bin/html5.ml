@@ -77,7 +77,7 @@ let trees_to_ocaml t =
   let rec fn depth acc stack =
     let top = depth = 0 in
     let newline depth =
-      pr"\n";
+      if depth = 0 then pr "\n";
       let rec fn d =
         if d > 0 then (pr"  "; fn (d - 1))
       in
@@ -85,7 +85,7 @@ let trees_to_ocaml t =
     in
     let gn s stack = fn depth (s::acc) stack in
     match stack with
-    | [] -> of_elems top acc
+    | [] -> if top then acc else (of_elems top acc; [])
     | e::stack ->
        match e with
        | Caml(_a, sons) ->
@@ -95,8 +95,8 @@ let trees_to_ocaml t =
           let hn i x =
             newline (if i = 0 then depth else depth + 1);
             match x with
-            | Text l -> List.iter (pr"%s") l;
-            | x      -> fn (depth + 1) [] [x];
+            | Text l -> List.iter (pr "%s") l
+            | x      -> of_elems false (fn (depth + 1) [] [x]);
           in
           List.iteri hn sons;
           if top && not !doctype && !filter = None then
@@ -119,8 +119,8 @@ let trees_to_ocaml t =
        | PI (s,u) -> gn (`PI (s,u)) stack
        | Xml x -> gn (`Xml x) stack
   in
-  iter (fun x -> fn 0 [] [x]) t;
-  (Buffer.contents buf, !filter);
+  of_elems true (fold (fun acc x -> fn 0 acc [x]) [] t);
+  (Buffer.contents buf, !filter)
 
 (*
 let test =

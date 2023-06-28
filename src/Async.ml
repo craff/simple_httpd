@@ -59,8 +59,8 @@ and session_info =
   ; clients : client list Atomic.t
   ; data : session_data Atomic.t
   ; cleanup : session_data -> unit
-  ; mutable last_refresh : float
-  ; mutable cookies : (string * string) list
+  ; mutable last_refresh : float (* protected by mutex_list in Session.ml *)
+  ; cookies : (string * string) list Atomic.t
   }
 
 and session = session_info Util.LinkedList.cell

@@ -15,3 +15,7 @@ plot for [col=3:7] 'bench.csv' using (strcol(1) eq "foo_100k" ? $2 : '') : col w
 set title '10M file'
 set output 'big.png'
 plot for [col=3:7] 'bench.csv' using (strcol(1) eq "foo_10M" ? $2 : '') : col with points
+
+set title 'chaml/php file'
+set output 'chaml.png'
+plot for [col=3:4] 'bench_chaml.csv' using (strcol(1) eq "bar.html" ? $2 : '') : col with points

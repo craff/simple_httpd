@@ -55,11 +55,47 @@ let measure server cmd values =
   res
 
 let nb_conn = [10;50;100;200;300;400;500;600;700;800;900;1000]
-let files = ["foo_1k", 1; "foo_100k", 2; "foo_10M", 10]
 
+(* ======================== TEST of .chaml ====================== *)
+
+let files = ["bar.html", 1]
 let values = List.(flatten (map (fun file -> map (fun n -> (file,n)) nb_conn) files))
 
 let csv = ref []
+
+let _ = csv := add_column !csv "file" fst (List.map fst values)
+let _ = csv := add_column !csv "nbc" string_of_int (List.map snd values)
+
+let data =
+  Printf.printf "serve_files\n%!";
+  measure
+    (Some "../_build/default/examples/echo.exe -j 2100")
+    (fun ((file, d), c) ->
+      Printf.sprintf "wrk -t5 -c%d --timeout 10 -d%d http://localhost:8080/vfs/%s"
+        c d file)
+    values
+
+let _ = csv := add_column !csv "sh\\\\_cc" string_of_float data
+
+let data =
+  Printf.printf "measure apache\n%!";
+  measure None
+    (fun ((file, d), c) ->
+      let file = Filename.remove_extension file ^ ".php" in
+      Printf.sprintf "wrk -t5 -c%d --timeout 10 -d%d http://localhost:80/nginx/%s"
+        c d file)
+    values
+
+let _ = csv := add_column !csv "apache" string_of_float data
+
+let _ = Csv.save "bench_chaml.csv" !csv
+
+(* ======================== TEST of static files ====================== *)
+
+let files = ["foo_1k", 1; "foo_100k", 2; "foo_10M", 10]
+let values = List.(flatten (map (fun file -> map (fun n -> (file,n)) nb_conn) files))
+
+let _ = csv := []
 
 let _ = csv := add_column !csv "file" fst (List.map fst values)
 let _ = csv := add_column !csv "nbc" string_of_int (List.map snd values)
@@ -119,48 +155,3 @@ let _ = csv := add_column !csv "apache" string_of_float data
 
 
 let _ = Csv.save "bench.csv" !csv
-
-(*
-#!/bin/bash
-
-ulimit -n 6500
-
-
-PID1=$!
-../_build/default/src/bin/http_of_dir.exe --ssl ../_build/default/tests/domain.crt ../_build/default/tests/domain.key  --maxc=2100 --port=8443 --timeout 10 /var/www/nginx &
-PID2=$1
-../_build/default/tests/serve_files.exe --maxc=2100 --port=9080 --timeout 10 &
-PID3=$1
-
-if [ -f small.csv ]; then rm small.csv; fi
-
-echo nbc, apache, nginx, simple, simple-cc, simple-ssl | tee -a small.csv
-
-for c in $(seq 5 5 20; seq 30 10 50; seq 100 50 500; seq 600 100 1000); do
-    echo -n $c "," | tee -a small.csv
-    echo -n $(wrk -t5 -c$c --timeout 10 -d1 http://localhost:80/nginx/foo_1k | tee /dev/fd/2 | grep Requests/sec | awk '{print $2}') "," >> small.csv
-    echo -n $(wrk -t5 -c$c --timeout 10 -d1 http://localhost:7080/foo_1k | tee /dev/fd/2 | grep Requests/sec | awk '{print $2}') "," >> small.csv
-    echo -n $(wrk -t5 -c$c --timeout 10 -d1 http://localhost:8080/foo_1k | tee /dev/fd/2 | grep Requests/sec | awk '{print $2}') "," >> small.csv
-    echo -n $(wrk -t5 -c$c --timeout 10 -d1 http://localhost:9080/foo_1k | tee /dev/fd/2 | grep Requests/sec | awk '{print $2}') "," >> small.csv
-    echo -n $(wrk -t5 -c$c --timeout 10 -d1 https://localhost:8443/foo_1k | tee /dev/fd/2 | grep Requests/sec | awk '{print $2}') "," >> small.csv
-    echo | tee -a small.csv
-done
-
-if [ -f big.csv ]; then rm big.csv; fi
-
-echo nbc, apache, nginx, simple, simple-cc, simple-ssl | tee -a big.csv
-
-for c in $(seq 5 5 20; seq 30 10 50; seq 100 50 500; seq 600 100 1000); do
-    echo -n $c "," | tee -a big.csv
-    echo -n $(wrk -t5 -c$c --timeout 10 -d5 http://localhost:80/nginx/foo_10M | tee /dev/fd/2 | grep Requests/sec | awk '{print $2}') "," >> big.csv
-    echo -n $(wrk -t5 -c$c --timeout 10 -d5 http://localhost:7080/foo_10M | tee /dev/fd/2 | grep Requests/sec | awk '{print $2}') "," >> big.csv
-    echo -n $(wrk -t5 -c$c --timeout 10 -d5 http://localhost:8080/foo_10M | tee /dev/fd/2 | grep Requests/sec | awk '{print $2}') "," >> big.csv
-    echo -n $(wrk -t5 -c$c --timeout 10 -d5 http://localhost:9080/foo_10M | tee /dev/fd/2 | grep Requests/sec | awk '{print $2}') "," >> big.csv
-    echo -n $(wrk -t5 -c$c --timeout 10 -d5 https://localhost:8443/foo_10M | tee /dev/fd/2 | grep Requests/sec | awk '{print $2}') "," >> big.csv
-    #curl $PROTO://localhost:8080/status 1>&2
-done
-
-kill $PID1
-kill $PID2
-kill $PID3
-*)

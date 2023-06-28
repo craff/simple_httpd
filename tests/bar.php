@@ -14,11 +14,13 @@
       <li> item 2 </li>
       <li> item 3 </li>
       <li> item 4 </li>
-      <li> views: <?php
+      <li> views:
+	  <?php
 	  $n = $_SESSION['count'];
-	  echo (strval($n));
 	  $_SESSION['count'] = $n + 1;
-      ?>
+	  echo (strval($n));
+	  echo ($n % 2 == 0) ? "<p>even (" . $n . ")</p>" : "<p>odd</p>";
+	  ?>
       </li>
     </ul>
 

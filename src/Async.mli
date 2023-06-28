@@ -66,9 +66,9 @@ and session_info = (* FIXME: force protection by mutex making the type private *
   ; life_time : float
   ; clients : client list Atomic.t
   ; data : session_data Atomic.t
-  ; cleanup : session_data -> unit (* FIXME *)
-  ; mutable last_refresh : float
-  ; mutable cookies : (string * string) list
+  ; cleanup : session_data -> unit
+  ; mutable last_refresh : float (* protected by mutex_list in Session.ml *)
+  ; cookies : (string * string) list Atomic.t
   }
 
 and session = session_info Util.LinkedList.cell
