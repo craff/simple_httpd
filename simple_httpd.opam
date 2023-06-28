@@ -24,6 +24,7 @@ depends: [
   "qcheck" {with-test & >= "0.9" }
   "ounit2" {with-test}
   "ptime" {with-test}
+  "camlzip"
 ]
 tags: [ "http" "domain" "server" "simple_httpd" "http_of_dir" "simplehttpserver" ]
 homepage: "https://github.com/craff/simple_httpd/"
