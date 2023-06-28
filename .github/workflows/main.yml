@@ -46,5 +46,3 @@ jobs:
       - run: opam exec -- dune build @src/runtest @examples/runtest @tests/runtest
 
       - run: opam install simple_httpd
-
-      - run: opam exec -- dune build @src/runtest @examples/runtest @tests/runtest -p simple_httpd_camlzip
