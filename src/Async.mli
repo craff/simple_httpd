@@ -60,7 +60,7 @@ type client = private {
     mutable sendfile : Unix.file_descr -> int -> int -> int
   }
 
-and session_info = (* FIXME: force protection by mutex making the type private *)
+and session_info =
   { addr : string
   ; key : string
   ; life_time : float
@@ -107,10 +107,10 @@ end
 module Io : Io
 
 type socket_type =
-  | Io of Io.t
-  | Client of client
+  | Io
+  | Client
   | Pipe
-  | Lock of client
+  | Lock
 
 exception NoRead
 exception NoWrite

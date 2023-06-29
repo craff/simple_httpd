@@ -35,6 +35,8 @@ module Cookies = Cookies
 
 module Camlzip = Camlzip
 
+module Stats = Stats
+
 module Request = Request
 
 module Response_code = Response_code

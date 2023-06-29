@@ -1,3 +1,4 @@
+open Response_code
 
 type buf = Buffer.t
 
@@ -66,7 +67,7 @@ let add_route_server_sent_handler ?filter self route f =
       if not !resp_sent then (
         resp_sent := true;
         (* send 200 response now *)
-        let initial_resp = Response.make_void ~headers:!headers ~code:200 () in
+        let initial_resp = Response.make_void ~headers:!headers ~code:ok () in
         resp initial_resp;
       )
     in
@@ -166,16 +167,16 @@ let handle_client_ (self:t) (client:Async.client) : unit =
   let buf = client.buf in
   let oc  = Output.create ~buf_size:self.buf_size client in
   let is = Input.of_client ~buf_size:self.buf_size client in
-  let continue = ref true in
-  while !continue do
+  let cont = ref true in
+  while !cont do
     match Request.parse_req_start ~client ~buf is with
     | None ->
-      continue := false (* client is done *)
+      cont := false (* client is done *)
 
     | Some req ->
       log ~lvl:2 (fun k->k "req: %s" (Format.asprintf "@[%a@]" Request.pp_ req));
 
-      if Request.close_after_req req then continue := false;
+      if Request.close_after_req req then cont := false;
 
       try
         (* is there a handler for this path? *)
@@ -184,8 +185,9 @@ let handle_client_ (self:t) (client:Async.client) : unit =
         begin match Request.get_header ~f:String.trim req Headers.Expect with
           | Some "100-continue" ->
             log ~lvl:2 (fun k->k "send back: 100 CONTINUE");
-            Response.output_ oc (Response.make_raw ~code:100 "");
-          | Some s -> Response.fail_raise ~code:417 "unknown expectation %s" s
+            Response.output_ oc (Response.make_raw ~code:continue "");
+          | Some s -> Response.fail_raise ~code:expectation_failed
+                        "unknown expectation %s" s
           | None -> ()
         end;
 
@@ -199,23 +201,23 @@ let handle_client_ (self:t) (client:Async.client) : unit =
           let r = filter r in
           try
             if Headers.get Headers.Connection r.Response.headers = Some"close" then
-              continue := false;
+              cont := false;
             Response.output_ oc r;
           with Sys_error _
              | Unix.Unix_error _ as e ->
-                continue := false;
+                cont := false;
                 log ~lvl:1 (fun k -> k "fail to output response (%s)"
                                            (Async.printexn e))
         in
         (* call handler *)
         handler oc req ~resp;
         log ~lvl:1 (fun k -> k "response sent after %fms" (1e3 *. (Unix.gettimeofday () -. req.start_time)));
-        if !continue then Async.yield ()
+        if !cont then Async.yield ()
       with
       | Sys_error _ | Unix.Unix_error _ | Async.ClosedByHandler | Async.TimeOut as e ->
          log ~lvl:1 (fun k -> k "broken connection (%s)"
                                     (Async.printexn e));
-         continue := false; (* connection broken somehow *)
+         cont := false; (* connection broken somehow *)
 
       | Headers.Bad_req (c,s,headers,cookies) ->
          log ~lvl:1 (fun k -> k "redirect request (%s)" s);
@@ -224,14 +226,15 @@ let handle_client_ (self:t) (client:Async.client) : unit =
            try Response.output_ oc res
            with Sys_error _ | Unix.Unix_error _ -> ()
          end;
-         if not (c < 500) then continue := false else Async.yield ()
+         if not ((c :> int) < 500) then cont := false else Async.yield ()
 
       | e ->
          log ~lvl:1 (fun k -> k "server error (%s)"
                                     (Async.printexn e));
-         continue := false;
+         cont := false;
          Response.output_ oc @@
-           Response.fail ~code:500 "server error: %s" (Async.printexn e)
+           Response.fail ~code:internal_server_error
+             "server error: %s" (Async.printexn e)
   done;
   log ~lvl:2 (fun k->k "done with client, exiting");
   ()

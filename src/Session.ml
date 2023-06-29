@@ -1,3 +1,4 @@
+open Response_code
 open Async
 
 type session = Async.session
@@ -140,7 +141,7 @@ let check
       ?(init=fun () -> NoData)
       ?(finalise=fun _ -> ())
       ?(check=fun _ -> true)
-      ?(error=(400, [])) req =
+      ?(error=(bad_request, [])) req =
   let cookies = Request.cookies req in
   let client = Request.client req in
   let key = Option.map Http_cookie.value

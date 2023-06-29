@@ -1,3 +1,4 @@
+open Response_code
 module U = Util
 module H = Headers
 module BS = Input
@@ -36,7 +37,7 @@ let decode_deflate_stream_ ~buf_size (is:BS.t) : BS.t =
       )
     ~consume:(fun self len ->
         if len > self.len then (
-          Response.fail_raise ~code:400
+          Response.fail_raise ~code:bad_request
             "inflate: error during decompression: invalid consume len %d (max %d)"
             len self.len
         );
@@ -62,7 +63,7 @@ let decode_deflate_stream_ ~buf_size (is:BS.t) : BS.t =
                 (fun k->k "decode %d bytes as %d bytes from inflate (finished: %b)"
                           used_in used_out finished);
             with Zlib.Error (e1,e2) ->
-              Response.fail_raise ~code:400
+              Response.fail_raise ~code:unprocessable_content
                 "inflate: error during decompression:\n%s %s" e1 e2
           end;
           Log.f ~lvl:6
@@ -132,7 +133,7 @@ let encode_deflate_stream_ ~buf_size (is:BS.t) : BS.t =
       in
       try loop()
       with Zlib.Error (e1,e2) ->
-        Response.fail_raise ~code:400
+        Response.fail_raise ~code:unprocessable_content
           "deflate: error during compression:\n%s %s" e1 e2
     )
     ()

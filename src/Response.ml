@@ -1,3 +1,4 @@
+open Response_code
 
 let fail_raise = Headers.fail_raise
 let log      = Log.f
@@ -42,19 +43,19 @@ let make_void ?(cookies=[]) ?(headers=[]) ~code () : t =
   { code; headers; body=Void; }
 
 let make_string ?cookies ?headers body =
-  make_raw ?cookies ?headers ~code:200 body
+  make_raw ?cookies ?headers ~code:ok body
 
 let make_stream ?cookies ?headers body =
-  make_raw_stream ?cookies ?headers ~code:200 body
+  make_raw_stream ?cookies ?headers ~code:ok body
 
 let make_file ?cookies ?headers ~close n body =
-  make_raw_file ?cookies ?headers ~code:200 ~close n body
+  make_raw_file ?cookies ?headers ~code:ok ~close n body
 
 let make ?cookies ?headers r : t = match r with
-  | String body -> make_raw ?cookies ?headers ~code:200 body
-  | Stream body -> make_raw_stream ?cookies ?headers ~code:200 body
-  | File(n,body,close)-> make_raw_file ?cookies ?headers ~code:200 ~close n body
-  | Void -> make_void ?cookies ?headers ~code:200 ()
+  | String body -> make_raw ?cookies ?headers ~code:ok body
+  | Stream body -> make_raw_stream ?cookies ?headers ~code:ok body
+  | File(n,body,close)-> make_raw_file ?cookies ?headers ~code:ok ~close n body
+  | Void -> make_void ?cookies ?headers ~code:ok ()
 
 let fail ?cookies ?headers ~code fmt =
   Printf.ksprintf (fun msg -> make_raw ?cookies ?headers ~code msg) fmt
@@ -67,11 +68,11 @@ let pp out self : unit =
     | Void -> ()
   in
   Format.fprintf out "{@[code=%d;@ headers=[@[%a@]];@ body=%a@]}"
-    self.code Headers.pp self.headers pp_body self.body
+    (self.code :> int) Headers.pp self.headers pp_body self.body
 
 let output_ (oc:Output.t) (self:t) : unit =
   Output.add_string oc "HTTP/1.1 ";
-  Output.add_decimal oc self.code;
+  Output.add_decimal oc (self.code :> int);
   Output.add_char oc ' ';
   Output.add_string oc (Response_code.descr self.code);
   Output.add_char oc '\r';

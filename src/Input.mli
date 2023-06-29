@@ -49,8 +49,8 @@ val of_fd : ?buf_size:int -> Unix.file_descr -> t
 val of_client : ?buf_size:int -> Async.client -> t
 (** Make a buffered stream from the given http client. *)
 
-val of_client_fd : ?buf_size:int -> Async.Io.t -> t
-(** Allow a to Make a buffered stream from the given descriptor.
+val of_io : ?buf_size:int -> Async.Io.t -> t
+(** Allow a to Make a buffered stream from the given {!Io.t}.
     The call will be scheduled if read blocks. *)
 
 val of_bytes : ?i:int -> ?len:int -> bytes -> t

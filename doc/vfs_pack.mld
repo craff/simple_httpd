@@ -64,10 +64,13 @@ that will be applied to the response. In the example this allows to start a
 part of a `Prelude` module which is open in the rest of the file.
 
 - [<ML>...</ML>] sections which are not inside other [<ML>...</ML>] sections
-are compiled as toplevel expression. You may define type, values, ...
+  are compiled as toplevel expression. You may define type, values, ...
+  In these section, you can use [echo] and [printf] provided automatically by
+  opening a module of type {!Simple_httpd.Input.Output}.
 
 - In tag attributes one may use `name="?expression"` to evaluate the
-   attribute using Ocaml
+   attribute using Ocaml. Use "\?..." if you want an attribute starting with
+   a question mark.
 
 - Inside [`<ML>...</ML>`] sections, html sections are interpreted to ocaml
    strings.

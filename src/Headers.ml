@@ -1,10 +1,9 @@
-
-(** @inline *)
+open Response_code
 include Headers_
 
 type t = (header * string) list
 
-exception Bad_req of int * string * t * Cookies.t
+exception Bad_req of Response_code.t * string * t * Cookies.t
 let fail_raise ?(headers=[]) ?(cookies=[]) ~code:c fmt =
   Printf.ksprintf (fun s ->raise (Bad_req (c,s,headers,cookies))) fmt
 
@@ -37,7 +36,7 @@ let parse_ ~buf (bs:Input.t) : t * Cookies.t =
        let v =
          try
            Input.read_line ~buf bs
-         with _ -> fail_raise ~code:400 "invalid header value: %S" (to_string k)
+         with _ -> fail_raise ~code:bad_request "invalid header line: %S" (to_string k)
        in
        let headers, cookies =
          if k = Cookie then

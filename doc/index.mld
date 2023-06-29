@@ -9,26 +9,40 @@ decide how to answer the request. It is relatively fast and can handle
 thousands of simultaneous connections, because if uses then `sendfile` system
 call and other TCP options to gain efficiency.
 
- ̀Simple_httpd` provides:
+Through a bunch of modules, described here {!Simple_httpd} it provides:
 
-- Routing with function to add route
+- Routing, by address, port, module and url.
+
 - Handling of static files possibly using a memory cache or a virtual file system.
-- Basic managment of session and cookies
-- Support for ssl
-- A {!Simple_httpd.Host} module dedicated to write single server handling several sites
-- A {{:./vfs_pack.html} web site compiler `vfs_pack`}, which includes an equivalent
-  of php files that are compiled to OCaml.
 
-Here are some curves showing the performance on static files compared to nginx and
-apache:
+- Basic managment of session and cookies. Simple_httpd sessions can for
+  instance keep an open connection to a database server.
+
+- Support for ssl.
+
+- A {!Simple_httpd.Host} module dedicated to write single server handling
+  several sites.
+
+- A {{:./vfs_pack.html}web site compiler `vfs_pack`}.
+
+- {{:./vfs_pack.html}`vfs_pack`} includes an equivalent of php files that are
+  compiled to OCaml.
+
+- Pretty fast: Here are some curves showing the performance on static files
+compared to nginx and apache:
 
 {%html: <p align="center"><img src="https://raffalli.eu/simple_httpd/small.png" alt="comparison for small files"/></p>%}
 
 {%html: <p align="center"><img src="https://raffalli.eu/simple_httpd/big.png" alt="comparison for large files"/></p>%}
 
-And an histogram showing the difference between [.php] and [.chaml] on a similar file:
+On the above graphs,
+- [sh_cc] is for {!Simple_httpd.Dir.add_vfs} using {{:./vfs_pack.html}`vfs_pack`}
+- [sh_dir] is for {!Simple_httpd.Dir.add_dir_path}
+- [sh_ssl] is like [sh_dir] under ssl
+- [apache] and [nginx] are the usual servers with their defaut configuration on
+  debian 12 except for accepting more connections than the default.
 
-This is obtained using {{:https://github.com/tsenart/vegeta} vegeta} with 1000 request per seconds for 2 minutes. It is worst noticing the stability of [Simple_httpd] compared to [php]. Here is the result with [Simple_httpd] and [vfs_pack]:
+Here is an histogram showing the difference between [.php] and [.chaml] on a similar file. It is obtained using {{:https://github.com/tsenart/vegeta} vegeta} with 1000 requests per seconds for 2 minutes. It is worst noticing the stability of [Simple_httpd] compared to [php]. Here is the result with {!Simple_httpd.Dir.add_vfs} using {{:./vfs_pack.html}`vfs_pack`}:
 {[
 Bucket           #      %       Histogram
 [0s,     100µs]  1      0.00%
@@ -72,50 +86,9 @@ To go further, you should start reading {!Simple_httpd} the main module of the l
 open Simple_httpd
 module H = Headers
 
-let now = Unix.gettimeofday
-
-(** add a missing [add_float] function to Atomic *)
-module Atomic = struct
-  include Atomic
-  let add_float a x =
-    let fn () =
-      let v = Atomic.get a in
-      Atomic.compare_and_set a v (v +. x)
-    in
-    while not (fn ()) do () done;
-end
-
-(** [Simple_httpd] provides filter for request, that can be used to collecting
-    statistics. Currently, we can not count the time to output the response. *)
-let filter_stat () : 'a Route.filter * (unit -> string) =
-  (* We must use atomic for this to work with domains! *)
-  let nb_req     = Atomic.make 0  in
-  let total_time = Atomic.make 0. in
-  let parse_time = Atomic.make 0. in
-  let build_time = Atomic.make 0. in
-
-  let measure req =
-    Atomic.incr nb_req;
-    let t1 = Request.start_time req in
-    let t2 = now () in
-    (req, fun response ->
-        let t3 = now () in
-        Atomic.add_float total_time (t3 -. t1);
-        Atomic.add_float parse_time (t2 -. t1);
-        Atomic.add_float build_time (t3 -. t2);
-        response)
-  and get_stat () =
-    let nb = Atomic.get nb_req in
-    Printf.sprintf "%d requests (average response time: %.3fms = %.3fms + %.3fms)"
-      nb (Atomic.get total_time /. float nb *. 1e3)
-         (Atomic.get parse_time /. float nb *. 1e3)
-         (Atomic.get build_time /. float nb *. 1e3)
-  in
-  (measure, get_stat)
-
 (** Parse command line options *)
 
-(** default address, port and maximum number of connections *)
+(** Default address, port and maximum number of connections *)
 let addr = ref "127.0.0.1"
 let port = ref 8080
 let top_dir = ref None
@@ -140,7 +113,7 @@ let server = Server.create parameters ~listens
     provided by [Simple_httpd.Camlzip], than will compress output
     when [deflate] is accepted *)
 let filter, get_stats =
-  let filter_stat, get_stats = filter_stat () in
+  let filter_stat, get_stats = Stats.filter () in
   let filter_zip =
     Camlzip.filter ~compress_above:1024 ~buf_size:(16*1024) () in
   (Route.compose_cross filter_zip filter_stat, get_stats)
@@ -150,27 +123,6 @@ let _ =
   Server.add_route_handler ~meth:GET server ~filter
     Route.(exact "hello" @/ string @/ return)
     (fun name _req -> Response.make_string ("hello " ^name ^"!\n"))
-
-(** Add a route sending a compressed stream for the given file in the current
-    directory *)
-let _ =
-  Server.add_route_handler ~meth:GET server ~filter
-    Route.(exact "zcat" @/ string @/ return)
-    (fun path _req ->
-        let ic = open_in path in
-        let str = Input.of_chan ic in
-        let mime_type =
-          try
-            let p = Unix.open_process_in (Printf.sprintf "file -i -b %S" path) in
-            try
-              let s = [H.Content_Type, String.trim (input_line p)] in
-              ignore @@ Unix.close_process_in p;
-              s
-            with _ -> ignore @@ Unix.close_process_in p; []
-          with _ -> []
-        in
-        Response.make_stream ~headers:mime_type str
-      )
 
 (** Add an echo request *)
 let _ =
@@ -217,7 +169,29 @@ let _ =
                ~dir_behavior:Dir.Index_or_lists ())
     ~vfs:vfs ~prefix:"vfs"
 
-(** Main pagen using the Html module (deprecated by vfs_pack and many other solutions *)
+(** Add a route sending a compressed stream for the given file in the current
+    directory *)
+let _ =
+  Server.add_route_handler ~meth:GET server ~filter
+    Route.(exact "zcat" @/ string @/ return)
+    (fun path _req ->
+        let ic = open_in path in
+        let str = Input.of_chan ic in
+        let mime_type =
+          try
+            let p = Unix.open_process_in (Printf.sprintf "file -i -b %S" path) in
+            try
+              let s = [H.Content_Type, String.trim (input_line p)] in
+              ignore @@ Unix.close_process_in p;
+              s
+            with _ -> ignore @@ Unix.close_process_in p; []
+          with _ -> []
+        in
+        Response.make_stream ~headers:mime_type str
+      )
+
+(** Main pagen using the Html module (deprecated by vfs_pack and many other
+    solutions *)
 let _ =
   Server.add_route_handler server ~filter Route.return
     (fun _req ->

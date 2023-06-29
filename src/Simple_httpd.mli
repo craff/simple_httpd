@@ -43,10 +43,10 @@ module Address : sig
   (** A type to index all listened addresses *)
   type index = private int
 
-  (** Record type storing the an address we listen on *)
+  (** Record type storing an address we listen on *)
   type t =
     private
-      { addr : string  (** The actual address in formal "0.0.0.0" *)
+      { addr : string  (** The actual address in format "0.0.0.0" *)
       ; port : int     (** The port *)
       ; ssl  : Ssl.context option (** An optional ssl context *)
       ; reuse : bool   (** Can we reuse the socket *)
@@ -82,7 +82,7 @@ module Async : sig
 
   (** Vocabulary:
       - socket: a file descriptor: may be the connection socket or another ressource
-      like a connection to a database, a file etc.
+      like a connection to a database, a remote file etc.
       - client: a connection to the server. Each client has at least one socket (the
       connection socket)
       - session: an application can do several connections to the server and
@@ -103,10 +103,9 @@ module Async : sig
   type client
 
   val yield : unit -> unit
-  (** let other thread run. Should be called for treatment that take time
+  (** let other threads run. Should be called for treatment that take time
       before sending results or reading data and when the other primitives
       can not be used. This happends typically for a pure computing task.
-      Other solutions exists for instance for database request.
    *)
 
   val sleep : float -> unit
@@ -126,14 +125,21 @@ module Async : sig
       client.
 
       A typical application for this is when interacting with a data base in non
-      blocking mode. For just reading a socket, use the Io module above.
+      blocking mode. For just reading a socket, use the {!Io} module below.
    *)
   val schedule_io : Unix.file_descr -> (unit -> int) -> int
 end
 
-(** Module with function similar to Unix.read and Unix.single_write
-    but that will perform scheduling instead of blocking. This can be used to
-    access your database. It has been tested with OCaml's bindings to [libpq]. *)
+(** Module that encapsulates non blocking sockets with function similar to
+    Unix.read and Unix.single_write but that will perform scheduling instead
+    of blocking. This can be used to access your database. It has been tested
+    with OCaml's bindings to [libpq].
+
+    Io can be shared across several clients, for instance clients using the same
+    session. As always, be aware of protecting concurrent access to the socket,
+    as different client may run simultaneously on different domain.
+
+    Io is completely useless on regular file or blocking sockets. *)
 module Io : sig
     type t
 
@@ -147,36 +153,9 @@ module Io : sig
 module Input : sig
   (** Input streams are used to represent a series of bytes that can arrive
     progressively.  For example, an uploaded file will be sent as a series of
-    chunks and also for output streams. *)
+    chunks. *)
 
-  type hidden
-  type t = {
-      mutable bs: bytes;
-      (** The bytes *)
-
-      mutable off : int;
-      (** Beginning of valid slice in {!bs} *)
-
-      mutable len : int;
-      (** Length of valid slice in {!bs}. If [len = 0] after
-          a call to {!fill_buf}, then the stream is finished. *)
-
-      fill_buf: unit -> unit;
-      (** See the current slice of the internal buffer as [bytes, i, len],
-          where the slice is [bytes[i] .. [bytes[i+len-1]]].
-          Can block to refill the buffer if there is currently no content.
-          If [len=0] then there is no more data. *)
-
-      consume: int -> unit;
-      (** Consume [n] bytes from the buffer.
-          This should only be called with [n <= len]. *)
-
-      close: unit -> unit;
-      (** Close the stream. *)
-
-      _rest: hidden;
-      (** Use {!make} to build a stream. *)
-    }
+  type t
   (** A buffered stream, with a view into the current buffer (or refill if empty),
       and a function to consume [n] bytes. *)
 
@@ -205,10 +184,10 @@ module Input : sig
   (** Make a buffered stream from the given file descriptor. *)
 
   val of_client : ?buf_size:int -> Async.client -> t
-  (** Make a buffered stream from the given http client. *)
+  (** Make a buffered stream from the given http client's socket. *)
 
-  val of_client_fd : ?buf_size:int -> Io.t -> t
-  (** Allow a to Make a buffered stream from the given descriptor.
+  val of_io : ?buf_size:int -> Io.t -> t
+  (** Allow a to Make a buffered stream from the given {!Io.t}.
       The call will be scheduled if read blocks. *)
 
   val of_bytes : ?i:int -> ?len:int -> bytes -> t
@@ -218,6 +197,9 @@ module Input : sig
   val of_string : string -> t
   (** Make a buffered stream from the given string *)
 
+  (** Module type for filling an input buffer by printing. A module of
+      this type is openned in [<ML>] section of [.chamel] file when
+      using [vfs_pack]. *)
   module type Output = sig
     val echo : string -> unit
     val printf : ('a, Format.formatter, unit, unit) format4 -> 'a
@@ -225,7 +207,9 @@ module Input : sig
 
   val of_output : ((module Output) -> unit) -> t
   (** Make a buffered stream from a function that will call the [echo] and
-      [printf] function from the provided module *)
+      [printf] function from the provided module. Using effect, the
+      function producing the output is called lazily when it is needed
+      to fill the buffer. *)
 
   val iter : (bytes -> int -> int -> unit) -> t -> unit
   (** Iterate on the chunks of the stream. *)
@@ -271,7 +255,7 @@ module Log : sig
       TODO: We plan a more explicit notion of logs *)
   val set_log_lvl : int -> unit
 
-  (** With asynchronous communication, log can be mixed between domain.
+  (** With asynchronous communication, log can be mixed between domains.
       To address this issue, each domain will use a different file inside
       a provided log folder using [set_log_folder]. Logs contains the unix time
       and can be reordered if needed
@@ -290,10 +274,6 @@ module Mutex : sig
   (** Simple_httpd notion of mutex. You must be careful with server wide mutex:
       a DoS attack could try to hold such a mutex. A mutex per session may be a good
       idea. A mutex per client is useless (client are treated sequentially).
-
-      FIXME: there is a global mutex for file cache. It is holded very shortly
-      and once the file is in the cache it is not used anymore, so this is OK,
-      but still if could be a target of attack ?
 
       Note: they are implemented using Linux [eventfd] *)
   type t
@@ -327,14 +307,16 @@ module Method : sig
   val of_string : string -> t
 end
 
-(** Module to hanbdle request and response headers *)
+(** Module to handle request and response headers *)
 module Headers : sig
   (** {1 Headers}
 
     Headers are metadata associated with a request or response. This module provide
     the necessary function to read and modify headers *)
 
-(** A module defining all the legal header names *)
+  (** A module defining all the legal header names, generated from the csv at
+      {{:https://www.iana.org/assignments/http-fields/http-fields.xhtml} iana}.
+   last update: 29.06.2023. Other headers are ignored! *)
 
   (** @inline *)
   include module type of Headers_
@@ -416,7 +398,7 @@ module Request : sig
   (** A request with method, path, host, headers, and a body, sent by a client.
 
       The body is polymorphic because the request goes through several
-      transformations. First it a body with a unread {!Simple_httpd.Input.t}
+      transformations. First it has a body with a unread {!Simple_httpd.Input.t}
       stream, as only the request and headers are read; while the body might
       be entirely read as a string via {!read_body_full}.  *)
 
@@ -469,7 +451,7 @@ module Request : sig
 
   val trailer : _ t -> (Headers.t * Cookies.t) option
   (** trailer, read after a chunked body. Only maeningfull after the body stream
-      we fully read and closed *)
+      is fully read and closed *)
 
   val close_after_req : _ t -> bool
   (** Tells if we are supposed to close the connection after answering the request *)
@@ -483,23 +465,10 @@ module Response_code : sig
   (** {1 Response Codes}
 
     Response code allows client to know if a request failed and give a reason.
-    TODO: This module is not complete (yet). *)
+    generated from csv at {{:https://www.iana.org/assignments/http-status-codes/http-status-codes.xhtml#http-status-codes} iana} *)
 
-  type t = int
-  (** A standard HTTP code.
-
-      https://tools.ietf.org/html/rfc7231#section-6 *)
-
-  val ok : t
-  (** The code [200] *)
-
-  val not_found : t
-  (** The code [404] *)
-
-  val descr : t -> string
-  (** A description of some of the error codes.
-      NOTE: this is not complete (yet). *)
-
+  (** @inline *)
+  include module type of Response_code
 end
 
 (** Module handling HTML responses *)
@@ -585,7 +554,7 @@ module Response : sig
   val make_void :
     ?cookies:Cookies.t ->
     ?headers:Headers.t ->
-    code:int -> unit -> t
+    code:Response_code.t -> unit -> t
 
   val make_string :
     ?cookies:Cookies.t ->
@@ -607,17 +576,17 @@ module Response : sig
 
   val fail :
     ?cookies:Cookies.t ->
-    ?headers:Headers.t -> code:int ->
+    ?headers:Headers.t -> code:Response_code.t ->
     ('a, unit, string, t) format4 -> 'a
   (** Make the current request fail with the given code and message.
       Example: [fail ~code:404 "oh noes, %s not found" "waldo"].
    *)
 
-  val fail_raise : ?headers:Headers.t -> ?cookies:Cookies.t -> code:int
+  val fail_raise : ?headers:Headers.t -> ?cookies:Cookies.t -> code:Response_code.t
                    -> ('a, unit, string, 'b) format4 -> 'a
   (** Similar to {!fail} but raises an exception that exits the current handler.
       This should not be used outside of a (path) handler.
-      Example: [fail_raise ~code:404 "oh noes, %s not found" "waldo"; never_executed()]
+      Example: [fail_raise ~code:not_found "oh noes, %s not found" "waldo"; never_executed()]
    *)
 
   val pp : Format.formatter -> t -> unit
@@ -715,6 +684,21 @@ module Camlzip : sig
 
 end
 
+module Stats : sig
+  (* provide a filter giving very simple statistics. We can do much better
+   but be carefull on how to do it *)
+
+(** This a a filter to acquire statistics.
+    [let (filter, get) = Stats.filter ()]
+    will give you a [Route.filter] and a function [get] returning the statistics
+    as a string
+    ["N requests (average response time: Tms = T1ms (read) + T2ms (build))"]
+ *)
+val filter : unit -> 'a Route.filter * (unit -> string)
+
+(** Note: currently we can not measure the time to write the response. *)
+end
+
 (** Module to handle session data *)
 module Session : sig
   (** This module allows to mange session which are common to several client
@@ -729,7 +713,7 @@ module Session : sig
               ?init:(unit -> session_data) ->
               ?finalise:(session_data -> unit) ->
               ?check:(session -> bool) ->
-              ?error:(int*Headers.t) ->
+              ?error:(Response_code.t*Headers.t) ->
               'a Route.filter
 
 

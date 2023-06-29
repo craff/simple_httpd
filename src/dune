@@ -23,3 +23,13 @@
   (targets Headers_.mli)
   (deps (:bin ./gen/compile_headers_mli.exe) field-names.csv)
   (action (with-stdout-to %{targets} (run %{bin} field-names.csv))))
+
+(rule
+  (targets Response_code.ml)
+  (deps (:bin ./gen/compile_status_code.exe) http-status-codes.csv)
+  (action (with-stdout-to %{targets} (run %{bin} http-status-codes.csv))))
+
+(rule
+  (targets Response_code.mli)
+  (deps (:bin ./gen/compile_status_mli.exe) http-status-codes.csv)
+  (action (with-stdout-to %{targets} (run %{bin} http-status-codes.csv))))

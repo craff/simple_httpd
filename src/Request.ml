@@ -1,3 +1,5 @@
+open Response_code
+
 type 'body t = {
     meth: Method.t;
     host: string;
@@ -68,14 +70,14 @@ let pp out self : unit =
 (* decode a "chunked" stream into a normal stream *)
 let read_stream_chunked_ ~buf ~trailer (bs:Input.t) : Input.t =
   Input.read_chunked ~buf ~trailer
-    ~fail:(fun s -> fail_raise ~code:400 "%s" s)
+    ~fail:(fun s -> fail_raise ~code:bad_request "%s" s)
     bs
 
 let limit_body_size_ ~max_size (bs:Input.t) : Input.t =
   Input.limit_size_to ~max_size ~close_rec:false bs
     ~too_big:(fun size ->
       (* read too much *)
-      fail_raise ~code:413
+      fail_raise ~code:content_too_large
         "body size was supposed to be %d, but at least %d bytes received"
         max_size size
     )
@@ -87,7 +89,7 @@ let limit_body_size ~max_size (req:Input.t t) : Input.t t =
 let read_exactly ~size (bs:Input.t) : Input.t =
   Input.read_exactly bs ~close_rec:false
     ~size ~too_short:(fun size ->
-      fail_raise ~code:400 "body is too short by %d bytes" size)
+      fail_raise ~code:bad_request "body is too short by %d bytes" size)
 
 (* parse request, but not body (yet) *)
 let parse_req_start ~client ~buf (bs:Input.t)
@@ -104,14 +106,14 @@ let parse_req_start ~client ~buf (bs:Input.t)
         meth, path, version
       with e ->
         log (fun k->k "INVALID REQUEST LINE: `%s` (%s)" line (Printexc.to_string e));
-        fail_raise ~code:400 "Invalid request line"
+        fail_raise ~code:bad_request "Invalid request line"
     in
     let meth = Method.of_string meth in
     log ~lvl:2 (fun k->k "got meth: %s, path %S" (Method.to_string meth) path);
     let (headers, cookies) = Headers.parse_ ~buf bs in
     let host =
       match Headers.get Headers.Host headers with
-      | None -> fail_raise ~code:400 "No 'Host' header in request"
+      | None -> fail_raise ~code:bad_request "No 'Host' header in request"
       | Some h -> h
     in
     let path_components, query = Util.split_query path in
@@ -121,7 +123,7 @@ let parse_req_start ~client ~buf (bs:Input.t)
     let query =
       match Util.(parse_query query) with
       | Ok l -> l
-      | Error e -> fail_raise ~code:400 "invalid query: %s" e
+      | Error e -> fail_raise ~code:bad_request "invalid query: %s" e
     in
     let req = {
         meth; query; host; client; path; path_components;
@@ -132,7 +134,7 @@ let parse_req_start ~client ~buf (bs:Input.t)
   with
   | End_of_file -> None
   | Headers.Bad_req _ as e -> raise e
-  | e -> fail_raise ~code:400 "exception: %s" (Async.printexn e)
+  | e -> fail_raise ~code:internal_server_error "exception: %s" (Async.printexn e)
 
 let parse_multipart_ ~bound req =
   let body = req.body in
@@ -171,7 +173,7 @@ let parse_body_ ~tr_stream ~buf (req:Input.t t) : Input.t t =
             |> int_of_string with
       | n -> n (* body of fixed size *)
       | exception Not_found -> 0
-      | exception _ -> fail_raise ~code:400 "invalid Content-Length"
+      | exception _ -> fail_raise ~code:bad_request "invalid Content-Length"
     in
     let trailer bs =
       req.trailer := Some (Headers.parse_ ~buf bs)
@@ -210,13 +212,13 @@ let parse_body_ ~tr_stream ~buf (req:Input.t t) : Input.t t =
            parse_multipart_ ~bound req
          else
            req
-      | Some s, _ -> fail_raise ~code:500 "cannot handle transfer encoding: %s" s
+      | Some s, _ -> fail_raise ~code:not_implemented "cannot handle transfer encoding: %s" s
     in
     req
   with
-  | End_of_file -> fail_raise ~code:400 "unexpected end of file"
+  | End_of_file -> fail_raise ~code:bad_request "unexpected end of file"
   | Headers.Bad_req _ as e -> raise e
-  | e -> fail_raise ~code:400 "exception: %s" (Async.printexn e)
+  | e -> fail_raise ~code:internal_server_error "exception: %s" (Async.printexn e)
 
 let parse_body ~buf req : Input.t t =
   parse_body_ ~tr_stream:(fun s->s) ~buf req
@@ -226,7 +228,7 @@ let read_body_full ~buf (self:Input.t t) : string t =
     let body = Input.read_all ~buf self.body in
     { self with body }
   with
-  | e -> fail_raise ~code:500 "failed to read body: %s" (Async.printexn e)
+  | e -> fail_raise ~code:bad_request "failed to read body: %s" (Async.printexn e)
 
 (*$R
   let module Request = Simple_httpd__Request in

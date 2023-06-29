@@ -82,7 +82,7 @@ val make :
 val make_void :
   ?cookies:Cookies.t ->
   ?headers:Headers.t ->
-  code:int -> unit -> t
+  code:Response_code.t -> unit -> t
 
 val make_string :
   ?cookies:Cookies.t ->
@@ -104,13 +104,14 @@ val make_file :
 
 val fail :
   ?cookies:Cookies.t ->
-  ?headers:Headers.t -> code:int ->
+  ?headers:Headers.t -> code:Response_code.t ->
   ('a, unit, string, t) format4 -> 'a
 (** Make the current request fail with the given code and message.
     Example: [fail ~code:404 "oh noes, %s not found" "waldo"].
  *)
 
-val fail_raise : ?headers:Headers.t -> ?cookies:Cookies.t -> code:int -> ('a, unit, string, 'b) format4 -> 'a
+val fail_raise : ?headers:Headers.t -> ?cookies:Cookies.t ->
+                 code:Response_code.t -> ('a, unit, string, 'b) format4 -> 'a
 (** Similar to {!fail} but raises an exception that exits the current handler.
     This should not be used outside of a (path) handler.
     Example: [fail_raise ~code:404 "oh noes, %s not found" "waldo"; never_executed()]

@@ -49,7 +49,9 @@ and mutex_state = Unlocked | Locked of client | Deleted
 and mutex =
   { mutable eventfd : Unix.file_descr
   ; mutable owner   : mutex_state
-  ; waiting : bool array (* which domain has add the mutex to epoll *)
+  ; waiting : bool array (* which domain has added the mutex to epoll, the
+                            first time it had a client blocked while trying to
+                            lock *)
   }
 
 and session_info =
@@ -109,21 +111,22 @@ let sleep : float -> unit = fun t ->
 module IoTmp = struct
 
   type t = { sock : Unix.file_descr
-           ; unregister : unit -> unit
-           ; client : client }
+           ; waiting : bool array
+           (* which domain has added the socket to epoll,
+              the first time it had a client blocked while trying to lock *) }
 end
 
 type socket_type =
-  | Io of IoTmp.t
-  | Client of client
-  | Pipe
-  | Lock of client
+  | Io     (* Io socket *)
+  | Client (* main socket serving the http connexion *)
+  | Pipe   (* pipe to receive the new connection *)
+  | Lock   (* mutex *)
 
 let pp_sock_info = function
-  | Io _ -> "Io"
-  | Client cl -> Printf.sprintf "Client(%d)" cl.id
+  | Io -> "Io"
+  | Client -> Printf.sprintf "Client"
   | Pipe -> "Pipe"
-  | Lock cl -> Printf.sprintf "Lock(%d)" cl.id
+  | Lock -> Printf.sprintf "Lock"
 
 exception SockError of socket_type * exn
 
@@ -132,8 +135,8 @@ let printexn e =
   | SockError (_, e) -> Printf.sprintf "SockError(%s)" (Printexc.to_string e)
   | e -> (Printexc.to_string e)
 
-let clientError c exn = raise (SockError(Client c,exn))
-let ioError s exn = raise(SockError(Io s,exn))
+let clientError exn = raise (SockError(Client,exn))
+let ioError exn = raise(SockError(Io,exn))
 
 type pending_status =
   NoEvent | Wait : 'a pending -> pending_status | TooSoon of bool
@@ -145,6 +148,7 @@ let pp_status = function
 
 type socket_info =
   { ty : socket_type
+  ; client : client
   ; mutable pd : pending_status
   }
 
@@ -152,15 +156,19 @@ let pp_pendings tbl =
   Hashtbl.fold (fun _ v acc ->
       acc ^ ", " ^ pp_sock_info v.ty ^ " " ^ pp_status v.pd) tbl ""
 
-let socket_client s = match s.ty with
-  | Client c -> c
-  | Io s -> s.client
-  | Lock c -> c
-  | Pipe -> assert false
-
 type domain_info =
-  { mutable cur_client : client
+  { mutable cur_client : client (* the client currently running *)
   ; pendings : (Unix.file_descr, socket_info) Hashtbl.t
+  (** The main pipe of the domain and the socket of each client are
+      added at creation in the table and removed went terminating
+      the client.
+
+      evenfd of [Mutex.t] and socket in [Io.t] are added to this
+      table when a client is blocking on that mutex/io. As several clients
+      may block on the same mutex or io, they can be present several time
+      in the table of several domains.
+   *)
+
   ; poll_list : Polly.t
   ; bytes : Bytes.t (* a preallocated buffer *)
   }
@@ -313,8 +321,7 @@ let rec read c s o l =
   with Unix.(Unix_error((EAGAIN|EWOULDBLOCK),_,_))
      | Ssl.(Read_error(Error_want_read|Error_want_write
                         |Error_want_connect|Error_want_accept|Error_zero_return)) ->        perform_read c s o l
-       | exn ->
-          clientError c exn
+       | exn -> clientError exn
 
 and perform_read c s o l =
   perform (Io {sock = c.sock; fn = (fun () -> read c s o l) })
@@ -326,7 +333,7 @@ let rec write c s o l =
     | Ssl.(Write_error(Error_want_read|Error_want_write
                        |Error_want_connect|Error_want_accept|Error_zero_return)) ->
      perform_write c s o l
-  | exn -> clientError c exn
+  | exn -> clientError exn
 
 and perform_write c s o l =
   perform (Io {sock = c.sock; fn = (fun () -> write c s o l) })
@@ -346,7 +353,7 @@ let rec sendfile c fd o l =
      | Ssl.(Write_error(Error_want_read|Error_want_write
                         |Error_want_connect|Error_want_accept|Error_zero_return)) ->
           perform_sendfile c fd o l
-     | exn -> clientError c exn
+     | exn -> clientError exn
 
 and perform_sendfile c fd o l =
   perform (Io {sock = c.sock; fn = (fun () -> sendfile c fd o l) })
@@ -373,44 +380,41 @@ end
 module Io = struct
   include IoTmp
 
-  let unregister s =
-    let i = all_domain_info.((Domain.self () :> int)) in
-    Hashtbl.remove i.pendings s
-    (* NOTE: no need for epoll_del on closed socket *)
-
   let close (s:t) =
-    s.unregister ();
     Unix.close s.sock
 
-  let register s (r : t) =
-    let i = all_domain_info.((Domain.self () :> int)) in
-    Hashtbl.add i.pendings s { ty = Io r; pd = NoEvent };
-    try Polly.(add i.poll_list s Events.(inp lor out lor et))
-    with e -> Log.f ~lvl:1 (fun k -> k "UNEXPECTED EXCEPTION IN EPOLL_ADD: %s"
-                                         (printexn e));
-              raise e
+  let register (r : t) =
+    let i = (Domain.self () :> int) in
+    let info = all_domain_info.(i) in
+    if not r.waiting.(i) then begin
+        r.waiting.(i) <- true;
+        Polly.(add info.poll_list r.sock Events.(inp lor out lor et));
+      end;
+    let c = cur_client () in
+    Hashtbl.add info.pendings r.sock { ty = Io; client = c; pd = NoEvent }
 
   let create sock =
     let r = { sock
-            ; unregister = (fun () -> unregister sock)
-            ; client = cur_client () }
+            ; waiting = Array.make max_domain false }
     in
-    register sock r;
+    (try Gc.finalise close r with _ -> ());
     r
 
   let rec read (io:t) s o l =
   try
     Util.read io.sock  s o l
   with Unix.(Unix_error((EAGAIN|EWOULDBLOCK),_,_)) ->
+        register io;
         schedule_io io.sock (fun () -> read io s o l)
-     | exn -> ioError io exn
+     | exn -> ioError exn
 
   let rec write (io:t) s o l =
   try
     Util.single_write io.sock s o l
   with Unix.(Unix_error((EAGAIN|EWOULDBLOCK),_,_)) ->
+        register io;
         schedule_io io.sock (fun () -> write io s o l)
-     | exn -> ioError io exn
+     | exn -> ioError exn
 
 end
 
@@ -451,7 +455,7 @@ let loop id st listens pipe timeout handler () =
   let pendings : (Unix.file_descr, socket_info) Hashtbl.t
     = Hashtbl.create 16384
   in
-  let pipe_info = { ty = Pipe; pd = NoEvent } in
+  let pipe_info = { ty = Pipe; client = fake_client; pd = NoEvent } in
   Hashtbl.add pendings pipe pipe_info;
 
   let bytes = Bytes.create (16 * 4_096) in
@@ -504,7 +508,7 @@ let loop id st listens pipe timeout handler () =
     let cl = get_client () in
     cl.acont <- C cont;
     let fn () = fn lk in
-    let info = { ty = Lock cl
+    let info = { ty = Lock ; client = cl
                ; pd = Wait { fn; cont }
                }
     in
@@ -567,7 +571,7 @@ let loop id st listens pipe timeout handler () =
       let fn _ sock evt =
         let fn info =
           (match info with
-           | { ty = Lock _; _ } ->
+           | { ty = (Lock | Io); _ } ->
               Hashtbl.remove pendings sock;
            | _ -> ());
           match info with
@@ -629,10 +633,7 @@ let loop id st listens pipe timeout handler () =
                         sendfile = (fun _ -> assert false);
                       } in
          dinfo.cur_client <- client;
-         let info = { ty = Client client
-                    ; pd = NoEvent
-                    }
-         in
+         let info = { ty = Client; client; pd = NoEvent } in
          Log.f ~lvl:2 (fun k -> k "[%d] accept connection (%a)" client.id print_status st);
          Unix.set_nonblock sock;
          Unix.(setsockopt_float sock SO_RCVTIMEO timeout);
@@ -682,7 +683,7 @@ let loop id st listens pipe timeout handler () =
          handler client; close EndHandling
       | Action ({ fn; cont; _ }, p, e) ->
          p.pd <- NoEvent;
-         let cl = socket_client p in
+         let cl = p.client in
          if cl.connected then
            begin
              dinfo.cur_client <-cl;

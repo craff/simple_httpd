@@ -1,3 +1,4 @@
+open Response_code
 exception Pass (* raised to test the next handler *)
 
 type path = string list (* split on '/' *)
@@ -251,7 +252,7 @@ let find (handlers : handlers) (req : Input.t Request.t) =
             with Not_found ->  [default]
   in
   let rec kn = function
-    | []           -> Response.fail_raise ~code:404 "not found"
+    | []           -> Response.fail_raise ~code:not_found "not found"
     | tree :: rest ->
        let path, l = get req.Request.meth req.Request.path_components tree in
        let rec fn = function

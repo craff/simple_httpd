@@ -13,3 +13,11 @@
 (executable
   (name compile_headers_mli)
   (modules compile_headers_mli))
+
+(executable
+  (name compile_status_code)
+  (modules compile_status_code))
+
+(executable
+  (name compile_status_mli)
+  (modules compile_status_mli))

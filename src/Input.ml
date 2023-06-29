@@ -93,7 +93,7 @@ let of_client = of_client_ ~close:(fun c -> Async.close c)
 
 module Io = Async.Io
 
-let of_client_fd_ ?(buf_size=16 * 1024) ~close (sock:Io.t) : t =
+let of_io_ ?(buf_size=16 * 1024) ~close (sock:Io.t) : t =
   make
     ~bs:(Bytes.create buf_size)
     ~close:(fun _ -> close sock)
@@ -109,7 +109,7 @@ let of_client_fd_ ?(buf_size=16 * 1024) ~close (sock:Io.t) : t =
       )
     ()
 
-let of_client_fd = of_client_fd_ ~close:(fun c -> Io.close c)
+let of_io = of_io_ ~close:(fun c -> Io.close c)
 
 let rec iter f (self:t) : unit =
   self.fill_buf();

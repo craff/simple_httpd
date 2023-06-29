@@ -1,3 +1,4 @@
+open Response_code
 module Mutex = Async.Mutex
 
 let log = Log.f
@@ -192,7 +193,7 @@ let add_vfs_ ?addresses ?hostnames ?(filter=(fun x -> (x, fun r -> r)))
          let path = String.concat "/" path in
          if contains_dot_dot path then (
            Log.f ~lvl:2 (fun k->k "delete fails %s (dotdot)" path);
-           Response.fail_raise ~code:403 "invalid path in delete"
+           Response.fail_raise ~code:forbidden "invalid path in delete"
          ) else (
            Response.make_string
              (try
@@ -201,13 +202,13 @@ let add_vfs_ ?addresses ?hostnames ?(filter=(fun x -> (x, fun r -> r)))
               with e ->
                 log ~lvl:2 (fun k->k "delete fails %s (%s)" path
                                          (Async.printexn e));
-                Response.fail_raise ~code:500
+                Response.fail_raise ~code:internal_server_error
                   "delete fails: %s (%s)" path (Async.printexn e))
       )))
     else (
       Server.add_route_handler ~filter server ~meth:DELETE (route())
         (fun _ _  ->
-          Response.fail_raise ~code:405 "delete not allowed");
+          Response.fail_raise ~code:method_not_allowed "delete not allowed");
     );
 
   if config.upload then (
@@ -215,10 +216,10 @@ let add_vfs_ ?addresses ?hostnames ?(filter=(fun x -> (x, fun r -> r)))
       ~filter:(fun req ->
           match Request.get_header_int req Headers.Content_Length with
           | Some n when n > config.max_upload_size ->
-             Response.fail_raise ~code:403
+             Response.fail_raise ~code:forbidden
                "max upload size is %d" config.max_upload_size
           | Some _ when contains_dot_dot req.Request.path ->
-             Response.fail_raise ~code:403 "invalid path (contains '..')"
+             Response.fail_raise ~code:forbidden "invalid path (contains '..')"
           | _ -> filter req
         )
       (fun path req ->
@@ -228,18 +229,19 @@ let add_vfs_ ?addresses ?hostnames ?(filter=(fun x -> (x, fun r -> r)))
            with e ->
              log ~lvl:2 (fun k->k "fail uploading %s (%s)"
                                       path (Async.printexn e));
-             Response.fail_raise ~code:403 "cannot upload to %S: %s"
+             Response.fail_raise ~code:forbidden "cannot upload to %S: %s"
                path (Async.printexn e)
          in
          let req = Request.limit_body_size ~max_size:config.max_upload_size req in
          Input.iter write req.Request.body;
          close ();
          log ~lvl:2 (fun k->k "done uploading %s" path);
-         Response.make_raw ~code:201 "upload successful"
+         Response.make_raw ~code:created "upload successful"
       )
   ) else (
     Server.add_route_handler ~filter server ~meth:PUT (route())
-      (fun _ _  -> Response.make_raw ~code:405 "upload not allowed");
+      (fun _ _  -> Response.make_raw ~code:method_not_allowed
+                     "upload not allowed");
   );
 
   if config.download then (
@@ -248,7 +250,7 @@ let add_vfs_ ?addresses ?hostnames ?(filter=(fun x -> (x, fun r -> r)))
         let path = String.concat "/" path in
         if contains_dot_dot path then (
           log ~lvl:2 (fun k->k "download fails %s (dotdot)" path);
-          Response.fail_raise ~code:403 "Path is forbidden");
+          Response.fail_raise ~code:forbidden "Path is forbidden");
         let FI info = VFS.read_file path in
         let mtime =  match info.mtime with
           | None -> None
@@ -257,7 +259,7 @@ let add_vfs_ ?addresses ?hostnames ?(filter=(fun x -> (x, fun r -> r)))
         let may_cache () =
           mtime <> None && Request.get_header req Headers.If_None_Match = mtime
         in
-        if may_cache () then Response.make_raw ~code:304 "" else
+        if may_cache () then Response.make_raw ~code:not_modified "" else
         let cache_control () =
           match mtime with
           | None -> (Headers.Cache_Control, "no-store")
@@ -270,7 +272,7 @@ let add_vfs_ ?addresses ?hostnames ?(filter=(fun x -> (x, fun r -> r)))
                (* redirect using path, not full path *)
                let new_path = "/" // prefix // path // "index.html" in
                log ~lvl:2 (fun k->k "download redirect %s" path);
-               Response.make_raw ~code:301 "No Body"
+               Response.make_raw ~code:moved_permanently "moved"
                  ~headers:Headers.(empty |> set Headers.Location new_path
                                      |> set Headers.Content_Type "text/plain")
             | Lists | Index_or_lists ->
@@ -280,7 +282,7 @@ let add_vfs_ ?addresses ?hostnames ?(filter=(fun x -> (x, fun r -> r)))
                Response.make_string ~headers:[header_html] body
             | Forbidden | Index ->
                log ~lvl:2 (fun k->k "download index fails %s (forbidden)" path);
-               Response.make_raw ~code:405 "listing dir not allowed"
+               Response.make_raw ~code:forbidden "listing dir not allowed"
         ) else (
           let accept_encoding =
             match Request.(get_header req Headers.Accept_Encoding)
@@ -295,31 +297,31 @@ let add_vfs_ ?addresses ?hostnames ?(filter=(fun x -> (x, fun r -> r)))
              Response.make_raw_file
                ~headers:(cache_control ()::
                          (Headers.Content_Encoding, "deflate")::info.headers)
-               ~code:200 ~close:true size fd
+               ~code:ok ~close:true size fd
           | Path(f, _) ->
              let fd = Unix.openfile f [O_RDONLY] 0 in
              let size = match info.size with Some s -> s | None -> assert false in
              log ~lvl:2 (fun k->k "download ok %s" path);
              Response.make_raw_file
                ~headers:(cache_control ()::info.headers)
-               ~code:200 ~close:true size fd
+               ~code:ok ~close:true size fd
           | Fd(fd) ->
              let size = Unix.(fstat fd).st_size in
              log ~lvl:2 (fun k->k "download ok %s" path);
              Response.make_raw_file
                ~headers:(cache_control ()::info.headers)
-               ~code:200 ~close:true size fd
+               ~code:ok ~close:true size fd
           | String(_, Some sz) when deflate ->
              log ~lvl:2 (fun k->k "download ok %s" path);
              Response.make_raw
                ~headers:(cache_control ()::
                          (Headers.Content_Encoding, "deflate")::info.headers)
-               ~code:200 sz
+               ~code:ok sz
           | String(s, _) ->
              log ~lvl:2 (fun k->k "download ok %s" path);
              Response.make_raw
                ~headers:(cache_control ()::info.headers)
-               ~code:200 s
+               ~code:ok s
           | Dynamic { input; filter } ->
              let headers = cache_control ()::info.headers in
              let req, gn = match filter with
@@ -329,12 +331,12 @@ let add_vfs_ ?addresses ?hostnames ?(filter=(fun x -> (x, fun r -> r)))
              let input = input req in
              log ~lvl:2 (fun k->k "download ok %s" path);
              gn (Response.make_raw_stream
-                   ~headers ~code:200 input)
+                   ~headers ~code:ok input)
           | Stream input ->
              log ~lvl:2 (fun k->k "download ok %s" path);
              Response.make_raw_stream
                ~headers:(cache_control ()::info.headers)
-               ~code:200 input
+               ~code:ok input
 
           | Dir _ -> assert false
 
@@ -342,7 +344,7 @@ let add_vfs_ ?addresses ?hostnames ?(filter=(fun x -> (x, fun r -> r)))
       )
   ) else (
     Server.add_route_handler server ~filter ~meth:GET (route())
-      (fun _ _  -> Response.make_raw ~code:405 "download not allowed");
+      (fun _ _  -> Response.make_raw ~code:method_not_allowed "download not allowed");
   );
   ()
 
@@ -468,7 +470,7 @@ module Embedded_fs = struct
              | _ -> None
            in
            FI { content; mtime; size; dsize; headers }
-        | _ -> Response.fail_raise ~code:404 "File %s not found" p
+        | _ -> Response.fail_raise ~code:not_found "File %s not found" p
 
       let contains p = match find_ self p with
         | Some _ -> true
