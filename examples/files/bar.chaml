@@ -34,7 +34,7 @@
     <br>
 
     request: <ML>
-      printf "%a" Simple_httpd.Request.pp request
+      printf "%a" Request.pp request
     </ML>
 
   </body>

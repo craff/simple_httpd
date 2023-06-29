@@ -125,7 +125,7 @@ let output_chunked (oc:t) (self:Input.t) : unit =
       continue := false;
     );
   done;
-  add_string oc "\r\n"; (* empty trailer required by RFC *)
+  (*add_string oc "\r\n";*) (* empty trailer required by RFC *)
   ()
 
 let output_str = add_string

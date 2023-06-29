@@ -6,17 +6,16 @@ module H = Headers
 
 let addr = ref "127.0.0.1"
 let port = ref 8080
-let t    = ref 1
+
 let () =
-Arg.parse (Arg.align [
-      "-a", Arg.Set_string addr, " address to listen on";
-      "-p", Arg.Set_int port, " port to listen on";
-      "-r", Arg.Set_int t, " number of thread (1)";
-      "--log", Arg.Int Log.set_log_lvl, " set log level";
-      ]) (fun _ -> ()) "sse_clock [opt*]";
+  let args, parameters = Server.args () in
+  Arg.parse (Arg.align ([
+                 "-a", Arg.Set_string addr, " address to listen on";
+                 "-p", Arg.Set_int port, " port to listen on";
+    ] @ args)) (fun _ -> ()) "sse_clock [opt*]";
 
   let listens = [Address.make ~addr:!addr ~port:!port ()] in
-  let server = Server.create ~num_thread:!t ~listens () in
+  let server = Server.create parameters ~listens in
 
   let extra_headers = [
     H.Access_Control_Allow_Origin, "*";

@@ -20,11 +20,9 @@ type t = {
 
   timeout: float;
 
-  num_thread: int;
+  num_threads: int;
 
   max_connections: int;
-
-  masksigpipe: bool;
 
   buf_size: int;
 
@@ -97,30 +95,70 @@ let add_route_server_sent_handler ?filter self route f =
   in
   Route.add_route_handler self.handlers ?filter ~meth:GET route ~tr_req f
 
-let create
-    ?(masksigpipe=true)
-    ?(max_connections=32)
-    ?(num_thread=Domain.recommended_domain_count () - 1)
-    ?(timeout=300.0)
-    ?(buf_size=16 * 2048)
-    ?(listens = [Address.make ()])
-    () : t =
+module type Parameters = sig
+  val max_connections : int ref
+  val num_threads : int ref
+  val timeout : float ref
+  val buf_size : int ref
+  val ktls : bool ref
+
+  val log_lvl : int ref
+  val log_folder : string ref
+  val log_basename : string ref
+  val log_perm : int ref
+end
+
+let args () =
+  let module Params = struct
+      let max_connections = ref 32
+      let num_threads = ref (Domain.recommended_domain_count () - 1)
+      let timeout = ref 300.0
+      let buf_size = ref (8 * 4_096)
+      let ktls = ref false
+
+      let log_lvl = ref 0
+      let log_folder = ref ""
+      let log_basename = ref Sys.argv.(0)
+      let log_perm = ref 0o700
+    end in
+  let open Params in
+  let open Arg in
+  ([
+    "--buf-size", Set_int buf_size, " set the size of the buffer used for input and output (one per client)";
+    "--ktls", Set ktls, " use ktls over ssl";
+    "--log", Set_int log_lvl, " log level";
+    "--log-folder", Set_string log_folder, " log folder";
+    "--log-basename", Set_string log_basename, " log basename";
+    "--log-perm", Set_int log_perm, " log permission";
+    "--max-connection", Set_int max_connections, " maximum number of simultaneous connections (default 100)";
+    "-c", Set_int max_connections, " maximum number of simultaneous connections (default 100)";
+    "--nb-threads", Set_int num_threads, " maximum number of threads";
+    "-j", Set_int num_threads, " maximum number of threads";
+    "--timeout", Set_float timeout, " timeout in seconds, connection is closed after timeout second of inactivity (default: -1.0 means no timeout)";
+  ], (module Params : Parameters))
+
+let create ?(listens = [Address.make ()]) (module Params : Parameters) =
+  let open Params in
+  let num_threads = !num_threads in
+  let max_connections = !max_connections in
+  let buf_size = !buf_size in
+  let timeout = !timeout in
+  Log.set_log_lvl !log_lvl;
+  if !log_folder <> "" then
+    Log.set_log_folder ~basename:!log_basename ~perm:!log_perm
+      !log_folder num_threads;
   let max_connections = max 4 max_connections in
-  if num_thread <= 0 || max_connections < num_thread then
+  if num_threads <= 0 || max_connections < num_threads then
     invalid_arg "bad number of threads or max connections";
   let status = Async.{
-      nb_connections = Array.init num_thread (fun _ -> Atomic.make 0)
+      nb_connections = Array.init num_threads (fun _ -> Atomic.make 0)
     }
   in
   let (listens, handlers) =
     Address.register Route.empty_handler listens
   in
-  let self = {
-    listens; masksigpipe; buf_size;
-    max_connections;
-    handlers; timeout; num_thread;
-    status
-    }
+  let self = { listens; buf_size; max_connections
+             ; handlers; timeout; num_threads; status }
   in
   self
 
@@ -201,7 +239,7 @@ let handle_client_ (self:t) (client:Async.client) : unit =
 let run (self:t) =
   let handler client_sock = handle_client_ self client_sock in
   let maxc = self.max_connections in
-  let a = Async.run ~nb_threads:self.num_thread ~listens:self.listens
+  let a = Async.run ~nb_threads:self.num_threads ~listens:self.listens
             ~maxc ~timeout:self.timeout ~status:self.status
             handler
   in

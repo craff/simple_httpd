@@ -1,0 +1,120 @@
+{0 Vfs_pack web site compiler}
+
+vfs_pack is a binary too that will compile your website to a ML site that
+can ve used with {!Simple_httpd.Dir.add_vfs}. It will
+
+- compile a directory structure to a list of Route (see {!Simple_httpd.Route},
+- It can be configured to allow directory listing or redirection to `index.html`,
+- Large files are not compiled into memory and may be installed in a separate
+  directory
+- precompiled version of large file (with deflate a.k.a zlib) can be stored too.
+- dynamic `.chaml` can be used to produce dynamic pages.
+
+Here is an example of `.chaml` included in the distribution:
+
+{[
+<ML>
+  open Simple_httpd
+  type Async.session_data += Count of int
+  let filter = Some (fun req -> Session.check ~init:(fun () -> Count 0) req)
+</ML>
+<!DOCTYPE html>
+<html>
+  <head>
+  </head>
+  <body>
+    <h1>dynamic hello!</h1>
+    <ul>
+      <li> item 1 </li>
+      <li> views:
+	<ML>
+	  let session = Session.get_session request
+	  let n = Session.do_session_data session (function
+	  | Count old -> (old, Count (old + 1))
+	  | _ -> assert false)
+	  let _ = echo (string_of_int n)
+	</ML>
+      </li>
+      <li>
+	<ML>
+	  let _ =
+	    echo (if n mod 2 = 0 then
+ 	            <li>even (<ML> ^ string_of_int n ^ </ML>)</li>
+	          else <li>odd</li>)
+	</ML>
+      </li>
+      <li> request:
+	<ML>
+	  printf "%a" Simple_httpd.Request.pp request
+	</ML>
+      </li>
+    </ul>
+  </body>
+</html>
+]}
+
+As you can see, some defect of php are avoided: no quote/double every where.
+
+There are four ways to insert ocaml code:
+
+- The first [<ML>...</ML>] section before the [<!DOCTYPE>] is special because it
+is executed before any output is done to the server and it may define a value `filter`
+that will be applied to the response. In the example this allows to start a
+{!Simple_httpd.Session} holding a counter. Values defined in this section are
+part of a `Prelude` module which is open in the rest of the file.
+
+- [<ML>...</ML>] sections which are not inside other [<ML>...</ML>] sections
+are compiled as toplevel expression. You may define type, values, ...
+
+- In tag attributes one may use `name="?expression"` to evaluate the
+   attribute using Ocaml
+
+- Inside [`<ML>...</ML>`] sections, html sections are interpreted to ocaml
+   strings.
+
+- Nested [<ML>..</ML>`] are compiled as normal ocaml texts.
+  For instance, in the above example,
+
+{[
+	<ML>
+	  let _ =
+	    echo (if n mod 2 = 0 then
+ 	            <li>even (<ML> ^ string_of_int n ^ </ML>)</li>
+	          else <li>odd</li>)
+	</ML>
+]}
+
+is compiled as
+
+{[
+  let _ = echo (if n mod 2 = 0 then
+ 	            "<li>even (" ^ string_of_int n ^ ")</li>"
+	          else "<li>odd</li>")
+]}
+
+Remark: currently, there is no good position in ocaml errors.
+we hope to fix this soon.
+
+Here is the documentation of the `vfs_pack` command line:
+
+{[
+vfs-pack [opt]+
+
+Builds an OCaml module containing a `Simple_httpd.Dir.Embedded_fs.t`
+virtual file system. This is useful to pack assets into an OCaml binary,
+for example.
+
+Each entry in the VFS can be added from the command line.
+
+  -v             verbose mode
+  -o             set output file
+  --file         <name,file> adds name=file to the VFS
+  --url          <name,url> adds name=url to the VFS
+  --mirror       <prefix,dir> copies directory dir into the VFS under prefix
+  --max-size     <size>, max size to hold file in memory (default: infinite). Bigger filed are copie to the folder given by --desination. A compressed version .zlib is also produced.
+  --destination  set the destination folder to use with mirror
+  --perm         set the permission of created folder
+  -F             <file> reads entries from the file, on per line written using this command line option syntax.
+  -help          Display this list of options
+  --help         Display this list of options
+]}

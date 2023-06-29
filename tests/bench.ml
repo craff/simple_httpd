@@ -69,7 +69,7 @@ let _ = csv := add_column !csv "nbc" string_of_int (List.map snd values)
 let data =
   Printf.printf "serve_files\n%!";
   measure
-    (Some "../_build/default/examples/echo.exe -j 2100")
+    (Some "../_build/default/examples/echo.exe -c 2100")
     (fun ((file, d), c) ->
       Printf.sprintf "wrk -t5 -c%d --timeout 10 -d%d http://localhost:8080/vfs/%s"
         c d file)
@@ -103,7 +103,7 @@ let _ = csv := add_column !csv "nbc" string_of_int (List.map snd values)
 let data =
   Printf.printf "serve_files\n%!";
   measure
-    (Some "../_build/default/tests/serve_files.exe --dir /var/www/nginx --maxc=2100 --timeout 10")
+    (Some "../_build/default/tests/serve_files.exe --dir /var/www/nginx -c 2100 --timeout 10")
     (fun ((file, d), c) ->
       Printf.sprintf "wrk -t5 -c%d --timeout 10 -d%d http://localhost:9080/%s"
         c d file)
@@ -114,7 +114,7 @@ let _ = csv := add_column !csv "sh\\\\_cc" string_of_float data
 let data =
   Printf.printf "measure http_of_dir\n%!";
   measure
-    (Some "../_build/default/src/bin/http_of_dir.exe --maxc=2100 --port=8080 --timeout 10 /var/www/nginx")
+    (Some "../_build/default/src/bin/http_of_dir.exe -c 2100 --port=8080 --timeout 10 /var/www/nginx")
     (fun ((file, d), c) ->
       Printf.sprintf "wrk -t5 -c%d --timeout 10 -d%d http://localhost:8080/%s"
         c d file)
@@ -125,7 +125,7 @@ let _ = csv := add_column !csv "sh\\\\_dir" string_of_float data
 let data =
   Printf.printf "measure http_of_dir\n%!";
   measure
-    (Some "../_build/default/src/bin/http_of_dir.exe --ssl ../_build/default/tests/domain.crt ../_build/default/tests/domain.key --maxc=2100 --port=8443 --timeout 10 /var/www/nginx")
+    (Some "../_build/default/src/bin/http_of_dir.exe --ssl ../_build/default/tests/domain.crt ../_build/default/tests/domain.key -c 2100 --port=8443 --timeout 10 /var/www/nginx")
     (fun ((file, d), c) ->
       Printf.sprintf "wrk -t5 -c%d --timeout 10 -d%d https://localhost:8443/%s"
         c d file)

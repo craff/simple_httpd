@@ -1,4 +1,4 @@
-
+(* echo.ml: a fairly complete example *)
 open Simple_httpd
 module H = Headers
 
@@ -16,7 +16,7 @@ module Atomic = struct
 end
 
 (** [Simple_httpd] provides filter for request, that can be used to collecting
-    statistics. Currently, we can not cound the time to output the response. *)
+    statistics. Currently, we can not count the time to output the response. *)
 let filter_stat () : 'a Route.filter * (unit -> string) =
   (* We must use atomic for this to work with domains! *)
   let nb_req     = Atomic.make 0  in
@@ -43,39 +43,39 @@ let filter_stat () : 'a Route.filter * (unit -> string) =
   in
   (measure, get_stat)
 
+(** Parse command line options *)
+
 (** default address, port and maximum number of connections *)
 let addr = ref "127.0.0.1"
 let port = ref 8080
-let j = ref 32
 let top_dir = ref None
-let timeout = ref (-1.0)
 
-(** parse command line option *)
+(** Server.args provides a bunch and standard option to control the
+    maximum number of connections, logs, etc... *)
+let args, parameters = Server.args ()
 let _ =
-  Arg.parse (Arg.align [
+  Arg.parse (Arg.align ([
       "--addr", Arg.Set_string addr, " set address";
       "-a", Arg.Set_string addr, " set address";
       "--port", Arg.Set_int port, " set port";
       "-p", Arg.Set_int port, " set port";
-      "--log", Arg.Int (fun n -> Log.set_log_lvl n), " set debug lvl";
-      "--timeout", Set_float timeout, " timeout in seconds, connection is closed after timeout second of inactivity (default: -1.0 means no timeout)";
       "--dir", Arg.String (fun s -> top_dir := Some s), " set the top dir for file path";
-      "-j", Arg.Set_int j, " maximum number of connections";
-    ]) (fun _ -> raise (Arg.Bad "")) "echo [option]*"
+    ] @ args)) (fun _ -> raise (Arg.Bad "")) "echo [option]*"
 
 (** Server initialisation *)
 let listens = [Address.make ~addr:!addr ~port:!port ()]
-let server = Server.create ~listens ~max_connections:!j ~timeout:!timeout ()
+let server = Server.create parameters ~listens
 
 (** Compose the above filter with the compression filter
-    provided by [Simple_httpd.Camlzip] *)
+    provided by [Simple_httpd.Camlzip], than will compress output
+    when [deflate] is accepted *)
 let filter, get_stats =
   let filter_stat, get_stats = filter_stat () in
   let filter_zip =
     Camlzip.filter ~compress_above:1024 ~buf_size:(16*1024) () in
   (Route.compose_cross filter_zip filter_stat, get_stats)
 
-(** Add a route answering 'Hello' *)
+(** Add a route answering 'Hello world' to [http://localhost/hello/world] *)
 let _ =
   Server.add_route_handler ~meth:GET server ~filter
     Route.(exact "hello" @/ string @/ return)
@@ -147,7 +147,7 @@ let _ =
                ~dir_behavior:Dir.Index_or_lists ())
     ~vfs:vfs ~prefix:"vfs"
 
-(** Main pagen using the Html module*)
+(** Main pagen using the Html module (deprecated by vfs_pack and many other solutions *)
 let _ =
   Server.add_route_handler server ~filter Route.return
     (fun _req ->

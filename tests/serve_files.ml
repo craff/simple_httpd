@@ -7,27 +7,22 @@ let now = Unix.gettimeofday
 (** default address, port and maximum number of connections *)
 let addr = ref "127.0.0.1"
 let port = ref 9080
-let j = ref 32
 let top_dir = ref ""
-let timeout = ref (-1.0)
 
 (** parse command line option *)
+let args, parameters = Server.args ()
 let _ =
-  Arg.parse (Arg.align [
+  Arg.parse (Arg.align ([
       "--addr", Arg.Set_string addr, " set address";
       "-a", Arg.Set_string addr, " set address";
       "--port", Arg.Set_int port, " set port";
       "-p", Arg.Set_int port, " set port";
-      "--log", Arg.Int (fun n -> Log.set_log_lvl n), " set debug lvl";
       "--dir", Arg.Set_string top_dir, " set the top dir for file path";
-      "--maxc", Arg.Set_int j, " maximum number of connections";
-      "--timeout", Set_float timeout, " timeout in seconds, connection is closed after timeout second of inactivity (default: -1.0 means no timeout)";
-    ]) (fun _ -> raise (Arg.Bad "")) "echo [option]*"
+    ] @ args)) (fun _ -> raise (Arg.Bad "")) "echo [option]*"
 
 (** Server initialisation *)
-let timeout = !timeout
 let listens = [Address.make ~addr:!addr ~port:!port ()]
-let server = Server.create ~timeout ~listens ~max_connections:!j ()
+let server = Server.create parameters ~listens
 
 (** Add a virtual file system VFS, produced by [simple-httpd-vfs-pack] from
     an actual folger *)

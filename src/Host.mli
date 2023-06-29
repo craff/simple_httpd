@@ -34,9 +34,4 @@ module type Host = sig
   module Init(_:HostInit) : sig end
 end
 
-val start_server :
-  ?masksigpipe:bool ->
-  ?max_connections:int ->
-  ?num_thread:int ->
-  ?timeout:float ->
-  ?buf_size:int -> (module Host) list -> unit
+val start_server : (module Server.Parameters) -> (module Host) list -> unit

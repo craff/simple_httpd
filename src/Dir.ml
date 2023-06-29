@@ -154,7 +154,6 @@ let html_list_dir (module VFS:VFS) ~prefix ~parent d : Html.elt =
     begin match parent with
       | None -> sub_empty
       | Some p ->
-         Printf.eprintf "XXX => %S %S\n%!" p prefix;
         sub_e @@
         a[A.href (encode_path ("/" // p))][txt"(parent directory)"]
     end;

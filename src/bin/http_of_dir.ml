@@ -21,14 +21,10 @@ let addr     = ref "127.0.0.1"
 let port     = ref 8080
 let ssl_cert = ref ""
 let ssl_priv = ref ""
-let maxc     = ref 100
-let delta    = ref 0.030
-let timeout  = ref (-1.0)
-let t        = ref (Domain.recommended_domain_count () - 1)
-let log_folder = ref ""
-let log_basename = ref "log"
-let log_perm = ref 0o700
-let ktls     = ref false
+
+let (args, parameters) = Server.args ()
+
+module Params = (val parameters)
 
 let _ =
   Arg.parse (Arg.align [
@@ -38,43 +34,30 @@ let _ =
       "-p", Set_int port, " alias to --port";
       "--ssl", Tuple[Set_string ssl_cert; Set_string ssl_priv], " give ssl certificate and private key";
       "--dir", Set_string dir, " directory to serve (default: \".\")";
-      "--log", Int Log.set_log_lvl, " log level";
-      "--log-folder", Set_string log_folder, " log folder";
-      "--log-basename", Set_string log_basename, " log basename";
-      "--log-perm", Set_int log_perm, " log permission";
       "--upload", Unit (fun () -> config.upload <- true), " enable file uploading";
       "--no-upload", Unit (fun () -> config.upload <- false), " disable file uploading";
       "--download", Unit (fun () -> config.download <- true), " enable file downloading";
       "--no-download", Unit (fun () -> config.download <- false), " disable file downloading";
       "--max-upload", String (fun i -> config.max_upload_size <- parse_size i),
                       " maximum size of files that can be uploaded";
-      "--delta", Set_float delta, " schedule write/read/lock after delta seconds (default 30ms)";
-      "--timeout", Set_float timeout, " timeout in seconds, connection is closed after timeout second of inactivity (default: -1.0 means no timeout)";
       "--auto-index",
       Bool (fun b -> config.dir_behavior <-
                (if b then Index_or_lists else Lists)),
       " <bool> automatically redirect to index.html if present";
       "--delete", Unit (fun () -> config.delete <- true), " enable `delete` on files";
       "--no-delete", Unit (fun () -> config.delete <- false), " disable `delete` on files";
-      "--maxc", Set_int maxc, " maximum number of simultaneous connections (default 100)";
-      "--ktls", Set ktls, " use ktls over ssl";
-      "-t", Set_int t, " maximum number of threads";
-    ]) (fun s -> dir := s) "http_of_dir [options] [dir]"
+    ] @ args) (fun s -> dir := s) "http_of_dir [options] [dir]"
 
 
 let ssl =
   if !ssl_cert <> "" then
     begin
       Ssl_threads.init (); Ssl.init ();
-      let ctx = Ssl.create_context ~ktls:!ktls Ssl.TLSv1_2 Ssl.Server_context in
+      let ctx = Ssl.create_context ~ktls:!Params.ktls Ssl.TLSv1_2 Ssl.Server_context in
       Ssl.use_certificate ctx !ssl_cert !ssl_priv;
       Some ctx
     end
   else None
-
-let _ =
-  if !log_folder <> "" then
-    Log.set_log_folder ~basename:!log_basename ~perm:!log_perm !log_folder (!t + 1)
 
 open Host
 
@@ -90,8 +73,4 @@ module Main = struct
   end
 end
 
-let timeout = !timeout
-let max_connections = !maxc
-let num_thread = !t
-
-let _ = start_server ~timeout ~max_connections ~num_thread [(module Main)]
+let _ = start_server parameters [(module Main)]

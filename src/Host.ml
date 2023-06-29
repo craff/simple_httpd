@@ -51,14 +51,10 @@ let collect_addresses (hosts : (module Host) list) : Address.t list =
   List.iter (fun (module Host:Host) -> List.iter add Host.addresses) hosts;
   !res
 
-let start_server
-    ?masksigpipe ?max_connections ?num_thread ?timeout ?buf_size
-    (hosts : (module Host) list) =
+let start_server parameters
+      (hosts : (module Host) list) =
   let addresses = collect_addresses hosts in
-  let server =
-    create ?masksigpipe ?max_connections ?num_thread ?timeout ?buf_size
-      ~listens:addresses ()
-  in
+  let server = create parameters ~listens:addresses in
   List.iter (fun (module Host:Host) ->
       let module I = struct
           open Host

@@ -787,15 +787,22 @@ module Server : sig
   type t
   (** A HTTP server. See {!create} for more details. *)
 
-  val create :
-    ?masksigpipe:bool ->
-    ?max_connections:int ->
-    ?num_thread:int ->
-    ?timeout:float ->
-    ?buf_size:int ->
-    ?listens:Address.t list ->
-    unit ->
-    t
+  module type Parameters = sig
+    val max_connections : int ref
+    val num_threads : int ref
+    val timeout : float ref
+    val buf_size : int ref
+    val ktls : bool ref
+
+    val log_lvl : int ref
+    val log_folder : string ref
+    val log_basename : string ref
+    val log_perm : int ref
+  end
+
+  val args : unit -> (Arg.key * Arg.spec * Arg.doc) list * (module Parameters)
+
+  val create :  ?listens:Address.t list -> (module Parameters) -> t
   (** Create a new webserver.
 
       The server will not do anything until {!run} is called on it. Before starting the server, one can use {!add_route_handler} to specify how to handle incoming requests.
@@ -1141,10 +1148,5 @@ module Host : sig
     module Init(_:HostInit) : sig end
   end
 
-  val start_server :
-    ?masksigpipe:bool ->
-    ?max_connections:int ->
-    ?num_thread:int ->
-    ?timeout:float ->
-    ?buf_size:int -> (module Host) list -> unit
+  val start_server : (module Server.Parameters) -> (module Host) list -> unit
 end

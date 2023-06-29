@@ -209,17 +209,7 @@ Builds an OCaml module containing a `Simple_httpd.Dir.Embedded_fs.t`
 virtual file system. This is useful to pack assets into an OCaml binary,
 for example.
 
-Each entry in the VFS can be added from the command line using:
-
---file=foo/bar,actual/path/to/file to add an entry foo/bar in the VFS
-  with the content of actual/path/to/file. The mtime of the file is preserved.
-
---url=foo/bar,https://something.com/ to add an entry foo/bar in the VFS
-  with the content of the URL (downloaded using curl).
-
--F=file reads lines from file. Each line is a pair vfs_path,actual_path
-and is processed as previously. If actual_path looks like an http(s) URL
-it is treated as such.
+Each entry in the VFS can be added from the command line.
 |}
 
 
@@ -255,13 +245,13 @@ let () =
     "--file", Arg.String add_file, " <name,file> adds name=file to the VFS";
     "--url", Arg.String add_url, " <name,url> adds name=url to the VFS";
     "--mirror", Arg.String add_mirror, " <prefix,dir> copies directory dir into the VFS under prefix";
-    "--max-size", Arg.Set_int max_size, " <size>, max size to hold file in memory (default: infinite)";
+    "--max-size", Arg.Set_int max_size, " <size>, max size to hold file in memory (default: infinite). Bigger filed are copie to the folder given by --desination. A compressed version .zlib is also produced.";
     ("--destination", Arg.String (fun s -> destination := Some s),
-     " set the destination folder if you use mirror or path");
+     " set the destination folder to use with mirror");
     ("--perm", Arg.Set_int perm,
-     " set the permission of created destination");
+     " set the permission of created folder");
     ("-F", Arg.String add_source,
-     " <file> reads entries from the file, on per line");
+     " <file> reads entries from the file, on per line written using this command line option syntax.");
   ] |> Arg.align in
   Arg.parse opts (fun _ -> raise (Arg.Help "no positional arg")) help;
 
