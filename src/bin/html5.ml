@@ -11,10 +11,12 @@ let print_tag name attributes =
     |> List.map (fun (name, value) ->
            let len = String.length value in
            let value =
-             if len > 0 && value.[0] = '?' then
+             if len > 0 && value.[0] = '$' then
                let s = String.sub value 1 (len - 1) in
                args := s :: !args;
                "%S"
+             else if len > 1 && value.[0] = '\\' && value.[1] = '$' then
+               String.sub value 1 (len - 1)
              else value
            in
            Printf.sprintf " %s=%s" (snd name) value)

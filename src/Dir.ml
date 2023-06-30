@@ -269,10 +269,14 @@ let add_vfs_ ?addresses ?hostnames ?(filter=(fun x -> (x, fun r -> r)))
             | Index | Index_or_lists when VFS.contains (path // "index.html") ->
                (* redirect using path, not full path *)
                let new_path = "/" // prefix // path // "index.html" in
+               let query = String.concat "&"
+                             (List.map (fun (k,v) -> k ^ "=" ^ v)
+                                (Request.query req)) in
                log ~lvl:2 (fun k->k "download redirect %s" path);
                Response.make_raw ~code:moved_permanently "moved"
-                 ~headers:Headers.(empty |> set Headers.Location new_path
-                                     |> set Headers.Content_Type "text/plain")
+                 ~headers:Headers.(empty
+                                   |> set Headers.Location (new_path ^ "?" ^ query)
+                                   |> set Headers.Content_Type "text/plain")
             | Lists | Index_or_lists ->
                let body = html_list_dir ~prefix vfs path ~parent
                           |> Html.to_string_top in
