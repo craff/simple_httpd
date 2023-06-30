@@ -68,9 +68,10 @@ part of a `Prelude` module which is open in the rest of the file.
   In these section, you can use [echo] and [printf] provided automatically by
   opening a module of type {!Simple_httpd.Input.Output}.
 
-- In tag attributes one may use `name="?expression"` to evaluate the
-   attribute using Ocaml. Use "\?..." if you want an attribute starting with
-   a question mark.
+- In tag attributes one may use `name="$expression"` to evaluate the
+   attribute using Ocaml. Use "\$..." if you want an attribute starting with
+   a question mark. This is limited to ocaml expression without double quote.
+   Use [ {|...|} } alternative syntax for string.
 
 - Inside [`<ML>...</ML>`] sections, html sections are interpreted to ocaml
    strings.
