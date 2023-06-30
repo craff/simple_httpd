@@ -66,14 +66,14 @@ val config :
 val add_dir_path :
   ?addresses: Address.t list ->
   ?hostnames: string list ->
-  ?filter:Input.t Route.filter ->
+  ?filter:Input.t Route.Filter.t ->
   ?prefix:string ->
   ?config:config ->
   dir:string ->
   Server.t -> unit
 
 type dynamic = { input : string Request.t -> Input.t
-               ; filter : 'a. 'a Route.filter option }
+               ; filter : 'a. 'a Route.Filter.t option }
 type 'a content =
   | String of string * string option
   | Path   of string * (string * int) option
@@ -131,7 +131,7 @@ val vfs_of_dir : string -> (module VFS)
 val add_vfs :
   ?addresses: Address.t list ->
   ?hostnames: string list ->
-  ?filter:Input.t Route.filter ->
+  ?filter:Input.t Route.Filter.t ->
   ?prefix:string ->
   ?config:config ->
   vfs:(module VFS) ->

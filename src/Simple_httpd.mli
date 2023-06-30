@@ -480,10 +480,16 @@ module Response : sig
 
   type body = String of string
             | Stream of Input.t
-            | File of int * Unix.file_descr * bool
+            | File of
+                { fd : Unix.file_descr
+                ; size : int
+                ; close : bool
+                  (** if using sendfile, one might want to maintain the fd open
+                      for another request, sharing file descriptor would limit
+                      the number of open files *)}
             | Void
-  (** Body of a response, either as a simple string,
-      or a stream of bytes, or nothing (for server-sent events). *)
+  (** Body of a response, either as a simple string, or a stream of bytes, a
+      file or nothing (for instance for server-sent events). *)
 
   type t
   (** A response to send back to a client. *)
@@ -644,23 +650,25 @@ module Route : sig
       {{:../../simple_httpd_caml*zip/Simple_httpd_camlzip/index.html}Simple_httpd_camlzip} uses this to compress the
       response only if [deflate] is allowed using the header named
     {!Headers.Accept_Encoding}. *)
+end
 
-  type 'a filter = 'a Request.t -> 'a Request.t * (Response.t -> Response.t)
+module Filter : sig
+  type 'a t = 'a Request.t -> 'a Request.t * (Response.t -> Response.t)
 
   val decode_request : ('a -> 'a) -> (Headers.t -> Headers.t)
-                       -> 'a filter
+                       -> 'a t
   (** helper to create a filter transforming only the request. *)
 
   val encode_response : (Response.body -> Response.body) -> (Headers.t -> Headers.t)
-                        -> 'a filter
+                        -> 'a t
   (** helper to create a filter transforming only the resposne. *)
 
-  val compose_embrace : 'a filter -> 'a filter -> 'a filter
+  val compose_embrace : 'a t -> 'a t -> 'a t
   (** [compose_embrace f1 f2] compose two filters:
       the request will be passed first to [f2], then to [f1],
       the response will be passed first to [f2], then to [f1] **)
 
-  val compose_cross : 'a filter -> 'a filter -> 'a filter
+  val compose_cross : 'a t -> 'a t -> 'a t
   (** [compose_cross f1 f2] compose two filters:
       the request will be passed first to [f2], then to [f1],
       the response will be passed first to [f1], then to [f2] **)
@@ -669,7 +677,7 @@ end
 module Camlzip : sig
   val filter :
     ?compress_above:int ->
-    ?buf_size:int -> unit -> Input.t Route.filter
+    ?buf_size:int -> unit -> Input.t Filter.t
   (** Middleware responsible for deflate compression/decompression.
     @since 0.11 *)
 
@@ -690,11 +698,11 @@ module Stats : sig
 
 (** This a a filter to acquire statistics.
     [let (filter, get) = Stats.filter ()]
-    will give you a [Route.filter] and a function [get] returning the statistics
+    will give you a [Filter.t] and a function [get] returning the statistics
     as a string
     ["N requests (average response time: Tms = T1ms (read) + T2ms (build))"]
  *)
-val filter : unit -> 'a Route.filter * (unit -> string)
+val filter : unit -> 'a Filter.t * (unit -> string)
 
 (** Note: currently we can not measure the time to write the response. *)
 end
@@ -714,7 +722,7 @@ module Session : sig
               ?finalise:(session_data -> unit) ->
               ?check:(session -> bool) ->
               ?error:(Response_code.t*Headers.t) ->
-              'a Route.filter
+              'a Filter.t
 
 
   (** get the client session. The session must have been initialized with check
@@ -825,7 +833,7 @@ module Server : sig
     ?addresses:Address.t list ->
     ?hostnames:string list ->
     ?meth:Method.t ->
-    ?filter:Input.t Route.filter ->
+    ?filter:Input.t Filter.t ->
     t ->
     ('a, string Request.t -> Response.t) Route.t -> 'a ->
     unit
@@ -859,7 +867,7 @@ module Server : sig
     ?addresses:Address.t list ->
     ?hostnames:string list ->
     ?meth:Method.t ->
-    ?filter:Input.t Route.filter ->
+    ?filter:Input.t Filter.t ->
     t ->
     ('a, Input.t Request.t -> Response.t) Route.t -> 'a ->
     unit
@@ -902,7 +910,7 @@ module Server : sig
   (** Server-sent event generator *)
 
   val add_route_server_sent_handler :
-    ?filter:Input.t Route.filter ->
+    ?filter:Input.t Filter.t ->
     t ->
     ('a, string Request.t -> server_sent_generator -> unit) Route.t -> 'a ->
     unit
@@ -994,14 +1002,14 @@ module Dir : sig
   val add_dir_path :
     ?addresses: Address.t list ->
     ?hostnames: string list ->
-    ?filter:Input.t Route.filter ->
+    ?filter:Input.t Filter.t ->
     ?prefix:string ->
     ?config:config ->
     dir:string ->
     Server.t -> unit
 
   type dynamic = { input : string Request.t -> Input.t
-                 ; filter : 'a. 'a Route.filter option }
+                 ; filter : 'a. 'a Filter.t option }
 
   type 'a content =
     | String of string * string option
@@ -1061,7 +1069,7 @@ module Dir : sig
   val add_vfs :
     ?addresses: Address.t list ->
     ?hostnames: string list ->
-    ?filter:Input.t Route.filter ->
+    ?filter:Input.t Filter.t ->
     ?prefix:string ->
     ?config:config ->
     vfs:(module VFS) ->
@@ -1104,22 +1112,22 @@ module Host : sig
 
     val add_route_handler :
       ?meth:Method.t ->
-      ?filter:Input.t Route.filter ->
+      ?filter:Input.t Filter.t ->
       ('a, string Request.t -> Response.t) Route.t -> 'a -> unit
 
     val add_route_handler_stream :
       ?meth:Method.t ->
-      ?filter:Input.t Route.filter ->
+      ?filter:Input.t Filter.t ->
       ('a, Input.t Request.t -> Response.t) Route.t -> 'a -> unit
 
     val add_dir_path :
-      ?filter:Input.t Route.filter ->
+      ?filter:Input.t Filter.t ->
       ?prefix:string ->
       ?config:config ->
       string -> unit
 
     val add_vfs :
-      ?filter:Input.t Route.filter ->
+      ?filter:Input.t Filter.t ->
       ?prefix:string ->
       ?config:config ->
       (module VFS) -> unit

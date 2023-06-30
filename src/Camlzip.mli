@@ -1,7 +1,7 @@
 
 val filter :
   ?compress_above:int ->
-  ?buf_size:int -> unit -> Input.t Route.filter
+  ?buf_size:int -> unit -> Input.t Route.Filter.t
 (** Middleware responsible for deflate compression/decompression.
     @since 0.11 *)
 

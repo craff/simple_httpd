@@ -7,6 +7,6 @@
     as a string
     ["N requests (average response time: Tms = T1ms (read) + T2ms (build))"]
  *)
-val filter : unit -> 'a Route.filter * (unit -> string)
+val filter : unit -> 'a Route.Filter.t * (unit -> string)
 
 (** Note: currently we can not measure the time to write the response. *)

@@ -56,7 +56,7 @@ let encode_path s = Util.percent_encode ~skip:(function '/' -> true|_->false) s
 let is_hidden s = String.length s>0 && s.[0] = '.'
 
 type dynamic = { input : string Request.t -> Input.t
-               ; filter : 'a. 'a Route.filter option }
+               ; filter : 'a. 'a Route.Filter.t option }
 type 'a content =
   | String of string * string option
   | Path   of string * (string * int) option

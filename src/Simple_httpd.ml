@@ -45,6 +45,8 @@ module Response = Response
 
 module Route = Route
 
+module Filter = Route.Filter
+
 module Session = Session
 
 module Dir = Dir

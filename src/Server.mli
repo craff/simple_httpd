@@ -62,7 +62,7 @@ val add_route_handler :
   ?addresses:Address.t list ->
   ?hostnames:string list ->
   ?meth:Method.t ->
-  ?filter:Input.t Route.filter ->
+  ?filter:Input.t Route.Filter.t ->
   t ->
   ('a, string Request.t -> Response.t) Route.t -> 'a ->
   unit
@@ -96,7 +96,7 @@ val add_route_handler_stream :
   ?addresses:Address.t list ->
   ?hostnames:string list ->
   ?meth:Method.t ->
-  ?filter:Input.t Route.filter ->
+  ?filter:Input.t Route.Filter.t ->
   t ->
   ('a, Input.t Request.t -> Response.t) Route.t -> 'a ->
   unit
@@ -139,7 +139,7 @@ type server_sent_generator = (module SERVER_SENT_GENERATOR)
 (** Server-sent event generator *)
 
 val add_route_server_sent_handler :
-  ?filter:Input.t Route.filter ->
+  ?filter:Input.t Route.Filter.t ->
   t ->
   ('a, string Request.t -> server_sent_generator -> unit) Route.t -> 'a ->
   unit

@@ -13,7 +13,7 @@ end
 
 (** [Simple_httpd] provides filter for request, that can be used to collecting
     statistics. Currently, we can not count the time to output the response. *)
-let filter () : 'a Route.filter * (unit -> string) =
+let filter () : 'a Route.Filter.t * (unit -> string) =
   (* We must use atomic for this to work with domains! *)
   let nb_req     = Atomic.make 0  in
   let total_time = Atomic.make 0. in

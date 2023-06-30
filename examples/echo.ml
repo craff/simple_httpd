@@ -33,7 +33,7 @@ let filter, get_stats =
   let filter_stat, get_stats = Stats.filter () in
   let filter_zip =
     Camlzip.filter ~compress_above:1024 ~buf_size:(16*1024) () in
-  (Route.compose_cross filter_zip filter_stat, get_stats)
+  (Filter.compose_cross filter_zip filter_stat, get_stats)
 
 (** Add a route answering 'Hello world' to [http://localhost/hello/world] *)
 let _ =

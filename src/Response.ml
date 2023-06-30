@@ -5,8 +5,15 @@ let log      = Log.f
 
 type body = String of string
           | Stream of Input.t
-          | File of int * Unix.file_descr * bool (* sent via sendfile *)
+          | File of
+              { fd : Unix.file_descr
+              ; size : int
+              ; close : bool
+                (** if using sendfile, one might want to maintain the fd open
+                    for another request, sharing file descriptor would limit
+                    the number of open files *)}
           | Void
+
 type t = {
     code: Response_code.t;
     headers: Headers.t;
@@ -33,10 +40,10 @@ let make_raw_stream ?(cookies=[]) ?(headers=[]) ~code body : t =
   let headers = Headers.set_cookies cookies headers in
   { code; headers; body=Stream body; }
 
-let make_raw_file ?(cookies=[]) ?(headers=[]) ~code ~close n body : t =
+let make_raw_file ?(cookies=[]) ?(headers=[]) ~code ~close size body : t =
   (* add content length to response *)
   let headers = Headers.set_cookies cookies headers in
-  { code; headers; body=File(n,body,close); }
+  { code; headers; body=File{size; fd=body; close}; }
 
 let make_void ?(cookies=[]) ?(headers=[]) ~code () : t =
   let headers = Headers.set_cookies cookies headers in
@@ -54,7 +61,8 @@ let make_file ?cookies ?headers ~close n body =
 let make ?cookies ?headers r : t = match r with
   | String body -> make_raw ?cookies ?headers ~code:ok body
   | Stream body -> make_raw_stream ?cookies ?headers ~code:ok body
-  | File(n,body,close)-> make_raw_file ?cookies ?headers ~code:ok ~close n body
+  | File{size;fd=body;close}->
+     make_raw_file ?cookies ?headers ~code:ok ~close size body
   | Void -> make_void ?cookies ?headers ~code:ok ()
 
 let fail ?cookies ?headers ~code fmt =
@@ -84,8 +92,8 @@ let output_ (oc:Output.t) (self:t) : unit =
     | String s ->
        Headers.set Headers.Content_Length (string_of_int (String.length s))
          self.headers
-    | File(n, _, _) ->
-       Headers.set Headers.Content_Length (string_of_int n) self.headers
+    | File{size;_} ->
+       Headers.set Headers.Content_Length (string_of_int size) self.headers
     | Stream _ -> Headers.set Headers.Transfer_Encoding "chunked" self.headers
   in
 
@@ -103,9 +111,9 @@ let output_ (oc:Output.t) (self:t) : unit =
   begin match body with
   | String "" | Void -> ()
   | String s         -> Output.output_str oc s
-  | File (n, fd, false) -> Output.sendfile oc n fd
-  | File (n, fd, true) ->
-     (try Output.sendfile oc n fd; Unix.close fd
+  | File {size; fd; close=false} -> Output.sendfile oc size fd
+  | File {size; fd; close=true} ->
+     (try Output.sendfile oc size fd; Unix.close fd
       with e -> Unix.close fd; raise e)
   | Stream str ->
      (try

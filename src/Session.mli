@@ -8,7 +8,7 @@ val check : ?session_life_time:float ->
             ?finalise:(session_data -> unit) ->
             ?check:(session -> bool) ->
             ?error:(Response_code.t*Headers.t) ->
-            'a Route.filter
+            'a Route.Filter.t
 
 val get_session : 'a Request.t -> session
 

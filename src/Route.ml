@@ -156,38 +156,40 @@ let rec eval :
   end
 
 type 'a treatment = Output.t ->
-                 Input.t Request.t ->
-                 resp:(Response.t -> unit) -> 'a
+                    Input.t Request.t ->
+                    resp:(Response.t -> unit) -> 'a
 
-type 'a filter = 'a Request.t -> 'a Request.t * (Response.t -> Response.t)
+module Filter = struct
+  type 'a t = 'a Request.t -> 'a Request.t * (Response.t -> Response.t)
 
-let decode_request : ('a -> 'a) -> (Headers.t -> Headers.t) -> 'a filter =
-  (* turn it into a middleware *)
-  fun tb th req ->
+  let decode_request : ('a -> 'a) -> (Headers.t -> Headers.t) -> 'a t =
+    (* turn it into a middleware *)
+    fun tb th req ->
     let open Request in
     (* see if [f] modifies the stream *)
     ({req with body = tb req.body; headers = th req.headers }, fun r -> r)
 
-let encode_response : (Response.body -> Response.body) ->
-                      (Headers.t -> Headers.t) -> 'a filter =
-  fun tb th req ->
+  let encode_response : (Response.body -> Response.body) ->
+                        (Headers.t -> Headers.t) -> 'a t =
+    fun tb th req ->
     (req, fun resp ->
-      let open Response in
-      { resp with body = tb resp.body; headers = th resp.headers })
+          let open Response in
+          { resp with body = tb resp.body; headers = th resp.headers })
 
-let compose_embrace : 'a filter -> 'a filter -> 'a filter =
-  fun f1 f2 req ->
+  let compose_embrace : 'a t -> 'a t -> 'a t =
+    fun f1 f2 req ->
     let (req, f2) = f2 req in
     let (req, f1) = f1 req in
     (req, fun resp -> f1 (f2 resp))
 
-let compose_cross : 'a filter -> 'a filter -> 'a filter =
-  fun f1 f2 req ->
+  let compose_cross : 'a t -> 'a t -> 'a t =
+    fun f1 f2 req ->
     let (req, f2) = f2 req in
     let (req, f1) = f1 req in
     (req, fun resp -> f2 (f1 resp))
+end
 
-type path_handler = Input.t filter * (path -> unit treatment)
+type path_handler = Input.t Filter.t * (path -> unit treatment)
 
 type handler = path_handler tree * (string, path_handler tree) Hashtbl.t
 
@@ -198,7 +200,7 @@ type handlers = handler array
    and makes it into a handler. *)
 let add_route_handler
       ?addresses ?hostnames ?meth
-      ?(filter=(fun x -> (x, fun x -> x) : Input.t filter))
+      ?(filter=(fun x -> (x, fun x -> x) : Input.t Filter.t))
       ~(tr_req : 'a treatment) (handlers : handlers) route f =
   let fn route =
     let ph path =

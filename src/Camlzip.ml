@@ -226,7 +226,7 @@ let compress_resp_stream_
 let filter
     ?(compress_above=16 * 1024)
     ?(buf_size=16 * 1_024)
-    () : Input.t Route.filter =
+    () : Input.t Route.Filter.t =
   let buf_size = max buf_size 1_024 in
   fun req ->
     let req = decompress_req_stream_ ~buf_size req in

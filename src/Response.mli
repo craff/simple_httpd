@@ -5,10 +5,16 @@
 
 type body = String of string
           | Stream of Input.t
-          | File of int * Unix.file_descr * bool
+          | File of
+              { fd : Unix.file_descr
+              ; size : int
+              ; close : bool
+                (** if using sendfile, one might want to maintain the fd open
+                    for another request, sharing file descriptor would limit
+                    the number of open files *)}
           | Void
 (** Body of a response, either as a simple string,
-    or a stream of bytes, or nothing (for server-sent events). *)
+    or a stream of bytes, a file or nothing (for server-sent events). *)
 
 type t = { code: Response_code.t (** HTTP response code. See {!Response_code}. *)
          ; headers: Headers.t    (** Headers of the reply. Some will be set by [Simple_httpd] automatically. *)
