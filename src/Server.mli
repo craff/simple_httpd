@@ -139,6 +139,8 @@ type server_sent_generator = (module SERVER_SENT_GENERATOR)
 (** Server-sent event generator *)
 
 val add_route_server_sent_handler :
+  ?addresses:Address.t list ->
+  ?hostnames:string list ->
   ?filter:Input.t Route.Filter.t ->
   t ->
   ('a, string Request.t -> server_sent_generator -> unit) Route.t -> 'a ->

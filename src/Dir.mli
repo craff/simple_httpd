@@ -85,7 +85,6 @@ type 'a content =
 type file_info =
   FI : { content : 'a content
   ; size : int option
-  ; dsize : int option
   ; mtime : float option
   ; headers : Headers.t
   } -> file_info
@@ -149,16 +148,17 @@ module Embedded_fs : sig
 
   val create : ?top:string -> ?mtime:float -> unit -> t
 
-  val add_file : t -> path:string -> ?mtime:float -> headers:Headers.t -> string -> unit
+  val add_file : t -> path:string -> ?mtime:float -> ?headers:Headers.t ->
+                 string -> unit
   (** Add file to the virtual file system.
       @raise Invalid_argument if the path contains '..' or if it tries to
       make a directory out of an existing path that is a file. *)
 
-  val add_dynamic : t -> path:string ->
-                    ?mtime: float -> headers:Headers.t -> dynamic -> unit
+  val add_dynamic : t -> path:string -> ?mtime: float -> ?headers:Headers.t ->
+                    dynamic -> unit
 
-  val add_path : t -> path:string ->
-                 ?mtime:float -> headers:Headers.t -> ?deflate:string -> string -> unit
+  val add_path : t -> path:string -> ?mtime:float -> ?headers:Headers.t ->
+                 ?deflate:string -> string -> unit
 
   val to_vfs : t -> (module VFS)
 end

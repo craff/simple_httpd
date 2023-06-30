@@ -872,7 +872,7 @@ module Server : sig
       "path/foo/42/" is received.
 
       Note that the handlers are called in the following precision order:
-      - {!Route.return}, accepting only the empty url is the most precide
+      - {!Route.return}, accepting only the empty url is the most precise
       - [{!Route.exact} s], is the second, tried
       - {!Route.int}
       - {!Route.string}
@@ -880,14 +880,16 @@ module Server : sig
       - In case of ambiguity, the first added route is tried first.
 
       @param adresses if provided, only accept requests from the given
-        adress and port. Will raise
+        address and port. Will raise
         [Invalid_argument "add_route: the server is not listening to that adress"]
         if the server is not listenning to that adresse and port.
-        @param meth if provided, only accept requests with the given method.
-          Typically one could react to [`GET] or [`PUT].
-          @param filter can be used to modify the request and response and also
-            to reject some request using {!Response.fail_raise}. The default filter
-            accept all requests and does not do any transformation.
+      @param hostnames if provided, only accept requests from the given
+        hosts as seen in the [Host] header field. No dns check is performed.
+      @param meth if provided, only accept requests with the given method.
+        Typically one could react to [`GET] or [`PUT].
+      @param filter can be used to modify the request and response and also
+        to reject some request using {!Response.fail_raise}. The default filter
+        accept all requests and does not do any transformation.
    *)
 
   val add_route_handler_stream :
@@ -937,6 +939,8 @@ module Server : sig
   (** Server-sent event generator *)
 
   val add_route_server_sent_handler :
+    ?addresses:Address.t list ->
+    ?hostnames:string list ->
     ?filter:Input.t Filter.t ->
     t ->
     ('a, string Request.t -> server_sent_generator -> unit) Route.t -> 'a ->
@@ -1023,9 +1027,6 @@ module Dir : sig
     config
   (** Build a config from {!default_config}. *)
 
-  (** [add_dirpath ~config ~dir ~prefix server] adds route handle to the
-      [server] to serve static files in [dir] when url starts with [prefix],
-      using the given configuration [config]. *)
   val add_dir_path :
     ?addresses: Address.t list ->
     ?hostnames: string list ->
@@ -1034,35 +1035,56 @@ module Dir : sig
     ?config:config ->
     dir:string ->
     Server.t -> unit
+  (** [add_dirpath ~config ~dir ~prefix server] adds route handle to the
+      [server] to serve static files in [dir] when url starts with [prefix],
+      using the given configuration [config]. Method is always [GET].
+    @param addresses like for {!Server.add_route_handler}
+    @param hostnames like for {!Server.add_route_handler}
+    @param filter like for {!Server.add_route_handler}
+   *)
 
-  type dynamic = { input : string Request.t -> Input.t
-                 ; filter : 'a. 'a Filter.t option }
+  (** {2 Virtual file system.}
 
+      This is used to emulate a file system from pure OCaml functions and
+      data, e.g. for resources bundled (totally of partially) inside the web
+      server memory. *)
+
+  (** {!VFS} allows to serve dynamic content produced using such a record *)
+  type dynamic =
+    { input : string Request.t -> Input.t
+      (** The answer body will be produced by this function *)
+    ; filter : 'a. 'a Filter.t option
+      (** dynamic content may contain an optional filter. If the
+          route has other filter, this filter with process the request last
+          and process the input stream first. *)
+    }
+
+  (** Here is the type of content that can be served by a {!VFS} *)
   type 'a content =
     | String of string * string option
+    (** [String(s,Some sz)] is a fixed string content. [s] is the content,
+        [sz], if provided is a compressed version of [s] produced by {!Camlzip}. *)
     | Path   of string * (string * int) option
+    (** [Path(fname,Some(fzname,size))] is a real file [fname], possibly with a
+        compressed version [fzname] of the given [size] *)
     | Dynamic of dynamic
+    (** Dynamic content *)
     | Stream of Input.t
+    (** Streamed content *)
     | Fd of Unix.file_descr
+    (** Content with a file descriptor, that will be send using sendfile. *)
     | Dir of 'a
+    (** Used internally *)
 
+  (** Description of a file in a {!VFS} *)
   type file_info =
-    FI : { content : 'a content
-    ; size : int option
-    ; dsize : int option
-    ; mtime : float option
-    ; headers : Headers.t
-    } -> file_info
+    FI : { content : 'a content (** content *)
+         ; size : int option (** size (must be accurate, if provided, will use
+                                 chunked encoding if not provided. *)
+         ; mtime : float option (** modification time for caching *)
+         ; headers : Headers.t (** extra headers *)
+         } -> file_info
 
-  (** Virtual file system.
-
-      This is used to emulate a file system from pure OCaml functions and data,
-      e.g. for resources bundled inside the web server.
-
-      Remark: the diffrence between VFS and cache is that caches are updated
-      when the modification time of the file changes. Thus, VFS do not do any
-      system call.
-   *)
   module type VFS = sig
     val descr : string
     (** Description of the VFS *)
@@ -1113,19 +1135,43 @@ module Dir : sig
     (** The pseudo-filesystem *)
 
     val create : ?top:string -> ?mtime:float -> unit -> t
+    (** create a new pseudo file system. *)
 
-    val add_file : t -> path:string -> ?mtime:float -> headers:Headers.t -> string -> unit
-    (** Add file to the virtual file system.
+    val add_file : t -> path:string -> ?mtime:float -> ?headers:Headers.t ->
+                   string -> unit
+    (** [add_file ~path content] add at [path] with the given [content] to the
+        virtual file system.
         @raise Invalid_argument if the path contains '..' or if it tries to
-          make a directory out of an existing path that is a file. *)
+          make a directory out of an existing path that is a file.
+
+        @param path: the name of the file (in the url)
+        @param mtime: that last modification time, used for caching.
+        @param headers: extra headers, like mime type.
+     *)
 
     val add_dynamic : t -> path:string ->
-                      ?mtime: float -> headers:Headers.t -> dynamic -> unit
+                      ?mtime: float -> ?headers:Headers.t -> dynamic -> unit
+    (** Add some dynamic content to the virtual file system.
+        @param path: the name of the file (in the url)
+        @param mtime: that last modification time, used for caching.
+        @param headers: extra headers, like mime type.
+     *)
 
     val add_path : t -> path:string ->
-                   ?mtime:float -> headers:Headers.t -> ?deflate:string -> string -> unit
+                   ?mtime:float -> ?headers:Headers.t ->
+                   ?deflate:string -> string -> unit
+    (** [add_path vfs ~path real_path] add a [path] to a file on disk at [real_path]
+        in the embedded file system
+        @param deflate: a path on the disk to a compressed version of the
+          file with {!Camlzip}.
+        @param path: the name of the file (in the url)
+        @param mtime: that last modification time, used for caching.
+        @param headers: extra headers, like mime type.
+     *)
 
     val to_vfs : t -> (module VFS)
+    (** Convert a pseudo file system into a vfs to use with {!Dir.add_vfs}. *)
+
   end
 end
 
@@ -1134,6 +1180,8 @@ module Host : sig
   open Server
   open Dir
 
+  (** A module of this type is provided to Init functor to allow you to
+      initialize the route of your host *)
   module type HostInit = sig
     val server : t
 
@@ -1141,31 +1189,47 @@ module Host : sig
       ?meth:Method.t ->
       ?filter:Input.t Filter.t ->
       ('a, string Request.t -> Response.t) Route.t -> 'a -> unit
+    (** Same as {!Server.add_route_handler} but the server is provided when
+        the host is attached to it by {!start_server}. *)
 
     val add_route_handler_stream :
       ?meth:Method.t ->
       ?filter:Input.t Filter.t ->
       ('a, Input.t Request.t -> Response.t) Route.t -> 'a -> unit
+    (** Same as {!Server.add_route_handler_stream} but the server is provided when
+        the host is attached to it by {!start_server}. *)
 
     val add_dir_path :
       ?filter:Input.t Filter.t ->
       ?prefix:string ->
       ?config:config ->
       string -> unit
+    (** Same as {!Dir.add_dir_path} but the server is provided when
+        the host is attached to it by {!start_server}. *)
 
     val add_vfs :
       ?filter:Input.t Filter.t ->
       ?prefix:string ->
       ?config:config ->
       (module VFS) -> unit
+    (** Same as {!Dir.add_vfs} but the server is provided when
+        the host is attached to it by {!start_server}. *)
   end
 
+  (** Define a module a this type to serve some "host" *)
   module type Host = sig
     val addresses : Address.t list
+    (** accept only request from this addresses (or any address if the list is
+        empty *)
+
     val hostnames : string list
+    (** accept only request from this hostnames (or any hostname if the list is
+        empty *)
 
     module Init(_:HostInit) : sig end
+    (** This function must initialize all the route of your server.*)
   end
 
   val start_server : (module Server.Parameters) -> (module Host) list -> unit
+  (** start a server with the given list of Host *)
 end

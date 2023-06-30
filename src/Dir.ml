@@ -68,7 +68,6 @@ type 'a content =
 type file_info =
   FI : { content : 'a content
        ; size : int option
-       ; dsize : int option
        ; mtime : float option
        ; headers : Headers.t } -> file_info
 
@@ -105,11 +104,10 @@ let vfs_of_dir (top:string) : vfs =
       let size = if stats.st_kind = S_REG then
                    Some stats.st_size else None
       in
-      let dsize = None in
       let mtime = Some stats.st_mtime in
       let mime =  Magic_mime.lookup f in
       let headers = [(Headers.Content_Type,mime)] in
-      FI { content; size; dsize; mtime; headers }
+      FI { content; size; mtime; headers }
   end in
   (module M)
 
@@ -411,7 +409,7 @@ module Embedded_fs = struct
     in
     loop self dir_path
 
-  let add_file (self:t) ~path ?mtime ~headers content : unit =
+  let add_file (self:t) ~path ?mtime ?(headers=[]) content : unit =
     let mtime = match mtime with Some t -> t | None -> self.emtime in
     let size = String.length content in
     let sz = Camlzip.deflate_string content in
@@ -423,11 +421,11 @@ module Embedded_fs = struct
     let entry = { mtime = Some mtime; headers; size = Some size; kind } in
     add_file_gen (self:t) ~path entry
 
-  let add_dynamic (self:t) ~path ?mtime ~headers content : unit =
+  let add_dynamic (self:t) ~path ?mtime ?(headers=[]) content : unit =
     let entry = { mtime; headers; size = None; kind = Dynamic content} in
     add_file_gen (self:t) ~path entry
 
-  let add_path (self:t) ~path ?mtime ~headers ?deflate rpath : unit =
+  let add_path (self:t) ~path ?mtime ?(headers=[]) ?deflate rpath : unit =
     (*let fz = rpath ^".zlib" in *)
     let deflate = Option.map (fun x ->
                       let size = (Unix.stat x).st_size in
@@ -463,13 +461,7 @@ module Embedded_fs = struct
       let read_file p =
         match find_ self p with
         | Some { mtime; headers; kind = content; size } ->
-           let dsize = match content with
-             | String(_, Some sz) ->
-                Some (String.length sz)
-             | Path (_, Some (_, size)) -> Some size
-             | _ -> None
-           in
-           FI { content; mtime; size; dsize; headers }
+           FI { content; mtime; size; headers }
         | _ -> Response.fail_raise ~code:not_found "File %s not found" p
 
       let contains p = match find_ self p with

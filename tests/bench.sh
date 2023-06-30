@@ -34,10 +34,11 @@ echo 'GET http://localhost/nginx/bar.php' \
 	| vegeta attack -rate 1000 -duration $duration > res.bin
 
 cat res.bin | vegeta report > php_report.txt
-cat res.bin | vegeta report -type=hist[100us,200us,300us,400us,500us,750us,1ms,2ms,3ms,4ms,5ms] > php.txt
+cat res.bin | vegeta report -type=hist[100us,200us,300us,400us,500us,750us,1ms,2ms,3ms,4ms,5ms,1s,5s,10s,1m] > php.txt
 cat res.bin | vegeta plot > php.html
 
 #wrk tests
+exit 0
 
 dune exec ./bench.exe
 

@@ -55,7 +55,7 @@ let[@inline] _opt_iter ~f o = match o with
   | None -> ()
   | Some x -> f x
 
-let add_route_server_sent_handler ?filter self route f =
+let add_route_server_sent_handler ?addresses ?hostnames ?filter self route f =
   let tr_req oc req ~resp f =
     let buf = (Request.client req).buf in
     let req = Request.read_body_full ~buf req in
@@ -94,7 +94,8 @@ let add_route_server_sent_handler ?filter self route f =
     try f req (module SSG : SERVER_SENT_GENERATOR);
     with Exit -> Output.close oc
   in
-  Route.add_route_handler self.handlers ?filter ~meth:GET route ~tr_req f
+  Route.add_route_handler ?filter ?addresses ?hostnames
+    ~meth:GET self.handlers route ~tr_req f
 
 module type Parameters = sig
   val max_connections : int ref
