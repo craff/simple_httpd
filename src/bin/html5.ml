@@ -5,6 +5,7 @@ let name_to_string = function
   | _, local_name -> local_name
 
 let print_tag name attributes =
+  let args = ref [] in
   let attributes =
     attributes
     |> List.map (fun (name, value) ->
@@ -12,13 +13,14 @@ let print_tag name attributes =
            let value =
              if len > 0 && value.[0] = '?' then
                let s = String.sub value 1 (len - 1) in
-               "\" ^ (" ^ s ^ ") ^ \""
+               args := s :: !args;
+               "%S"
              else value
            in
-           Printf.sprintf " %s=\"%s\"" (name_to_string name) value)
+           Printf.sprintf " %s=%s" (snd name) value)
     |> String.concat ""
   in
-  Printf.sprintf "<%s%s>" (name_to_string name) attributes
+  (Printf.sprintf "<%s%s>" (name_to_string name) attributes, List.rev !args)
 
 let print_closing name =
   Printf.sprintf "</%s>" (name_to_string name)
@@ -60,10 +62,12 @@ let trees_to_ocaml ~filename t =
   let doctype = ref false in
   let pr fmt = Printf.bprintf buf fmt in
   let of_elems top acc =
+    let args = ref [] in
     let fn = function
       | `End_element(name) -> print_closing name
       | `Start_element(name,attrs) ->
-         print_tag name attrs
+         let r, nargs = print_tag name attrs in
+         args := !args @ nargs; r
       | (`Comment _ | `Doctype _ | `PI _ | `Text _ | `Xml _) as s  ->
          let r = ref (Some s) in
          let fn () = let x = !r in r := None; x in
@@ -72,10 +76,25 @@ let trees_to_ocaml ~filename t =
     if acc <> [] then
       begin
         let s = String.trim (String.concat "" (List.map fn (List.rev acc))) in
+        let args = !args in
         if top then
-          (if s <> "" then pr "let _ = echo %S;;" s)
+          begin
+            if s <> "" then
+              begin
+                pr "let _ = printf %S " s;
+                List.iter (fun a -> pr "(%s)" a) args;
+                pr ";;"
+              end
+          end
         else
-          pr "%S" s
+          if args = [] then
+            pr "%S" s
+          else
+            begin
+              pr "(Printf.sprintf %S" s;
+              List.iter (fun a -> pr "(%s)" a) args;
+              pr ")"
+            end
       end
   in
   let rec fn depth acc stack =

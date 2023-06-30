@@ -160,20 +160,24 @@ let emit ~perm ?max_size ?destination oc (l:entry list) : unit =
           Array.iter (fun e -> traverse (vfs_path // e)) arr
         ) else (
           let extension = Filename.extension vfs_path in
-          if extension = ".chaml" then
-            let vpath = Filename.remove_extension vfs_path ^ ".html" in
-            add_entry (MlHtml (vpath, real_path))
-          else if extension <> ".zlib" then
+          let first_char = try vfs_path.[0] with _ -> '#' in
+          if first_char <> '.' && first_char <> '#' then
             begin
-              let use_path =
-                match max_size with
-                | None -> false
-                | Some s -> (Unix.stat real_path).st_size > s
-              in
-              if use_path then
-                add_entry (Path (vfs_path, dir, store))
-              else
-                add_entry (File (vfs_path, real_path))
+              if extension = ".chaml" then
+                let vpath = Filename.remove_extension vfs_path ^ ".html" in
+                add_entry (MlHtml (vpath, real_path))
+              else if extension <> ".zlib" then
+                begin
+                  let use_path =
+                    match max_size with
+                    | None -> false
+                    | Some s -> (Unix.stat real_path).st_size > s
+                  in
+                  if use_path then
+                    add_entry (Path (vfs_path, dir, store))
+                  else
+                    add_entry (File (vfs_path, real_path))
+                end
             end
         )
       in
