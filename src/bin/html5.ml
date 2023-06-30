@@ -24,7 +24,7 @@ let print_closing name =
   Printf.sprintf "</%s>" (name_to_string name)
 
 type attrs = (name * string) list
-type tree =
+type tree_c =
   | Doctype of doctype
   | Element of name * attrs * tree list
   | Caml of attrs * tree list (* TODO: will we use attributes ? *)
@@ -34,23 +34,27 @@ type tree =
   | Xml of xml_declaration
   | End_element of name
 
-let doctype d = Doctype(d)
-let element name attrs children =
+and tree = { loc : location; c : tree_c }
+
+let noloc c = { loc = (-1,-1); c }
+
+let doctype ~loc d = {loc; c = Doctype(d) }
+let element ~loc name attrs children = {loc; c =
   if snd name = "ml" then
     Caml(attrs,children)
   else
-    Element(name,attrs,children)
+    Element(name,attrs,children)}
 
-let text l = Text(l)
-let comment c = Comment(c)
-let pi s1 s2 = PI(s1,s2)
-let xml x = Xml(x)
+let text ~loc l = {loc; c = Text(l)}
+let comment ~loc c = {loc; c = Comment(c)}
+let pi ~loc s1 s2 = {loc; c = PI(s1,s2)}
+let xml ~loc x = {loc; c = Xml(x)}
 
 let parse_html s =
-  s |> parse_html |> signals |>
-    trees ~element ~text ~comment ~pi ~xml ~doctype
+  s |> parse_html |>
+    trees_with_loc ~element ~text ~comment ~pi ~xml ~doctype
 
-let trees_to_ocaml t =
+let trees_to_ocaml ~filename t =
   let buf = Buffer.create 4096 in
   let filter = ref None in
   let doctype = ref false in
@@ -87,16 +91,16 @@ let trees_to_ocaml t =
     match stack with
     | [] -> if top then acc else (of_elems top acc; [])
     | e::stack ->
-       match e with
+       match e.c with
        | Caml(_a, sons) ->
           if top && not !doctype && !filter = None
             && acc <> [] then failwith "chaml: nothing allowed before ML filter";
           of_elems top acc;
           let hn i x =
             newline (if i = 0 then depth else depth + 1);
-            match x with
-            | Text l -> List.iter (pr "%s") l
-            | x      -> of_elems false (fn (depth + 1) [] [x]);
+            match x.c with
+            | Text l -> pr "\n#%d %S\n" (fst x.loc) filename; List.iter (pr "%s") l
+            | _      -> of_elems false (fn (depth + 1) [] [x]);
           in
           List.iteri hn sons;
           if top && not !doctype && !filter = None then
@@ -111,7 +115,7 @@ let trees_to_ocaml t =
           newline depth;
           fn depth [] stack
        | Element (n,a,sons) ->
-          gn (`Start_element(n,a)) (sons @ End_element(n) :: stack)
+          gn (`Start_element(n,a)) (sons @ noloc (End_element n) :: stack)
        | End_element(name) -> gn (`End_element(name)) stack
        | Doctype d -> doctype := true; gn (`Doctype d) stack
        | Text l -> gn (`Text l) stack

@@ -105,8 +105,9 @@ let emit ~perm ?max_size ?destination oc (l:entry list) : unit =
     | MlHtml(vfs_path, actual_path) ->
        if !verbose then Printf.eprintf "add mlhtml %S = %S\n%!" vfs_path actual_path;
        let ch = open_in actual_path in
+       let filename = actual_path in
        let ml, filter =
-         Markup.channel ch |> Html5.parse_html |> Html5.trees_to_ocaml
+         Markup.channel ch |> Html5.parse_html |> Html5.trees_to_ocaml ~filename
        in
        let filter = match filter with
          | None -> ""
