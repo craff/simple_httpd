@@ -678,8 +678,7 @@ module Camlzip : sig
   val filter :
     ?compress_above:int ->
     ?buf_size:int -> unit -> Input.t Filter.t
-  (** Middleware responsible for deflate compression/decompression.
-    @since 0.11 *)
+  (** Filter responsible for deflate compression/decompression. *)
 
   val deflate_string : ?buf_size:int -> string -> string
   (** zlib string compression *)
@@ -692,11 +691,11 @@ module Camlzip : sig
 
 end
 
+(** provide a filter giving very simple statistics. We can do much better
+    but be carefull on how to do it *)
 module Stats : sig
-  (* provide a filter giving very simple statistics. We can do much better
-   but be carefull on how to do it *)
 
-(** This a a filter to acquire statistics.
+(** This a filter to acquire statistics.
     [let (filter, get) = Stats.filter ()]
     will give you a [Filter.t] and a function [get] returning the statistics
     as a string
@@ -710,12 +709,25 @@ end
 (** Module to handle session data *)
 module Session : sig
   (** This module allows to mange session which are common to several client
-      and can survive a deconnection of the clients. This do not provide
+      and can survive a deconnection of the clients. This does not provide
       any form of authentication, but it is easy to use them to implement
       authentication. *)
 
   type session
+  (** type for session *)
+
   type session_data = Async.session_data
+  (** This type is an extensible variant that you can extend to hold some data
+      which resides in the server memory.  These data will be lost if the
+      server reboots.
+
+      Possible uses are
+      - data that you do not want to be on the client but that do not need
+        to persist server reboot, like a session private key.
+      - {!Io.t} sockets shared among multiple clients, for instance for a
+        database connection
+      - {!Mutex.t} to protect the above.
+   *)
 
   val check : ?session_life_time:float ->
               ?init:(unit -> session_data) ->
@@ -723,27 +735,42 @@ module Session : sig
               ?check:(session -> bool) ->
               ?error:(Response_code.t*Headers.t) ->
               'a Filter.t
+  (** Check or create a new session. This is a filter!
 
+      @param session_life_time: session are destroyed if not accessed after
+        this time.
+      @param initial value for the session data (default: NoData)
+      @param finalise function called on the session data when it is detroyed.
+      @param check some extra check, the session will be destroy if it fails.
+      @param error status code and hadears to send in case of error. Can
+        be used to redirect to a login or error page *)
 
-  (** get the client session. The session must have been initialized with check
-     filter, otherwise NoSession is raised *)
+  (** get the client session. The session must have been initialized with [check]
+      otherwise NoSession may be raised *)
   val get_session : 'a Request.t -> session
   exception NoSession
 
+  (** get the session data from a session *)
   val get_session_data : session -> session_data
 
+  (** update the session data *)
   val set_session_data : session -> session_data -> unit
 
+  (** update the session data and compute a new value at once *)
   val do_session_data :
     session -> (session_data -> 'a * session_data) -> 'a
 
+  (** get a session cookie *)
   val get_session_cookie : session -> string -> string option
 
+  (** set a session cookie *)
   val set_session_cookie : session -> string -> string -> unit
 
-  (** remove all server side session data *)
+  (** remove all server side session information *)
   val delete_session : session -> unit
 
+(** TODO: different life time if there is live client attached to the
+    session. *)
 end
 
 (** Some HTML combinators *)
