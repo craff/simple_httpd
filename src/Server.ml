@@ -187,6 +187,7 @@ let handle_client_ (self:t) (client:Async.client) : unit =
           | Some "100-continue" ->
             log ~lvl:2 (fun k->k "send back: 100 CONTINUE");
             Response.output_ oc (Response.make_raw ~code:continue "");
+            (* CHECK !!! *)
           | Some s -> Response.fail_raise ~code:expectation_failed
                         "unknown expectation %s" s
           | None -> ()

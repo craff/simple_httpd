@@ -366,7 +366,7 @@ module Cookies : sig
 
   val empty : t
   val parse : string -> t
-  val add : string -> Http_cookie.t -> t -> t
+  val add : Http_cookie.t -> t -> t
   val create : ?path:string ->
                ?domain:string ->
                ?expires:Http_cookie.date_time ->
@@ -429,6 +429,24 @@ module Request : sig
 
   val get_cookie : _ t -> string -> Http_cookie.t option
   (** get a cookie *)
+
+  val get_cookie_string : _ t -> string -> string
+  (** get a cookie value, may raise [Not_found] *)
+
+  val get_cookie_int : _ t -> string -> int
+  (** get a cookie value as int, may raise [Not_found] or [Failure "int_of_string"] *)
+
+  val set_cookie : 'a t -> Http_cookie.t -> 'a t
+  (** set a cookie. Note: this could be useful in a filter.
+
+      Beware that cookie in the request are not automatically refreshed and
+      added to the response.  Your handler must read the request cookies and
+      send the new_cookies using the optional parameters [~cookies] of the
+      function in the {!Response} module.
+
+      Dynamic response provided by the {!Dir} module also offers the possibility
+      to set the cookies.
+   *)
 
   val host : _ t -> string
   (** Host field of the request. It also appears in the headers. *)
@@ -662,6 +680,9 @@ module Filter : sig
   val encode_response : (Response.body -> Response.body) -> (Headers.t -> Headers.t)
                         -> 'a t
   (** helper to create a filter transforming only the resposne. *)
+
+  val idt : 'a t
+  (** identity filter *)
 
   val compose_embrace : 'a t -> 'a t -> 'a t
   (** [compose_embrace f1 f2] compose two filters:
@@ -1050,14 +1071,10 @@ module Dir : sig
       server memory. *)
 
   (** {!VFS} allows to serve dynamic content produced using such a record *)
-  type dynamic =
-    { input : string Request.t -> Input.t
-      (** The answer body will be produced by this function *)
-    ; filter : 'a. 'a Filter.t option
-      (** dynamic content may contain an optional filter. If the
-          route has other filter, this filter with process the request last
-          and process the input stream first. *)
-    }
+  type dynamic = string Request.t -> Headers.t -> Headers.t * Cookies.t * Input.t
+     (** dynamic content can set then headers, cookies and input of the
+         response.  If initial headers contain [Headers.Cache_Control] or
+         [Headers.Etag]. *)
 
   (** Here is the type of content that can be served by a {!VFS} *)
   type 'a content =

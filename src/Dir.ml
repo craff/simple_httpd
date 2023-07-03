@@ -55,8 +55,7 @@ let encode_path s = Util.percent_encode ~skip:(function '/' -> true|_->false) s
 
 let is_hidden s = String.length s>0 && s.[0] = '.'
 
-type dynamic = { input : string Request.t -> Input.t
-               ; filter : 'a. 'a Route.Filter.t option }
+type dynamic = string Request.t -> Headers.t -> Headers.t * Cookies.t * Input.t
 type 'a content =
   | String of string * string option
   | Path   of string * (string * int) option
@@ -324,16 +323,12 @@ let add_vfs_ ?addresses ?hostnames ?(filter=(fun x -> (x, fun r -> r)))
              Response.make_raw
                ~headers:(cache_control ()::info.headers)
                ~code:ok s
-          | Dynamic { input; filter } ->
-             let headers = cache_control ()::info.headers in
-             let req, gn = match filter with
-               | None -> (req, fun x -> x)
-               | Some f -> f req
-             in
-             let input = input req in
+          | Dynamic f ->
+             let headers = [cache_control ()] in
+             let headers, cookies, input = f req headers in
              log ~lvl:2 (fun k->k "download ok %s" path);
-             gn (Response.make_raw_stream
-                   ~headers ~code:ok input)
+             Response.make_raw_stream
+               ~headers ~cookies ~code:ok input
           | Stream input ->
              log ~lvl:2 (fun k->k "download ok %s" path);
              Response.make_raw_stream

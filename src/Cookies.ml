@@ -10,7 +10,8 @@ let parse s =
      List.fold_left (fun acc c -> (name c, c)::acc) [] l
   | Error err -> raise (BadCookies err)
 
-let add name c cookies =
+let add c cookies =
+  let name = name c in
   let cookies = List.filter (fun (n, _) -> n <> name) cookies in
   (name, c) :: cookies
 
@@ -28,7 +29,7 @@ let create : ?path:string ->
       ?same_site ?extension ~name value cookies ->
   match create ?path ?domain ?expires ?max_age ?secure ?http_only
           ?same_site ?extension ~name value
-  with Ok c -> add name c cookies
+  with Ok c -> add c cookies
      | Error err -> raise (BadCookies err)
 
 let get name cookies =

@@ -164,7 +164,9 @@ let of_output fn : t =
     end
   in
   let output s =
-    Effect.perform (T.Fill s)
+    (* NOTE: performing an effect with the empty string,
+       means end of file *)
+    if s <> "" then Effect.perform (T.Fill s)
   in
   let module Output = struct
       let echo = output

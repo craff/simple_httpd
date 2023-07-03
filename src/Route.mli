@@ -61,6 +61,9 @@ module Filter : sig
                         -> 'a t
   (** helper to create a filter transforming only the resposne. *)
 
+  val idt : 'a t
+  (** identity filter *)
+
   val compose_embrace : 'a t -> 'a t -> 'a t
   (** [compose_embrace f1 f2] compose two filters:
       the request will be passed first to [f2], then to [f1],

@@ -52,6 +52,14 @@ val cookies : _ t -> Cookies.t
 val get_cookie : _ t -> string -> Http_cookie.t option
 (** get a cookie *)
 
+val get_cookie_string : _ t -> string -> string
+(** get a cookie value, may raise [Not_found] *)
+
+val get_cookie_int : _ t -> string -> int
+(** get a cookie value as int, may raise [Not_found] or [Failure "int_of_string"] *)
+
+val set_cookie : 'a t -> Http_cookie.t -> 'a t
+
 val host : _ t -> string
 (** Host field of the request. It also appears in the headers. *)
 

@@ -176,6 +176,8 @@ module Filter = struct
           let open Response in
           { resp with body = tb resp.body; headers = th resp.headers })
 
+  let idt req = (req, (fun x -> x))
+
   let compose_embrace : 'a t -> 'a t -> 'a t =
     fun f1 f2 req ->
     let (req, f2) = f2 req in

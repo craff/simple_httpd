@@ -43,14 +43,15 @@ let emit ~perm ?max_size ?destination oc (l:entry list) : unit =
     | Some d -> d
     | None -> ""
   in
-  fpf oc "let make ?(top_dir=%S) () =
+  fpf oc "open Simple_httpd
+          let make ?(top_dir=%S) () =
           let module M = struct
-          let embedded_fs = Simple_httpd.Dir.Embedded_fs.create
+          let embedded_fs = Dir.Embedded_fs.create
                                ~top:top_dir ~mtime:%f ()\n" dest now_;
 
   let add_vfs vfs_path ~mtime ~mime content =
     fpf oc
-      "let () = Simple_httpd.(Dir.Embedded_fs.add_file embedded_fs \n  \
+      "let () = (Dir.Embedded_fs.add_file embedded_fs \n  \
        ~mtime:%h ~headers:[Headers.Content_Type, %S]  ~path:%S)\n  \
        %S\n"
       mtime mime vfs_path content
@@ -60,12 +61,12 @@ let emit ~perm ?max_size ?destination oc (l:entry list) : unit =
     match zpath with
     | None ->
        fpf oc
-         "let () = Simple_httpd.(Dir.Embedded_fs.add_path embedded_fs \n  \
+         "let () = (Dir.Embedded_fs.add_path embedded_fs \n  \
           ~path:%S ~mtime:%h ~headers:[Headers.Content_Type, %S] (Filename.concat top_dir %S))\n"
          vfs_path mtime mime vfs_path
     | Some zpath ->
        fpf oc
-         "let () = Simple_httpd.(Dir.Embedded_fs.add_path embedded_fs \n  \
+         "let () = (Dir.Embedded_fs.add_path embedded_fs \n  \
           ~path:%S ~mtime:%h ~headers:[Headers.Content_Type, %S] ~deflate:(Filename.concat top_dir %S)
           (Filename.concat top_dir %S))\n"
          vfs_path mtime mime zpath vfs_path
@@ -106,29 +107,32 @@ let emit ~perm ?max_size ?destination oc (l:entry list) : unit =
        if !verbose then Printf.eprintf "add mlhtml %S = %S\n%!" vfs_path actual_path;
        let ch = open_in actual_path in
        let filename = actual_path in
-       let ml, filter =
-         Markup.channel ch |> Html5.parse_html |> Html5.trees_to_ocaml ~filename
-       in
-       let filter = match filter with
-         | None -> ""
-         | Some str -> str
-       in
-       fpf oc
-         "let () = Simple_httpd.(Dir.Embedded_fs.add_dynamic embedded_fs \n  \
+       (try
+         let (ml, prelude) =
+           Markup.channel ch |> Html5.parse_html ~filename
+           |> Html5.trees_to_ocaml ~filename
+         in
+         let prelude = match prelude with
+           | None -> ""
+           | Some str -> str
+         in
+         fpf oc
+         "let () = (Dir.Embedded_fs.add_dynamic embedded_fs \n  \
           ~path:%S ~headers:[Headers.Content_Type, \"text/html\"]
-          (let module Prelude = struct
-             let filter = None
-             let _ = filter
-             %s
-           end in
-           let input request =
-            ignore request; (* remove warning *)
-            Input.of_output (fun (module Output) ->
-              let open Output in
-              let open Prelude in
-              ignore output_string;
-            let module M = struct %s end in ())
-           in { input; filter = Prelude.filter } ))\n%!" vfs_path filter ml
+          (fun request headers ->
+             let module M = struct
+               let cookies = Cookies.empty
+               let _ = ignore headers; ignore cookies (* avoid warnings *)
+               %s
+             end in let open M in
+             let input =
+               Input.of_output (fun (module Output) ->
+                 let open Output in
+                 ignore echo;
+                 let module M = struct %s end in
+                 ()) in
+             ( headers, cookies, input )))\n%!" vfs_path prelude ml
+       with Html5.Incomplete -> () (* no doctype *))
 
     | Url (vfs_path, url) ->
       if !verbose then Printf.eprintf "add url %S = %S\n%!" vfs_path url;
@@ -203,7 +207,7 @@ let emit ~perm ?max_size ?destination oc (l:entry list) : unit =
   in
   List.iter add_entry l;
 
-  fpf oc "let vfs = Simple_httpd.Dir.Embedded_fs.to_vfs embedded_fs\nend in\n
+  fpf oc "let vfs = Dir.Embedded_fs.to_vfs embedded_fs\nend in\n
           M.vfs";
   ()
 

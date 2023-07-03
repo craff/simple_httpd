@@ -72,8 +72,8 @@ val add_dir_path :
   dir:string ->
   Server.t -> unit
 
-type dynamic = { input : string Request.t -> Input.t
-               ; filter : 'a. 'a Route.Filter.t option }
+type dynamic = string Request.t -> Headers.t -> Headers.t * Cookies.t * Input.t
+
 type 'a content =
   | String of string * string option
   | Path   of string * (string * int) option

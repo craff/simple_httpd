@@ -32,6 +32,7 @@ type tree_c =
   | Doctype of doctype
   | Element of name * attrs * tree list
   | Caml of attrs * tree list (* TODO: will we use attributes ? *)
+  | Include of string
   | Text of string list
   | Comment of string
   | PI of (string * string)
@@ -43,9 +44,16 @@ and tree = { loc : location; c : tree_c }
 let noloc c = { loc = (-1,-1); c }
 
 let doctype ~loc d = {loc; c = Doctype(d) }
-let element ~loc name attrs children = {loc; c =
-  if snd name = "ml" then
+let element ~filename ~loc name attrs children =
+  {loc; c =
+  if String.lowercase_ascii (snd name) = "ml" then
     Caml(attrs,children)
+  else if String.lowercase_ascii (snd name) = "include" then
+    begin
+      match children with
+      | [{c = Text [s]; _}] -> Include s
+      | _ -> failwith (Printf.sprintf "bad include at %s line %d" filename (fst loc))
+    end
   else
     Element(name,attrs,children)}
 
@@ -54,16 +62,24 @@ let comment ~loc c = {loc; c = Comment(c)}
 let pi ~loc s1 s2 = {loc; c = PI(s1,s2)}
 let xml ~loc x = {loc; c = Xml(x)}
 
-let parse_html s =
-  s |> parse_html |>
+let parse_html ~filename s =
+  let report (line,col) err =
+    Printf.eprintf "File %S, line %d, characters %d:\n %s\n%!"
+      filename line col (Error.to_string err);
+    exit 1;
+  in
+  let element = element ~filename in
+  s |> parse_xml ~report ~context:`Document |>
     trees_with_loc ~element ~text ~comment ~pi ~xml ~doctype
+
+exception Incomplete
 
 let trees_to_ocaml ~filename t =
   let buf = Buffer.create 4096 in
   let filter = ref None in
-  let doctype = ref false in
-  let pr fmt = Printf.bprintf buf fmt in
-  let of_elems top acc =
+  let in_html = ref false in
+  let pr buf fmt = Printf.bprintf buf fmt in
+  let of_elems buf top acc =
     let args = ref [] in
     let fn = function
       | `End_element(name) -> print_closing name
@@ -83,68 +99,81 @@ let trees_to_ocaml ~filename t =
           begin
             if s <> "" then
               begin
-                pr "let _ = printf %S " s;
-                List.iter (fun a -> pr "(%s)" a) args;
-                pr ";;"
+                pr buf "let _ = printf %S " s;
+                List.iter (fun a -> pr buf "(%s)" a) args;
+                pr buf ";;"
               end
           end
         else
           if args = [] then
-            pr "%S" s
+            pr buf "%S" s
           else
             begin
-              pr "(Printf.sprintf %S" s;
-              List.iter (fun a -> pr "(%s)" a) args;
-              pr ")"
+              pr buf "(Printf.sprintf %S" s;
+              List.iter (fun a -> pr buf "(%s)" a) args;
+              pr buf ")"
             end
       end
   in
   let rec fn depth acc stack =
     let top = depth = 0 in
     let newline depth =
-      if depth = 0 then pr "\n";
+      if depth = 0 then pr buf "\n";
       let rec fn d =
-        if d > 0 then (pr"  "; fn (d - 1))
+        if d > 0 then (pr buf "  "; fn (d - 1))
       in
       fn depth
     in
     let gn s stack = fn depth (s::acc) stack in
     match stack with
-    | [] -> if top then acc else (of_elems top acc; [])
+    | [] -> if top then acc else (of_elems buf top acc; [])
     | e::stack ->
        match e.c with
-       | Caml(_a, sons) ->
-          if top && not !doctype && !filter = None
-            && acc <> [] then failwith "chaml: nothing allowed before ML filter";
-          of_elems top acc;
-          let hn i x =
+       | Include _ -> failwith "include outside caml"
+       | Caml(attrs, sons) ->
+          let hn buf i x =
             newline (if i = 0 then depth else depth + 1);
             match x.c with
-            | Text l -> pr "\n#%d %S\n" (fst x.loc) filename; List.iter (pr "%s") l
-            | _      -> of_elems false (fn (depth + 1) [] [x]);
+            | Text l -> pr buf "\n#%d %S\n" (fst x.loc) filename;
+                        List.iter (pr buf "%s") l
+            | Include s ->
+               let s = Filename.(concat (dirname filename) s) in
+               let ch = open_in s in
+               let size = in_channel_length ch in
+               let bytes = Bytes.make size ' ' in
+               let _ = input ch bytes 0 size in
+               pr buf "%S" (Bytes.unsafe_to_string bytes)
+            | _      -> of_elems buf false (fn (depth + 1) [] [x]);
           in
-          List.iteri hn sons;
-          if top && not !doctype && !filter = None then
+          if not !in_html && !filter = None &&
+               List.exists (fun ((_,s),v) ->
+                   String.lowercase_ascii s = "prelude"
+                   && String.lowercase_ascii v = "true") attrs then
             begin
+              let buf = Buffer.create 1024 in
+              List.iteri (hn buf) sons;
               filter := Some (Buffer.contents buf);
-              Buffer.clear buf
+              fn depth acc stack
             end
-          else if top then
+          else
             begin
-              pr " ;;";
+              of_elems buf top acc;
+              List.iteri (hn buf) sons;
+              newline depth;
+              fn depth [] stack
             end;
-          newline depth;
-          fn depth [] stack
        | Element (n,a,sons) ->
+          if snd n = "head" then in_html := true;
           gn (`Start_element(n,a)) (sons @ noloc (End_element n) :: stack)
        | End_element(name) -> gn (`End_element(name)) stack
-       | Doctype d -> doctype := true; gn (`Doctype d) stack
+       | Doctype d -> gn (`Doctype d) stack
        | Text l -> gn (`Text l) stack
        | Comment c -> gn (`Comment c) stack
        | PI (s,u) -> gn (`PI (s,u)) stack
        | Xml x -> gn (`Xml x) stack
   in
-  of_elems true (fold (fun acc x -> fn 0 acc [x]) [] t);
+  of_elems buf true (fold (fun acc x -> fn 0 acc [x]) [] t);
+  (*if not !in_html then raise Incomplete;*)
   (Buffer.contents buf, !filter)
 
 (*

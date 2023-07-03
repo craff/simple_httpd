@@ -7,7 +7,7 @@ type t = (string * Http_cookie.t) list
 
 val empty : t
 val parse : string -> t
-val add : string -> Http_cookie.t -> t -> t
+val add : Http_cookie.t -> t -> t
 val create : ?path:string ->
              ?domain:string ->
              ?expires:Http_cookie.date_time ->

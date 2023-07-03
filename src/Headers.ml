@@ -42,8 +42,8 @@ let parse_ ~buf (bs:Input.t) : t * Cookies.t =
          if k = Cookie then
            begin
              let new_cookies = Cookies.parse v in
-             (headers, List.fold_left (fun acc (name, c) ->
-                           Cookies.add name c acc) cookies new_cookies)
+             (headers, List.fold_left (fun acc (_, c) ->
+                           Cookies.add c acc) cookies new_cookies)
            end
          else
            ((k,v)::headers, cookies)

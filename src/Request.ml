@@ -42,6 +42,16 @@ let get_cookie self h =
   try Some (Cookies.get h self.cookies)
   with Not_found -> None
 
+let set_cookie self c =
+  { self with cookies = Cookies.add c self.cookies }
+
+let get_cookie_string self h =
+  let c = Cookies.get h self.cookies in
+  Http_cookie.value c
+
+let get_cookie_int self h =
+  int_of_string (get_cookie_string self h)
+
 (** Should we close the connection after this request? *)
 let close_after_req (self:_ t) : bool =
   match self.http_version with
