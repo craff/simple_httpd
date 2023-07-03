@@ -13,42 +13,36 @@ can ve used with {!Simple_httpd.Dir.add_vfs}. It will
 Here is an example of `.chaml` included in the distribution:
 
 {[
-<ML>
-  open Simple_httpd
-  type Async.session_data += Count of int
-  let filter = Some (fun req -> Session.check ~init:(fun () -> Count 0) req)
-</ML>
 <!DOCTYPE html>
 <html>
+  <ML prelude="true">
+    let count = try Request.get_cookie_int request "count"
+                with Not_found -> 0
+    let cookies = Cookies.(create ~max_age:3600L ~same_site:`Strict
+                        ~name:"count"  (string_of_int (count+1)) cookies);;
+  </ML>
   <head>
   </head>
   <body>
     <h1>dynamic hello!</h1>
     <ul>
       <li> item 1 </li>
-      <li> views:
-	<ML>
-	  let session = Session.get_session request
-	  let n = Session.do_session_data session (function
-	  | Count old -> (old, Count (old + 1))
-	  | _ -> assert false)
-	  let _ = echo (string_of_int n)
-	</ML>
-      </li>
-      <li>
-	<ML>
-	  let _ =
-	    echo (if n mod 2 = 0 then
- 	            <li>even (<ML> ^ string_of_int n ^ </ML>)</li>
-	          else <li>odd</li>)
-	</ML>
-      </li>
-      <li> request:
-	<ML>
-	  printf "%a" Simple_httpd.Request.pp request
+      <li> item 2 </li>
+      <li> item 3 </li>
+      <li> item 4 </li>
+      <li> views: <ML>
+	  let _ = echo (string_of_int count);;
+	  let _ = echo (if count mod 2 = 0 then
+ 	                  <p>even (<ML> ^ string_of_int count ^ </ML>)</p>
+	                else <p>odd</p>);;
 	</ML>
       </li>
     </ul>
+    <a href="."> escape from this file </a>
+    <br/>
+    request: <ML>
+      let _ = printf "%a" Request.pp request;;
+    </ML>
   </body>
 </html>
 ]}

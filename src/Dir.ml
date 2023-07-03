@@ -56,6 +56,7 @@ let encode_path s = Util.percent_encode ~skip:(function '/' -> true|_->false) s
 let is_hidden s = String.length s>0 && s.[0] = '.'
 
 type dynamic = string Request.t -> Headers.t -> Headers.t * Cookies.t * Input.t
+
 type 'a content =
   | String of string * string option
   | Path   of string * (string * int) option
