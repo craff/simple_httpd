@@ -57,23 +57,31 @@ As you can see, some defect of php are avoided: no quote/double every where.
 
 There are four ways to insert ocaml code:
 
-- The first [<ML>...</ML>] section before the [<!DOCTYPE>] is special because it
-is executed before any output is done to the server and it may define a value `filter`
-that will be applied to the response. In the example this allows to start a
-{!Simple_httpd.Session} holding a counter. Values defined in this section are
-part of a `Prelude` module which is open in the rest of the file.
+- In all [<ML>...</ML>] sections [Simple_httpd] is open, the value [request :]
+  {!Simple_httpd.Request.t} is accessible.
 
 - [<ML>...</ML>] sections which are not inside other [<ML>...</ML>] sections
-  are compiled as toplevel expression. You may define type, values, ...
-  In these section, you can use [echo] and [printf] provided automatically by
-  opening a module of type {!Simple_httpd.Input.Output}.
+  are compiled as toplevel expression. You may define type, values, ...  In
+  these sections and you can use [echo] and [printf] provided automatically by
+  opening a module of type {!Simple_httpd.Input.Output} if they are not
+   "prelude" section.
+
+- Some [<ML prelude="true">...</ML>] section can be added inside the [<html>]
+  tag but before the [<head>] or any other [<ML>] tag. they are executed
+  before any output is done to the server and and may update two values
+  [headers :] {!Simple_httpd.Headers.t} initialy empty and [cookies :]
+  {!Simple_httpd.Cookies.t} that contain an initical
+  {!Simple_httpd.Headers.Cache_Control} or
+  {!Simple_httpd.Headers.ETag}. For instance, this allows to start a
+  {!Simple_httpd.Session} holding a counter. Values defined in this section
+  are part of a `Prelude` module which is open in the rest of the file.
 
 - In tag attributes one may use `name="$expression"` to evaluate the
    attribute using Ocaml. Use "\$..." if you want an attribute starting with
    a question mark. This is limited to ocaml expression without double quote.
-   Use [ {|...|} } alternative syntax for string.
+   Use [ {|...|} ] alternative syntax for string.
 
-- Inside [`<ML>...</ML>`] sections, html sections are interpreted to ocaml
+- Inside [`<ML>...</ML>`] sections, html sections are interpreted as ocaml
    strings.
 
 - Nested [<ML>..</ML>`] are compiled as normal ocaml texts.
@@ -95,9 +103,6 @@ is compiled as
  	            "<li>even (" ^ string_of_int n ^ ")</li>"
 	          else "<li>odd</li>")
 ]}
-
-Remark: currently, there is no good position in ocaml errors.
-we hope to fix this soon.
 
 Here is the documentation of the `vfs_pack` command line:
 
