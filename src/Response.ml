@@ -98,7 +98,7 @@ let output_ (oc:Output.t) (self:t) : unit =
   in
 
   let self = {self with headers; body} in
-  log ~lvl:2 (fun k->k "output response: %s"
+  log (Req 2) (fun k->k "output response: %s"
                        (Format.asprintf "%a" pp {self with body=String "<…>"}));
   List.iter (fun (k,v) ->
       Output.add_string oc (Headers.to_string k);

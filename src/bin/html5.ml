@@ -1,5 +1,9 @@
 open Markup
 
+(* from https://www.w3.org/TR/REC-html40/index/attributes.html *)
+let uri_type = [ "action"; "background" ; "cite"; "classid"; "codebase"
+                 ; "data"; "href"; "longdesc"; "profile"; "src"; "usemap" ]
+
 let name_to_string = function
   | "", local_name -> local_name
   | _, local_name -> local_name
@@ -19,7 +23,7 @@ let print_tag name attributes =
                String.sub value 1 (len - 1)
              else value
            in
-           Printf.sprintf " %s=%s" (snd name) value)
+           Printf.sprintf " %s=%S" (snd name) value)
     |> String.concat ""
   in
   (Printf.sprintf "<%s%s>" (name_to_string name) attributes, List.rev !args)
@@ -31,7 +35,7 @@ type attrs = (name * string) list
 type tree_c =
   | Doctype of doctype
   | Element of name * attrs * tree list
-  | Caml of attrs * tree list (* TODO: will we use attributes ? *)
+  | Caml of bool * attrs * tree list (* TODO: will we use attributes ? *)
   | Include of string
   | Text of string list
   | Comment of string
@@ -44,11 +48,30 @@ and tree = { loc : location; c : tree_c }
 let noloc c = { loc = (-1,-1); c }
 
 let doctype ~loc d = {loc; c = Doctype(d) }
-let element ~filename ~loc name attrs children =
+
+let lower name = String.lowercase_ascii (snd name)
+
+let is_ml name attrs =
+  let is_ml =
+    lower name = "ml" ||
+      (lower name = "script" &&
+         List.exists (fun (name, value) ->
+             lower name = "type" && (value = "ml" || value = "ml/prelude"))
+           attrs)
+  in
+  let is_prelude =
+    List.exists (fun (name, value) ->
+        lower name = "type" && value = "ml/prelude")
+      attrs
+  in
+  (is_ml, is_prelude)
+
+let element ~dynamic ~filename ~loc name attrs children =
+  let (is_ml, is_prelude) = is_ml name attrs in
   {loc; c =
-  if String.lowercase_ascii (snd name) = "ml" then
-    Caml(attrs,children)
-  else if String.lowercase_ascii (snd name) = "include" then
+  if is_ml && dynamic then
+    Caml(is_prelude,attrs,children)
+  else if lower name = "include" && dynamic then
     begin
       match children with
       | [{c = Text [s]; _}] -> Include s
@@ -62,22 +85,23 @@ let comment ~loc c = {loc; c = Comment(c)}
 let pi ~loc s1 s2 = {loc; c = PI(s1,s2)}
 let xml ~loc x = {loc; c = Xml(x)}
 
-let parse_html ~filename s =
+let parse_html ~dynamic ~filename s =
   let report (line,col) err =
     Printf.eprintf "File %S, line %d, characters %d:\n %s\n%!"
       filename line col (Error.to_string err);
     exit 1;
   in
-  let element = element ~filename in
-  s |> parse_xml ~report ~context:`Document |>
+  let element = element ~dynamic ~filename in
+  let context = if dynamic then Some `Document else None in
+  s |> parse_html ~report ?context |>
     trees_with_loc ~element ~text ~comment ~pi ~xml ~doctype
 
 exception Incomplete
 
-let trees_to_ocaml ~filename t =
+let trees_to_ocaml ~dynamic ~filename t =
   let buf = Buffer.create 4096 in
-  let filter = ref None in
-  let in_html = ref false in
+  let prelude = ref [] in
+  let no_prelude = ref false in
   let pr buf fmt = Printf.bprintf buf fmt in
   let of_elems buf top acc =
     let args = ref [] in
@@ -96,14 +120,16 @@ let trees_to_ocaml ~filename t =
         let s = String.trim (String.concat "" (List.map fn (List.rev acc))) in
         let args = !args in
         if top then
-          begin
-            if s <> "" then
-              begin
-                pr buf "let _ = printf %S " s;
-                List.iter (fun a -> pr buf "(%s)" a) args;
-                pr buf ";;"
-              end
-          end
+          if dynamic then
+            begin
+              if s <> "" then
+                begin
+                  pr buf "let _ = printf %S " s;
+                  List.iter (fun a -> pr buf "(%s)" a) args;
+                  pr buf ";;"
+                end
+            end
+          else pr buf "%s\n" s
         else
           if args = [] then
             pr buf "%S" s
@@ -130,7 +156,7 @@ let trees_to_ocaml ~filename t =
     | e::stack ->
        match e.c with
        | Include _ -> failwith "include outside caml"
-       | Caml(attrs, sons) ->
+       | Caml(is_prelude,_, sons) ->
           let hn buf i x =
             newline (if i = 0 then depth else depth + 1);
             match x.c with
@@ -145,25 +171,23 @@ let trees_to_ocaml ~filename t =
                pr buf "%S" (Bytes.unsafe_to_string bytes)
             | _      -> of_elems buf false (fn (depth + 1) [] [x]);
           in
-          if not !in_html && !filter = None &&
-               List.exists (fun ((_,s),v) ->
-                   String.lowercase_ascii s = "prelude"
-                   && String.lowercase_ascii v = "true") attrs then
+          if not !no_prelude && is_prelude then
             begin
               let buf = Buffer.create 1024 in
               List.iteri (hn buf) sons;
-              filter := Some (Buffer.contents buf);
+              prelude := Buffer.contents buf :: !prelude;
               fn depth acc stack
             end
           else
             begin
+              no_prelude := true;
               of_elems buf top acc;
               List.iteri (hn buf) sons;
               newline depth;
               fn depth [] stack
             end;
        | Element (n,a,sons) ->
-          if snd n = "head" then in_html := true;
+          if snd n = "body" then no_prelude := true;
           gn (`Start_element(n,a)) (sons @ noloc (End_element n) :: stack)
        | End_element(name) -> gn (`End_element(name)) stack
        | Doctype d -> gn (`Doctype d) stack
@@ -174,7 +198,7 @@ let trees_to_ocaml ~filename t =
   in
   of_elems buf true (fold (fun acc x -> fn 0 acc [x]) [] t);
   (*if not !in_html then raise Incomplete;*)
-  (Buffer.contents buf, !filter)
+  (Buffer.contents buf, String.concat "\n" (List.rev !prelude))
 
 (*
 let test =

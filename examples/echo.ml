@@ -58,7 +58,7 @@ let _ =
   Server.add_route_handler_stream ~meth:PUT server ~filter
     Route.(exact "upload" @/ string @/ return)
     (fun path req ->
-        Log.f (fun k->k "start upload %S, headers:\n%s\n\n%!" path
+        Log.f (Req 0) (fun k->k "start upload %S, headers:\n%s\n\n%!" path
                      (Format.asprintf "%a" Headers.pp (Request.headers req)));
         try
           let oc = open_out @@ "/tmp/" ^ path in

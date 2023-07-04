@@ -2,7 +2,7 @@
 
 # Installation
 
-ulimit -n 6500
+ulimit -n 3000
 
 dune build ../src/bin/http_of_dir.exe
 dune build ../examples/echo.exe
@@ -16,7 +16,7 @@ rsync ./bar.php /var/www/nginx/bar.php
 
 duration=2m
 
-dune exec -- ../examples/echo.exe -c 2100 &
+dune exec -- ../examples/echo.exe -c 2100 --log-requests 0 &
 PID=$!
 
 sleep 1
@@ -38,7 +38,6 @@ cat res.bin | vegeta report -type=hist[100us,200us,300us,400us,500us,750us,1ms,2
 cat res.bin | vegeta plot > php.html
 
 #wrk tests
-exit 0
 
 dune exec ./bench.exe
 

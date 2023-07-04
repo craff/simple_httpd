@@ -25,12 +25,12 @@ let () =
   (* tick/tock goes the clock *)
   Server.add_route_server_sent_handler server Route.(exact "clock" @/ return)
     (fun _req (module EV : Server.SERVER_SENT_GENERATOR) ->
-       Log.f (fun k->k "new connection");
+       Log.f (Req 0) (fun k->k "new connection");
        EV.set_headers extra_headers;
        let tick = ref true in
        while true do
          let now = Ptime_clock.now() in
-         Log.f (fun k->k"send clock ev %s" (Format.asprintf "%a" Ptime.pp now));
+         Log.f (Req 0) (fun k->k"send clock ev %s" (Format.asprintf "%a" Ptime.pp now));
          EV.send_event ~event:(if !tick then "tick" else "tock")
            ~data:(Ptime.to_rfc3339 now) ();
          tick := not !tick;

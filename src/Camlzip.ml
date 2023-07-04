@@ -26,7 +26,7 @@ let deflate_string ?(buf_size=16 * 4096) str =
   Buffer.contents res
 
 let decode_deflate_stream_ ~buf_size (is:BS.t) : BS.t =
-  Log.f ~lvl:4 (fun k->k "wrap stream with deflate.decode");
+  Log.f (Req 2) (fun k->k "wrap stream with deflate.decode");
   let zlib_str = Zlib.inflate_init false in
   let is_done = ref false in
   BS.make
@@ -59,27 +59,21 @@ let decode_deflate_stream_ ~buf_size (is:BS.t) : BS.t =
               self.off <- 0;
               self.len <- used_out;
               if finished then is_done := true;
-              Log.f ~lvl:6
-                (fun k->k "decode %d bytes as %d bytes from inflate (finished: %b)"
-                          used_in used_out finished);
             with Zlib.Error (e1,e2) ->
               Response.fail_raise ~code:unprocessable_content
                 "inflate: error during decompression:\n%s %s" e1 e2
           end;
-          Log.f ~lvl:6
-            (fun k->k "inflate: refill %d bytes into internal buf" self.len);
         );
       )
     ()
 
 let encode_deflate_stream_ ~buf_size (is:BS.t) : BS.t =
-  Log.f ~lvl:4 (fun k->k "wrap stream with deflate.encode");
+  Log.f (Req 2) (fun k->k "wrap stream with deflate.encode");
   let refill = ref true in
   let zlib_str = Zlib.deflate_init 4 false in
   BS.make
     ~bs:(Bytes.create buf_size)
     ~close:(fun _self ->
-        Log.f ~lvl:4 (fun k->k "deflate: close");
         (try Zlib.deflate_end zlib_str with _ -> ());
         BS.close is
       )
@@ -89,8 +83,6 @@ let encode_deflate_stream_ ~buf_size (is:BS.t) : BS.t =
       )
     ~fill:(fun self ->
       let rec loop() =
-        Log.f ~lvl:6 (fun k->k "deflate.fill.iter in_off=%d in_len=%d out_off=%d out_len=%d %b"
-          is.off is.len  self.off self.len !refill);
         if self.len > 0 then (
           () (* still the same slice, not consumed entirely by output *)
         ) else if not !refill then (
@@ -109,9 +101,6 @@ let encode_deflate_stream_ ~buf_size (is:BS.t) : BS.t =
             self.off <- 0;
             self.len <- used_out;
             is.consume used_in;
-            Log.f ~lvl:6
-              (fun k->k "encode %d bytes as %d bytes using deflate (finished: %b)"
-                        used_in used_out _finished);
             loop()
           ) else (
             (* [is] is done, finish sending the data in current buffer *)
@@ -204,7 +193,7 @@ let compress_resp_stream_
     match Response.body resp with
     | String s when String.length s > compress_above ->
       (* big string, we compress *)
-      Log.f ~lvl:4
+      Log.f (Req 2)
         (fun k->k "encode str response with deflate (size %d, threshold %d)"
              (String.length s) compress_above);
       let body =
@@ -215,7 +204,7 @@ let compress_resp_stream_
       |> Response.set_body (Stream body)
 
     | Stream str ->
-      Log.f ~lvl:4 (fun k->k "encode stream response with deflate");
+      Log.f (Req 2) (fun k->k "encode stream response with deflate");
       resp
       |> Response.update_headers update_headers
       |> Response.set_body (Stream (encode_deflate_stream_ ~buf_size str))

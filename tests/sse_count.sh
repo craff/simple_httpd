@@ -3,7 +3,7 @@
 SSE_SERVER=$1
 PORT=8086
 
-"$SSE_SERVER" -p $PORT &
+"$SSE_SERVER" -p $PORT --log-requests 0 &
 PID=$!
 sleep 0.1
 

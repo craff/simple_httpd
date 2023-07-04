@@ -104,7 +104,9 @@ module type Parameters = sig
   val buf_size : int ref
   val ktls : bool ref
 
-  val log_lvl : int ref
+  val log_requests : int ref
+  val log_exceptions : int ref
+  val log_scheduler : int ref
   val log_folder : string ref
   val log_basename : string ref
   val log_perm : int ref
@@ -118,9 +120,12 @@ let args () =
       let buf_size = ref (8 * 4_096)
       let ktls = ref false
 
-      let log_lvl = ref 0
+      let log_requests   = ref 1
+      let log_scheduler  = ref 0
+      let log_exceptions = ref 1
       let log_folder = ref ""
-      let log_basename = ref Sys.argv.(0)
+      let log_basename = ref (Filename.remove_extension
+                                (Filename.basename Sys.argv.(0)))
       let log_perm = ref 0o700
     end in
   let open Params in
@@ -128,11 +133,14 @@ let args () =
   ([
     "--buf-size", Set_int buf_size, " set the size of the buffer used for input and output (one per client)";
     "--ktls", Set ktls, " use ktls over ssl";
-    "--log", Set_int log_lvl, " log level";
+    "--log-requests", Set_int log_requests, " log level for requests (default 1)";
+    "--log-exceptions", Set_int log_exceptions, " log level for exceptions (default 1)";
+    "--log-scheduler", Set_int log_scheduler, " log level for scheduler debug (default 0)";
+    "--log-request", Set_int log_requests, " log level for requests (default 1)";
     "--log-folder", Set_string log_folder, " log folder";
     "--log-basename", Set_string log_basename, " log basename";
     "--log-perm", Set_int log_perm, " log permission";
-    "--max-connection", Set_int max_connections, " maximum number of simultaneous connections (default 100)";
+    "--max-connections", Set_int max_connections, " maximum number of simultaneous connections (default 100)";
     "-c", Set_int max_connections, " maximum number of simultaneous connections (default 100)";
     "--nb-threads", Set_int num_threads, " maximum number of threads";
     "-j", Set_int num_threads, " maximum number of threads";
@@ -145,7 +153,9 @@ let create ?(listens = [Address.make ()]) (module Params : Parameters) =
   let max_connections = !max_connections in
   let buf_size = !buf_size in
   let timeout = !timeout in
-  Log.set_log_lvl !log_lvl;
+  Log.set_log_requests !log_requests;
+  Log.set_log_scheduler !log_scheduler;
+  Log.set_log_exceptions !log_exceptions;
   if !log_folder <> "" then
     Log.set_log_folder ~basename:!log_basename ~perm:!log_perm
       !log_folder num_threads;
@@ -175,7 +185,7 @@ let handle_client_ (self:t) (client:Async.client) : unit =
       cont := false (* client is done *)
 
     | Some req ->
-      log ~lvl:2 (fun k->k "req: %s" (Format.asprintf "@[%a@]" Request.pp_ req));
+      log (Req 1) (fun k->k "req: %s" (Format.asprintf "@[%a@]" Request.pp_ req));
 
       if Request.close_after_req req then cont := false;
 
@@ -185,7 +195,7 @@ let handle_client_ (self:t) (client:Async.client) : unit =
         (* handle expect/continue *)
         begin match Request.get_header ~f:String.trim req Headers.Expect with
           | Some "100-continue" ->
-            log ~lvl:2 (fun k->k "send back: 100 CONTINUE");
+            log (Req 1) (fun k->k "send back: 100 CONTINUE");
             Response.output_ oc (Response.make_raw ~code:continue "");
             (* CHECK !!! *)
           | Some s -> Response.fail_raise ~code:expectation_failed
@@ -208,21 +218,21 @@ let handle_client_ (self:t) (client:Async.client) : unit =
           with Sys_error _
              | Unix.Unix_error _ as e ->
                 cont := false;
-                log ~lvl:1 (fun k -> k "fail to output response (%s)"
+                log (Exc 1) (fun k -> k "fail to output response (%s)"
                                            (Async.printexn e))
         in
         (* call handler *)
         handler oc req ~resp;
-        log ~lvl:1 (fun k -> k "response sent after %fms" (1e3 *. (Unix.gettimeofday () -. req.start_time)));
+        log (Req 0) (fun k -> k "response sent after %fms" (1e3 *. (Unix.gettimeofday () -. req.start_time)));
         if !cont then Async.yield ()
       with
       | Sys_error _ | Unix.Unix_error _ | Async.ClosedByHandler | Async.TimeOut as e ->
-         log ~lvl:1 (fun k -> k "broken connection (%s)"
+         log (Exc 1) (fun k -> k "broken connection (%s)"
                                     (Async.printexn e));
          cont := false; (* connection broken somehow *)
 
       | Headers.Bad_req (c,s,headers,cookies) ->
-         log ~lvl:1 (fun k -> k "redirect request (%s)" s);
+         log (Req 0) (fun k -> k "not 200 status: %d (%s)" (c :> int) s);
          let res = Response.make_raw ~headers ~cookies ~code:c s in
          begin
            try Response.output_ oc res
@@ -231,14 +241,14 @@ let handle_client_ (self:t) (client:Async.client) : unit =
          if not ((c :> int) < 500) then cont := false else Async.yield ()
 
       | e ->
-         log ~lvl:1 (fun k -> k "server error (%s)"
+         log (Exc 0) (fun k -> k "internal server error (%s)"
                                     (Async.printexn e));
          cont := false;
          Response.output_ oc @@
            Response.fail ~code:internal_server_error
              "server error: %s" (Async.printexn e)
   done;
-  log ~lvl:2 (fun k->k "done with client, exiting");
+  log (Sch 0) (fun k->k "done with client, exiting");
   ()
 
 let run (self:t) =

@@ -250,10 +250,22 @@ end
 module Log : sig
   (** Server Logging facility *)
 
-  (** Currently there is a log level, you can set with this function.
-      The default level is 1 and produces only errors (0 is totally silent).
-      TODO: We plan a more explicit notion of logs *)
-  val set_log_lvl : int -> unit
+  (** There are 3 kinds of log with separate log level *)
+  type log_lvl =
+    | Req of int (** log request: at level 0 => information to log
+                     all request. > 0: more detail on the treatment of the request *)
+    | Sch of int (** log the scheduler: mainly for debugging *)
+    | Exc of int (** Exception: 0 => only error that are important *)
+
+  (** Set log level for requests. [set_log_request n] will show all log called
+      with [Req p] when p < n. *)
+  val set_log_requests : int -> unit
+
+  (** same as above for the scheduler *)
+  val set_log_scheduler : int -> unit
+
+  (** same as above for exceptions *)
+  val set_log_exceptions : int -> unit
 
   (** With asynchronous communication, log can be mixed between domains.
       To address this issue, each domain will use a different file inside
@@ -265,7 +277,7 @@ module Log : sig
 
   (** The log function. It must be used as
       [ Log.f ~lvl:n (fun k -> k fmt ...) ] using [ Printf ] format. *)
-  val f : ?lvl:int ->
+  val f : log_lvl ->
           ((('a, out_channel, unit, unit) format4 -> 'a) -> unit) -> unit
 end
 
@@ -834,7 +846,9 @@ module Server : sig
     val buf_size : int ref
     val ktls : bool ref
 
-    val log_lvl : int ref
+    val log_requests : int ref
+    val log_exceptions : int ref
+    val log_scheduler : int ref
     val log_folder : string ref
     val log_basename : string ref
     val log_perm : int ref

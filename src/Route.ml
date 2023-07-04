@@ -263,12 +263,11 @@ let find (handlers : handlers) (req : Input.t Request.t) =
          | C(_,(freq,ph))::phs ->
             (try
                let handler = ph path in
-               let req = freq req in
-               (req,handler)
+               let (req,filter) = freq req in
+               (req,filter,handler)
              with Pass -> fn phs)
          | [] -> kn rest
        in
        fn l
   in
-  let ((req,filter), handler) = kn trees in
-  (req, filter, handler)
+  kn trees

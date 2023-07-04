@@ -129,8 +129,14 @@ val run : nb_threads:int -> listens:Address.t array -> maxc:int ->
 val printexn : exn -> string
 
 module Log : sig
-  val set_log_lvl : int -> unit
+  val set_log_requests   : int -> unit
+  val set_log_scheduler  : int -> unit
+  val set_log_exceptions : int -> unit
   val set_log_folder : ?basename:string -> ?perm:int -> string -> int -> unit
-  val f : ?lvl:int ->
+  type log_lvl =
+    | Req of int
+    | Sch of int
+    | Exc of int
+  val f : log_lvl ->
           ((('a, out_channel, unit, unit) format4 -> 'a) -> unit) -> unit
 end

@@ -190,15 +190,15 @@ let add_vfs_ ?addresses ?hostnames ?(filter=(fun x -> (x, fun r -> r)))
       (fun path _req ->
          let path = String.concat "/" path in
          if contains_dot_dot path then (
-           Log.f ~lvl:2 (fun k->k "delete fails %s (dotdot)" path);
+           Log.f (Exc 0) (fun k->k "delete fails %s (dotdot)" path);
            Response.fail_raise ~code:forbidden "invalid path in delete"
          ) else (
            Response.make_string
              (try
-                log ~lvl:2 (fun k->k "done delete %s" path);
+                log (Req 1) (fun k->k "done delete %s" path);
                 VFS.delete path; "file deleted successfully"
               with e ->
-                log ~lvl:2 (fun k->k "delete fails %s (%s)" path
+                log (Exc 0) (fun k->k "delete fails %s (%s)" path
                                          (Async.printexn e));
                 Response.fail_raise ~code:internal_server_error
                   "delete fails: %s (%s)" path (Async.printexn e))
@@ -225,7 +225,7 @@ let add_vfs_ ?addresses ?hostnames ?(filter=(fun x -> (x, fun r -> r)))
          let write, close =
            try VFS.create path
            with e ->
-             log ~lvl:2 (fun k->k "fail uploading %s (%s)"
+             log (Exc 0) (fun k->k "fail uploading %s (%s)"
                                       path (Async.printexn e));
              Response.fail_raise ~code:forbidden "cannot upload to %S: %s"
                path (Async.printexn e)
@@ -233,7 +233,7 @@ let add_vfs_ ?addresses ?hostnames ?(filter=(fun x -> (x, fun r -> r)))
          let req = Request.limit_body_size ~max_size:config.max_upload_size req in
          Input.iter write req.Request.body;
          close ();
-         log ~lvl:2 (fun k->k "done uploading %s" path);
+         log (Req 1) (fun k->k "done uploading %s" path);
          Response.make_raw ~code:created "upload successful"
       )
   ) else (
@@ -247,7 +247,7 @@ let add_vfs_ ?addresses ?hostnames ?(filter=(fun x -> (x, fun r -> r)))
       (fun path req ->
         let path = String.concat "/" path in
         if contains_dot_dot path then (
-          log ~lvl:2 (fun k->k "download fails %s (dotdot)" path);
+          log (Exc 0) (fun k->k "download fails %s (dotdot)" path);
           Response.fail_raise ~code:forbidden "Path is forbidden");
         let FI info = VFS.read_file path in
         let mtime =  match info.mtime with
@@ -272,7 +272,6 @@ let add_vfs_ ?addresses ?hostnames ?(filter=(fun x -> (x, fun r -> r)))
                let query = String.concat "&"
                              (List.map (fun (k,v) -> k ^ "=" ^ v)
                                 (Request.query req)) in
-               log ~lvl:2 (fun k->k "download redirect %s" path);
                Response.make_raw ~code:moved_permanently "moved"
                  ~headers:Headers.(empty
                                    |> set Headers.Location (new_path ^ "?" ^ query)
@@ -280,10 +279,9 @@ let add_vfs_ ?addresses ?hostnames ?(filter=(fun x -> (x, fun r -> r)))
             | Lists | Index_or_lists ->
                let body = html_list_dir ~prefix vfs path ~parent
                           |> Html.to_string_top in
-               log ~lvl:2 (fun k->k "download index %s" path);
+               log (Req 1) (fun k->k "download index %s" path);
                Response.make_string ~headers:[header_html] body
             | Forbidden | Index ->
-               log ~lvl:2 (fun k->k "download index fails %s (forbidden)" path);
                Response.make_raw ~code:forbidden "listing dir not allowed"
         ) else (
           let accept_encoding =
@@ -295,7 +293,6 @@ let add_vfs_ ?addresses ?hostnames ?(filter=(fun x -> (x, fun r -> r)))
           match info.content with
           | Path(_, Some (fz, size)) when deflate ->
              let fd = Unix.openfile fz [O_RDONLY] 0 in
-             log ~lvl:2 (fun k->k "download ok %s" path);
              Response.make_raw_file
                ~headers:(cache_control ()::
                          (Headers.Content_Encoding, "deflate")::info.headers)
@@ -303,35 +300,29 @@ let add_vfs_ ?addresses ?hostnames ?(filter=(fun x -> (x, fun r -> r)))
           | Path(f, _) ->
              let fd = Unix.openfile f [O_RDONLY] 0 in
              let size = match info.size with Some s -> s | None -> assert false in
-             log ~lvl:2 (fun k->k "download ok %s" path);
              Response.make_raw_file
                ~headers:(cache_control ()::info.headers)
                ~code:ok ~close:true size fd
           | Fd(fd) ->
              let size = Unix.(fstat fd).st_size in
-             log ~lvl:2 (fun k->k "download ok %s" path);
              Response.make_raw_file
                ~headers:(cache_control ()::info.headers)
                ~code:ok ~close:true size fd
           | String(_, Some sz) when deflate ->
-             log ~lvl:2 (fun k->k "download ok %s" path);
              Response.make_raw
                ~headers:(cache_control ()::
                          (Headers.Content_Encoding, "deflate")::info.headers)
                ~code:ok sz
           | String(s, _) ->
-             log ~lvl:2 (fun k->k "download ok %s" path);
              Response.make_raw
                ~headers:(cache_control ()::info.headers)
                ~code:ok s
           | Dynamic f ->
              let headers = [cache_control ()] in
              let headers, cookies, input = f req headers in
-             log ~lvl:2 (fun k->k "download ok %s" path);
              Response.make_raw_stream
                ~headers ~cookies ~code:ok input
           | Stream input ->
-             log ~lvl:2 (fun k->k "download ok %s" path);
              Response.make_raw_stream
                ~headers:(cache_control ()::info.headers)
                ~code:ok input

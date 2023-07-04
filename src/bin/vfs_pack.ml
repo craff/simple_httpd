@@ -5,10 +5,10 @@ let verbose = ref false
 let max_size = ref 0x8000
 
 type entry =
-  | File of string * string
+  | File of bool * string * string
   | Url of string * string
-  | Path of string * string * string
-  | Mirror of string * string * string
+  | Path of bool * string * string * string
+  | Mirror of string * string
   | Source_file of string
   | MlHtml of string * string
 
@@ -73,15 +73,32 @@ let emit ~perm ?max_size ?destination oc (l:entry list) : unit =
   in
 
   let rec add_entry = function
-    | File (vfs_path, actual_path) ->
+    | File (html, vfs_path, actual_path) ->
       if !verbose then Printf.eprintf "add file %S = %S\n%!" vfs_path actual_path;
+      begin
+        try
+          let content =
+            if html then
+              begin
+                let ch = open_in actual_path in
+                let filename = actual_path in
+                Printf.eprintf "parsing %s\n%!" filename;
+                let (ml, _) =
+                  Markup.channel ch |> Html5.parse_html ~dynamic:false ~filename
+                  |> Html5.trees_to_ocaml ~dynamic:false ~filename
+                in
+                ml
+              end
+            else
+              read_file actual_path
+          in
+          let mtime = (Unix.stat actual_path).Unix.st_mtime in
+          let mime =  Magic_mime.lookup actual_path in
+          add_vfs ~mtime ~mime vfs_path content
+        with Html5.Incomplete -> () (* no doctype *)
+      end
 
-      let content = read_file actual_path in
-      let mtime = (Unix.stat actual_path).Unix.st_mtime in
-      let mime =  Magic_mime.lookup actual_path in
-      add_vfs ~mtime ~mime vfs_path content
-
-    | Path (vfs_path, actual_path, store_path) ->
+    | Path (_html, vfs_path, actual_path, store_path) ->
        let actual_path = actual_path // vfs_path in
        let disk_path = store_path // vfs_path in
        if !verbose then Printf.eprintf "add path %S = %S in %S\n%!" vfs_path actual_path disk_path;
@@ -109,12 +126,8 @@ let emit ~perm ?max_size ?destination oc (l:entry list) : unit =
        let filename = actual_path in
        (try
          let (ml, prelude) =
-           Markup.channel ch |> Html5.parse_html ~filename
-           |> Html5.trees_to_ocaml ~filename
-         in
-         let prelude = match prelude with
-           | None -> ""
-           | Some str -> str
+           Markup.channel ch |> Html5.parse_html ~dynamic:true ~filename
+           |> Html5.trees_to_ocaml ~dynamic:true ~filename
          in
          fpf oc
          "let () = (Dir.Embedded_fs.add_dynamic embedded_fs \n  \
@@ -151,22 +164,32 @@ let emit ~perm ?max_size ?destination oc (l:entry list) : unit =
           failwith (Format.asprintf "download of %S failed: %a" url Curly.Error.pp err)
       end
 
-    | Mirror (vfs_path, dir, store) ->
+    | Mirror (vfs_path, dir) ->
       if !verbose then Printf.eprintf "mirror directory %S as %S\n%!" dir vfs_path;
-
+      let store = match destination with
+        | None -> dir
+        | Some d -> d
+      in
       let rec traverse vfs_path =
         let real_path = dir // vfs_path in
         let store_path = store // vfs_path in
+        Printf.eprintf "traverse %s %s\n%!" real_path store_path;
         if Sys.is_directory real_path then (
           if not (Sys.file_exists store_path && Sys.is_directory store_path) then
             Sys.mkdir store_path perm;
           let arr = Sys.readdir real_path in
+          Printf.eprintf "readdir %s => " real_path;
+          Array.iter (fun s -> Printf.eprintf "  %s" s) arr;
+          Printf.eprintf "\n%!";
           Array.iter (fun e -> traverse (vfs_path // e)) arr
         ) else (
-          let extension = Filename.extension vfs_path in
-          let first_char = try vfs_path.[0] with _ -> '#' in
-          if first_char <> '.' && first_char <> '#' then
+          let basename = Filename.basename vfs_path in
+          let lenbase = String.length basename in
+          if lenbase > 0 && basename.[0] <> '.' && basename.[0] <> '#'
+             && basename.[lenbase - 1] <> '~'
+          then
             begin
+              let extension = Filename.extension vfs_path in
               if extension = ".chaml" then
                 let vpath = Filename.remove_extension vfs_path ^ ".html" in
                 add_entry (MlHtml (vpath, real_path))
@@ -177,10 +200,11 @@ let emit ~perm ?max_size ?destination oc (l:entry list) : unit =
                     | None -> false
                     | Some s -> (Unix.stat real_path).st_size > s
                   in
+                  let html = (extension = ".html") in
                   if use_path then
-                    add_entry (Path (vfs_path, dir, store))
+                    add_entry (Path (html, vfs_path, dir, store))
                   else
-                    add_entry (File (vfs_path, real_path))
+                    add_entry (File (html, vfs_path, real_path))
                 end
             end
         )
@@ -199,7 +223,7 @@ let emit ~perm ?max_size ?destination oc (l:entry list) : unit =
       let process_line line =
         let vfs_path, path = split_comma line in
         if is_url path then add_entry (Url(vfs_path, path))
-        else add_entry (File (vfs_path, path))
+        else add_entry (Mirror (vfs_path, path))
       in
 
       List.iter process_line lines
@@ -232,15 +256,12 @@ let () =
 
   let add_file s =
     let vfs_path, path = split_comma s in
-    add_entry (File (vfs_path, path))
+    let html = (Filename.extension vfs_path = ".html") in
+    add_entry (File (html, vfs_path, path))
   and add_mirror s =
     let vfs_path, path = split_comma s in
     let vfs_path, path = if path="" then "", vfs_path else vfs_path, path in
-    let store = match !destination with
-      | None -> path
-      | Some d -> d
-    in
-    add_entry (Mirror (vfs_path, path, store))
+    add_entry (Mirror (vfs_path, path))
   and add_source f = add_entry (Source_file f)
   and add_url s =
     let vfs_path, path = split_comma s in

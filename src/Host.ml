@@ -76,7 +76,7 @@ let start_server parameters
 
   Array.iter (fun l ->
       let open Address in
-      Log.f ~lvl:0 (fun k -> k "listening on http://%s:%d" l.addr l.port))
+      Log.f (Req 0) (fun k -> k "listening on http://%s:%d" l.addr l.port))
     (listens server);
 
   run server

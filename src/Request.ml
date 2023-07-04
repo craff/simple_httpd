@@ -105,7 +105,6 @@ let read_exactly ~size (bs:Input.t) : Input.t =
 let parse_req_start ~client ~buf (bs:Input.t)
     : Input.t t option =
   try
-    log (fun k -> k "start reading request");
     Async.register_starttime client;
     let line = Input.read_line ~buf bs in
     let start_time = Unix.gettimeofday () in
@@ -115,11 +114,12 @@ let parse_req_start ~client ~buf (bs:Input.t)
         if version != 0 && version != 1 then raise Exit;
         meth, path, version
       with e ->
-        log (fun k->k "INVALID REQUEST LINE: `%s` (%s)" line (Printexc.to_string e));
+        log (Exc 1) (fun k->k "INVALID REQUEST LINE: `%s` (%s)" line (Printexc.to_string e));
         fail_raise ~code:bad_request "Invalid request line"
     in
     let meth = Method.of_string meth in
-    log ~lvl:2 (fun k->k "got meth: %s, path %S" (Method.to_string meth) path);
+    log (Req 0) (fun k->k "From %s: %s, path %S" (Util.addr_of_sock client.sock)
+                          (Method.to_string meth) path);
     let (headers, cookies) = Headers.parse_ ~buf bs in
     let host =
       match Headers.get Headers.Host headers with
@@ -246,6 +246,7 @@ let read_body_full ~buf (self:Input.t t) : string t =
   let module Input   = Simple_httpd__Input in
   let module Output  = Simple_httpd__Output in
   let module Headers = Simple_httpd__Headers in
+  Log.set_log_requests 0;
   let q = "GET hello HTTP/1.1\r\nHost: coucou\r\nContent-Length: 11\r\n\r\nsalutationsSOMEJUNK" in
   let str = Input.of_string q in
   let buf = Buffer.create 256 in

@@ -65,9 +65,7 @@ test_out.txt
 </html>
 hello
 world
-
-<html>
-<head>
+<html><head>
 
 </head>
 <body>
@@ -81,5 +79,6 @@ world
       <a href="../foo.html"> up/foo </a>
     </li>
   </ul>
-</body>
-</html>
+
+
+</body></html>

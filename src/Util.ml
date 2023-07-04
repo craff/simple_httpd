@@ -54,6 +54,14 @@ let ssl_sendfile out in_ offset count =
   if ret <= 0 then raise Ssl.(Write_error (get_error out ret));
   ret
 
+let file_descr_to_int : Unix.file_descr -> int =
+  if Sys.(os_type <> "Unix") then failwith "unsupported OS"
+  else Obj.magic
+
+let file_descr_of_int : int -> Unix.file_descr =
+  if Sys.(os_type <> "Unix") then failwith "unsupported OS"
+  else Obj.magic
+
 let percent_encode ?(skip=fun _->false) s =
   let buf = Buffer.create (String.length s) in
   String.iter
@@ -378,3 +386,8 @@ let get_update_atomic a fn =
     else (Printf.eprintf "LOOP\n%!"; gn ())
   in
   gn ()
+
+let addr_of_sock sock =
+  match Unix.getsockname sock
+  with ADDR_UNIX name -> "UNIX:" ^ name
+     | ADDR_INET (addr, _) -> Unix.string_of_inet_addr addr

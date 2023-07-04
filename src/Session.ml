@@ -6,11 +6,6 @@ type session_data = Async.session_data
 
 module LinkedList = Util.LinkedList
 
-let addr_of_sock sock =
-  match Unix.getsockname sock
-  with ADDR_UNIX name -> "UNIX:" ^ name
-     | ADDR_INET (addr, _) -> Unix.string_of_inet_addr addr
-
 let get_session, delete_session =
   (* table to search session by key *)
   let sessions_tbl = Hashtbl.create 1024 in
@@ -77,7 +72,7 @@ let get_session, delete_session =
             (session, true)
          | None ->
             Mutex.unlock mutex_tbl;
-            let addr = addr_of_sock client.sock in
+            let addr = Util.addr_of_sock client.sock in
             let key = Digest.to_hex
                         (Digest.string (addr ^ string_of_int (Random.int 1_000_000_000))) in
             let data = Atomic.make (init ()) in
@@ -162,7 +157,7 @@ let check
             | (None, None) when cookies = [] -> ()
             | _ -> raise Exit
           end;
-          let addr = addr_of_sock client.sock in
+          let addr = Util.addr_of_sock client.sock in
           if addr <> session.addr then raise Exit;
           cookies
         end

@@ -39,7 +39,7 @@ jobs:
 
       - run: opam pin add https://github.com/craff/ocaml-ssl#ktls -k git
 
-      - run: opam pin add https://github.com/craff/markup#tree_with_loc -k git
+      - run: opam pin add https://github.com/craff/markup#latest -k git
 
       - run: opam install . --deps-only --with-test
 

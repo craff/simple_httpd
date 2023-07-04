@@ -10,6 +10,10 @@ val ssl_sendfile : Ssl.socket -> Unix.file_descr -> int -> int -> int
 
 val setsockopt_cork : Unix.file_descr -> bool -> unit
 
+val file_descr_to_int : Unix.file_descr -> int
+
+val file_descr_of_int : int -> Unix.file_descr
+
 val percent_encode : ?skip:(char -> bool) -> string -> string
 (** Encode the string into a valid path following
     https://tools.ietf.org/html/rfc3986#section-2.1
@@ -73,3 +77,5 @@ end
 
 val update_atomic : 'a Atomic.t -> ('a -> 'a) -> unit
 val get_update_atomic : 'a Atomic.t -> ('a -> 'b * 'a) -> 'b
+
+val addr_of_sock : Unix.file_descr -> string

@@ -3,7 +3,7 @@
 ECHO=$1
 PORT=8085
 
-"$ECHO" -p $PORT  &
+"$ECHO" -p $PORT --log-requests 0 &
 PID=$!
 
 sleep 0.1

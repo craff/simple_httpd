@@ -123,10 +123,10 @@ type socket_type =
   | Lock   (* mutex *)
 
 let pp_sock_info = function
-  | Io -> "Io"
-  | Client -> Printf.sprintf "Client"
-  | Pipe -> "Pipe"
-  | Lock -> Printf.sprintf "Lock"
+  | Io     -> "Io"
+  | Client -> "Client"
+  | Pipe   -> "Pipe"
+  | Lock   -> "Lock"
 
 exception SockError of socket_type * exn
 
@@ -189,39 +189,78 @@ let global_get_client () =
   all_domain_info.((id :> int)).cur_client
 
 module Log = struct
-  let log_lvl =
-    ref (match int_of_string (Sys.getenv "HTTP_DBG") with
-         | n -> n | exception _ -> 0)
+  type log_lvl =
+    | Req of int
+    | Sch of int
+    | Exc of int
 
-  let set_log_lvl n = log_lvl := n
+  type log_status =
+    { mutable requests : int
+    ; mutable scheduler : int
+    ; mutable exceptions : int }
+
+  let log_status =
+    { requests = 1
+    ; scheduler = 0
+    ; exceptions = 1 }
+
+  let set_log_requests   n = log_status.requests   <- n
+  let set_log_scheduler  n = log_status.scheduler  <- n
+  let set_log_exceptions n = log_status.exceptions <- n
+
+  let do_log ty =
+    match ty with
+    | Req n -> n < log_status.requests
+    | Sch n -> n < log_status.scheduler
+    | Exc n -> n < log_status.exceptions
 
   let log_files = ref [||]
+  let log_folder = ref ""
+  let log_basename = ref ""
+  let log_perm = ref 0o700
+
+  let open_log i =
+    let filename = Filename.concat !log_folder
+                     (!log_basename ^ "-" ^ string_of_int i ^ ".log")
+    in
+    open_out_gen [Open_wronly; Open_append; Open_creat] !log_perm filename
 
   let set_log_folder ?(basename="log") ?(perm=0o700) folder nb_dom =
+    log_perm := perm;
+    log_basename := basename;
+    log_folder := folder;
     if not (Sys.file_exists folder) then Sys.mkdir folder perm;
     if not (Sys.is_directory folder) then invalid_arg "set_log_folder";
     try
-      let a = Array.init nb_dom (fun i ->
-                  let filename = Filename.concat folder
-                                   (basename ^ "-" ^ string_of_int i ^ ".log")
-                  in
-                  open_out_gen [Open_wronly; Open_append; Open_creat] perm filename)
-      in
+      let a = Array.init nb_dom (fun i -> open_log i) in
       log_files := a
     with e -> failwith ("set_log_folder: " ^ Printexc.to_string e)
 
-  let f ?(lvl=1) k =
-    if !log_lvl >= lvl then (
+  let f ty k =
+    if do_log ty then (
       k (fun fmt->
           let id = Domain.((self() :> int)) in
-          let ch = if id < Array.length !log_files then !log_files.(id)
-                   else stdout
-          in
           let cl = global_get_client () in
+          let ch =
+            if id < Array.length !log_files then
+              begin
+                let ch = !log_files.(id)in
+                (* reopen log file it no mode symlink: logrotate might delete it*)
+                if Unix.(fstat (Unix.descr_of_out_channel ch)).st_nlink < 1 then
+                  begin
+                    let ch = open_log id in
+                    !log_files.(id) <- ch;
+                    ch
+                  end
+                else ch
+              end
+            else stdout
+          in
           if is_client cl then
             Printf.fprintf ch "%.6f %3d %10d: "
               (Unix.gettimeofday ()) id cl.id;
-          Printf.kfprintf (fun oc -> Printf.fprintf oc "\n%!") ch fmt)
+          Printf.kfprintf (fun oc -> Printf.fprintf oc "\n%!") ch fmt
+        )
     )
 end
 
@@ -270,7 +309,7 @@ module Mutex : sig
     match r.owner with
     | Deleted -> ()
     | Locked _ ->
-       Log.f ~lvl:1 (fun k -> k "Mutex collected before unlock!");
+       Log.(f (Exc 0)) (fun k -> k "Mutex collected before unlock!");
     | Unlocked -> r.owner <- Deleted;
                   try Unix.close r.eventfd with _ -> ()
 
@@ -492,7 +531,7 @@ let loop id st listens pipe timeout handler () =
       | (t,cont,cl)::l when t <= now ->
          if cl.connected then
            begin
-             Log.f ~lvl:3 (fun k -> k "[%d] end sleep" cl.id);
+             Log.f (Sch 2) (fun k -> k "[%d] end sleep" cl.id);
              add_ready (Yield(cont,cl,now));
            end;
          fn l
@@ -550,9 +589,10 @@ let loop id st listens pipe timeout handler () =
       List.iter Mutex.unlock c.locks;
       c.locks <- []
     end;
-    Log.f ~lvl:2 (fun k -> k "[%d] closing because exception: %s. connected: %b (%d)"
-                               c.id (printexn exn) c.connected
-                               (Atomic.get st.nb_connections.(id)));
+    Log.(f (Exc 1))
+      (fun k -> k "[%d] closing because exception: %s. connected: %b (%d)"
+                  c.id (printexn exn) c.connected
+                  (Atomic.get st.nb_connections.(id)));
     c.connected <- false
   in
 
@@ -581,15 +621,16 @@ let loop id st listens pipe timeout handler () =
                  while true do
                    assert (Util.read pipe pipe_buf 0 8 = 8);
                    let sock : Unix.file_descr =
-                     Obj.magic (Int32.to_int (Bytes.get_int32_ne pipe_buf 0))
+                     Util.file_descr_of_int
+                       (Int32.to_int (Bytes.get_int32_ne pipe_buf 0))
                    in
                    let index = Int32.to_int (Bytes.get_int32_ne pipe_buf 4) in
                    let l = listens.(index) in
-                   Log.f ~lvl:1 (fun k -> k "received accepted socket");
+                   Log.f (Req 2) (fun k -> k "received accepted socket");
                    add_ready (Accept (index, sock, l))
                  done
                with Unix.Unix_error((EAGAIN|EWOULDBLOCK),_,_) -> ()
-                  | e -> Log.f ~lvl:1 (fun k -> k "EXCEPTION IN ACCEPT RECPT: %s"
+                  | e -> Log.f (Exc 0) (fun k -> k "EXCEPTION IN ACCEPT RECPT: %s"
                                                   (Printexc.to_string e))
              end
           | { pd = NoEvent ; _ } as r ->
@@ -605,20 +646,17 @@ let loop id st listens pipe timeout handler () =
         in
         List.iter fn (find sock)
       in
-      Log.f ~lvl:4 (fun k -> k "entering poll");
       try
         ignore (Polly.wait poll_list 1000 select_timeout fn);
-        Log.f ~lvl:4 (fun k -> k "exiting poll");
         add_ready Wait
       with e -> add_ready Wait; raise e
     with
-    | exn -> Log.f ~lvl:1 (fun k -> k "UNEXPECTED EXCEPTION IN POLL: %s\n%!"
-                                        (printexn exn));
+    | exn -> Log.f (Exc 0) (fun k -> k "UNEXPECTED EXCEPTION IN POLL: %s\n%!"
+                                       (printexn exn));
              (*check now;*) poll () (* FIXME: which exception *)
   in
   let step v =
     try
-      Log.f ~lvl:4 (fun k -> k "step");
       match v with
       | Wait ->
          poll ()
@@ -634,7 +672,7 @@ let loop id st listens pipe timeout handler () =
                       } in
          dinfo.cur_client <- client;
          let info = { ty = Client; client; pd = NoEvent } in
-         Log.f ~lvl:2 (fun k -> k "[%d] accept connection (%a)" client.id print_status st);
+         Log.f (Req 1) (fun k -> k "[%d] accept connection (%a)" client.id print_status st);
          Unix.set_nonblock sock;
          Unix.(setsockopt_float sock SO_RCVTIMEO timeout);
          Unix.(setsockopt_float sock SO_SNDTIMEO timeout);
@@ -657,7 +695,6 @@ let loop id st listens pipe timeout handler () =
               client.ssl <- Some chan;
               if Ssl.ktls_send_available chan then
                 begin
-                  Log.f ~lvl:2 (fun k -> k "use ktls for send\n%!");
                   client.write <- Unix.single_write sock;
                   client.sendfile <- Util.ssl_sendfile chan
                 end
@@ -668,12 +705,11 @@ let loop id st listens pipe timeout handler () =
                 end;
               if Ssl.ktls_recv_available chan then
                 begin
-                  Log.f ~lvl:2 (fun k -> k "use ktls for receive\n%!");
                   client.read <- Unix.read sock
                 end
               else
                 client.read <- Ssl.read chan;
-              Log.f ~lvl:2 (fun k -> k "[%d] ssl connection established" client.id);
+              Log.f (Req 2) (fun k -> k "[%d] ssl connection established" client.id);
            | None ->
               client.read <- Unix.read sock;
               client.write <- Unix.single_write sock;
@@ -690,12 +726,12 @@ let loop id st listens pipe timeout handler () =
              cl.acont <- N;
              if e then
                begin
-                 Log.f ~lvl:3 (fun k -> k "[%d] discontinue io" cl.id);
+                 Log.f (Sch 0) (fun k -> k "[%d] discontinue io" cl.id);
                  discontinue cont (Unix.Unix_error(EPIPE, "error_in_poll", ""))
                end
              else
                begin
-                 Log.f ~lvl:3 (fun k -> k "[%d] continue io" cl.id);
+                 Log.f (Sch 0) (fun k -> k "[%d] continue io" cl.id);
                  let n = fn () in
                  continue cont n;
                end
@@ -705,11 +741,11 @@ let loop id st listens pipe timeout handler () =
            begin
              dinfo.cur_client <- cl;
              cl.acont <- N;
-             Log.f ~lvl:3 (fun k -> k "[%d] continue yield" cl.id);
+             Log.f (Sch 0) (fun k -> k "[%d] continue yield" cl.id);
              continue cont ();
            end
     with e -> (try close e
-               with e -> Log.f ~lvl:1 (fun k -> k "exception during close: %s"
+               with e -> Log.f (Exc 1) (fun k -> k "exception during close: %s"
                                                 (Printexc.to_string e)))
 
   in
@@ -745,7 +781,6 @@ let loop id st listens pipe timeout handler () =
     )}
   in
   while true do
-    Log.f ~lvl:4 (fun k -> k "step handler");
     step_handler (Queue.take ready)
   done
 
@@ -797,14 +832,14 @@ let accept_loop status listens pipes maxc =
         let (did, pipe) = get_best () in
         let (lsock, _) = Unix.accept sock in
         to_close := Some lsock;
-        Bytes.set_int32_ne pipe_buf 0 (Int32.of_int (Obj.magic (Obj.repr lsock)));
+        Bytes.set_int32_ne pipe_buf 0 (Int32.of_int (Util.file_descr_to_int lsock));
         Bytes.set_int32_ne pipe_buf 4 (Int32.of_int index);
         assert(Util.single_write pipe pipe_buf 0 8 = 8);
-        Log.f ~lvl:2 (fun k -> k "send accepted socket to domain %d" did);
+        Log.f (Req 2) (fun k -> k "send accepted socket to domain %d" did);
         Atomic.incr status.nb_connections.(did);
       with
       | Full ->
-         Log.f ~lvl:1 (fun k -> k "REJECT: TOO MANY CLIENTS");
+         Log.f (Exc 0) (fun k -> k "Reject: too many clients");
          let (lsock, _) = Unix.accept sock in
          Unix.close lsock
       | Unix.Unix_error((EAGAIN|EWOULDBLOCK),_,_) -> continue := false
@@ -814,7 +849,7 @@ let accept_loop status listens pipes maxc =
            | None -> ()
            | Some s -> try Unix.close s with Unix.Unix_error _ -> ()
          end;
-         Log.f ~lvl:1 (fun k -> k "ERROR DURING ACCEPT: %s" (printexn exn))
+         Log.f (Exc 0) (fun k -> k "Exception during accept: %s" (printexn exn))
     done
   in
   let nb_socks = Array.length listens in
@@ -823,7 +858,7 @@ let accept_loop status listens pipes maxc =
     with
     | Unix.Unix_error((EAGAIN|EWOULDBLOCK),_,_) -> ()
     | exn ->
-       Log.f (fun k -> k "ERROR DURING EPOLL_WAIT: %s" (printexn exn))
+       Log.f (Exc 0) (fun k -> k "Exception during epoll_wait: %s" (printexn exn))
   done
 
 let run ~nb_threads ~listens ~maxc ~timeout ~status handler =
