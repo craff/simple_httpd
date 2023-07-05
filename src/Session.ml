@@ -1,7 +1,6 @@
 open Response_code
-open Async
 
-type session = Async.session
+type t = Async.session
 type session_data = Async.session_data
 
 module LinkedList = Util.LinkedList
@@ -16,7 +15,7 @@ let get_session, delete_session =
   let delete_session sess =
     let session = LinkedList.get sess in
     Mutex.lock mutex_tbl;
-    Hashtbl.remove sessions_tbl session.key;
+    Hashtbl.remove sessions_tbl session.Async.key;
     Mutex.unlock mutex_tbl;
     let fn clients =
       List.iter (fun cl -> Async.set_session cl) clients;
@@ -51,8 +50,8 @@ let get_session, delete_session =
   let get_session ?(session_life_time=3600.0) client key cleanup init =
     Mutex.lock mutex_tbl;
     try
-      match client.session with
-      | Some s ->
+      match client.Async.session with
+      | Some (s : t) ->
          Mutex.unlock mutex_tbl;
          refresh s;
          (s, true)
@@ -78,10 +77,10 @@ let get_session, delete_session =
             let data = Atomic.make (init ()) in
             let now = Unix.gettimeofday () in
             let session_info =
-              { addr; key; clients= Atomic.make [client]
-              ; data; cleanup; cookies = Atomic.make []
-              ; life_time = session_life_time
-              ; last_refresh = now }
+              Async.({ addr; key; clients= Atomic.make [client]
+                       ; data; cleanup
+                       ; life_time = session_life_time
+                       ; last_refresh = now })
             in
             Mutex.lock mutex_list;
             let session = LinkedList.add_first session_info sessions_list in
@@ -108,34 +107,29 @@ let set_session_data (sess : Async.session) data =
   let session = LinkedList.get sess in
   Atomic.set session.data data
 
-let set_session_cookie (sess : Async.session) cname value =
-  let session = LinkedList.get sess in
-  Util.update_atomic session.cookies (
-      fun c -> (cname, value) :: List.filter (fun (n,_) -> n <> cname) c)
-
-let get_session_cookie (sess : Async.session) cname =
-  let session = LinkedList.get sess in
-  List.assoc_opt cname (Atomic.get session.cookies)
-
-let mk_cookies (sess : Async.session) c =
+let mk_cookies (sess : Async.session) filter c =
   let session = LinkedList.get sess in
   let max_age = Int64.of_float session.life_time in
+  let c = List.filter_map
+            (fun (name,c) ->
+              if name = "SESSION_KEY" || name = "SESSION_ADDR" then
+                None
+              else match filter c with
+                   | Some x -> Some (name, x)
+                   | None -> Some (name, Http_cookie.expire c)) c
+  in
   let c = Cookies.create ~name:"SESSION_KEY" ~max_age
             ~same_site:`Strict session.key c in
   let c = Cookies.create ~name:"SESSION_ADDR" ~max_age
             ~same_site:`Strict session.addr c in
-  let c = List.fold_left (fun c (name, value) ->
-              Cookies.create ~name ~max_age
-                ~same_site:`Strict ~http_only:false value c) c
-            (Atomic.get session.cookies)
-  in
   c
 
 let check
       ?(session_life_time=3600.0)
-      ?(init=fun () -> NoData)
+      ?(init=fun () -> (Async.NoData : session_data))
       ?(finalise=fun _ -> ())
       ?(check=fun _ -> true)
+      ?(filter=fun x -> Some x)
       ?(error=(bad_request, [])) req =
   let cookies = Request.cookies req in
   let client = Request.client req in
@@ -156,6 +150,7 @@ let check
                      Http_cookie.value addr = session.addr -> ()
             | (None, None) when cookies = [] -> ()
             | _ -> raise Exit
+            | exception _ -> raise Exit
           end;
           let addr = Util.addr_of_sock client.sock in
           if addr <> session.addr then raise Exit;
@@ -164,15 +159,27 @@ let check
       else
         Cookies.delete_all cookies
     in
-    let cookies = mk_cookies sess cookies in
-    let gn = Response.update_headers
-               (fun h -> Headers.set_cookies cookies h) in
-    (req, gn)
+    (mk_cookies sess filter cookies, sess)
   with Exit ->
     delete_session sess;
     let cookies = Cookies.delete_all cookies in
     let (code, headers) = error in
     Response.fail_raise ~headers ~cookies ~code "session ends"
+
+let _check = check
+
+let filter
+      ?(session_life_time=3600.0)
+      ?(init=fun () -> (Async.NoData : session_data))
+      ?(finalise=fun _ -> ())
+      ?(check=fun _ -> true)
+      ?(filter=fun x -> Some x)
+      ?(error=(bad_request, [])) req =
+  let (cookies, _) = _check ~session_life_time ~init ~finalise ~check ~filter
+                       ~error req in
+  let gn = Response.update_headers
+             (fun h -> Headers.set_cookies cookies h) in
+  (req, gn)
 
 exception NoSession
 

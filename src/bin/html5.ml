@@ -32,10 +32,11 @@ let print_closing name =
   Printf.sprintf "</%s>" (name_to_string name)
 
 type attrs = (name * string) list
+type ml_kind = Global | Prelude | Normal
 type tree_c =
   | Doctype of doctype
   | Element of name * attrs * tree list
-  | Caml of bool * attrs * tree list (* TODO: will we use attributes ? *)
+  | Caml of ml_kind * attrs * tree list (* TODO: will we use attributes ? *)
   | Include of string
   | Text of string list
   | Comment of string
@@ -56,21 +57,27 @@ let is_ml name attrs =
     lower name = "ml" ||
       (lower name = "script" &&
          List.exists (fun (name, value) ->
-             lower name = "type" && (value = "ml" || value = "ml/prelude"))
+             lower name = "type" && (String.starts_with ~prefix:"ml/" value))
            attrs)
   in
-  let is_prelude =
-    List.exists (fun (name, value) ->
-        lower name = "type" && value = "ml/prelude")
-      attrs
+  let ml_kind =
+    if List.exists (fun (name, value) ->
+           lower name = "type" && value = "ml/prelude")
+         attrs
+    then Prelude
+    else if List.exists (fun (name, value) ->
+                lower name = "type" && value = "ml/global")
+              attrs
+    then Global
+    else Normal
   in
-  (is_ml, is_prelude)
+  (is_ml, ml_kind)
 
 let element ~dynamic ~filename ~loc name attrs children =
-  let (is_ml, is_prelude) = is_ml name attrs in
+  let (is_ml, ml_kind) = is_ml name attrs in
   {loc; c =
   if is_ml && dynamic then
-    Caml(is_prelude,attrs,children)
+    Caml(ml_kind,attrs,children)
   else if lower name = "include" && dynamic then
     begin
       match children with
@@ -101,6 +108,7 @@ exception Incomplete
 let trees_to_ocaml ~dynamic ~filename t =
   let buf = Buffer.create 4096 in
   let prelude = ref [] in
+  let global = ref [] in
   let no_prelude = ref false in
   let pr buf fmt = Printf.bprintf buf fmt in
   let of_elems buf top acc =
@@ -156,7 +164,7 @@ let trees_to_ocaml ~dynamic ~filename t =
     | e::stack ->
        match e.c with
        | Include _ -> failwith "include outside caml"
-       | Caml(is_prelude,_, sons) ->
+       | Caml(ml_kind,_, sons) ->
           let hn buf i x =
             newline (if i = 0 then depth else depth + 1);
             match x.c with
@@ -171,11 +179,18 @@ let trees_to_ocaml ~dynamic ~filename t =
                pr buf "%S" (Bytes.unsafe_to_string bytes)
             | _      -> of_elems buf false (fn (depth + 1) [] [x]);
           in
-          if not !no_prelude && is_prelude then
+          if not !no_prelude && ml_kind <> Normal then
             begin
               let buf = Buffer.create 1024 in
               List.iteri (hn buf) sons;
-              prelude := Buffer.contents buf :: !prelude;
+              begin
+                match ml_kind with
+                | Prelude ->
+                   prelude := Buffer.contents buf :: !prelude;
+                | Global ->
+                   global := Buffer.contents buf :: !global;
+                | Normal -> assert false
+              end;
               fn depth acc stack
             end
           else
@@ -198,7 +213,9 @@ let trees_to_ocaml ~dynamic ~filename t =
   in
   of_elems buf true (fold (fun acc x -> fn 0 acc [x]) [] t);
   (*if not !in_html then raise Incomplete;*)
-  (Buffer.contents buf, String.concat "\n" (List.rev !prelude))
+  ( Buffer.contents buf
+  , String.concat "\n" (List.rev !global)
+  , String.concat "\n" (List.rev !prelude))
 
 (*
 let test =

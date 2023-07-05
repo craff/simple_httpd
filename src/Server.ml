@@ -131,21 +131,28 @@ let args () =
   let open Params in
   let open Arg in
   ([
-    "--buf-size", Set_int buf_size, " set the size of the buffer used for input and output (one per client)";
-    "--ktls", Set ktls, " use ktls over ssl";
-    "--log-requests", Set_int log_requests, " log level for requests (default 1)";
-    "--log-exceptions", Set_int log_exceptions, " log level for exceptions (default 1)";
-    "--log-scheduler", Set_int log_scheduler, " log level for scheduler debug (default 0)";
-    "--log-request", Set_int log_requests, " log level for requests (default 1)";
-    "--log-folder", Set_string log_folder, " log folder";
-    "--log-basename", Set_string log_basename, " log basename";
-    "--log-perm", Set_int log_perm, " log permission";
-    "--max-connections", Set_int max_connections, " maximum number of simultaneous connections (default 100)";
-    "-c", Set_int max_connections, " maximum number of simultaneous connections (default 100)";
-    "--nb-threads", Set_int num_threads, " maximum number of threads";
-    "-j", Set_int num_threads, " maximum number of threads";
-    "--timeout", Set_float timeout, " timeout in seconds, connection is closed after timeout second of inactivity (default: -1.0 means no timeout)";
-  ], (module Params : Parameters))
+      ( "--buf-size", Set_int buf_size,
+        " set the size of the buffer used for input and output (one per client)");
+      ( "--ktls", Set ktls, " use ktls over ssl (default false)");
+      ( "--log-requests", Set_int log_requests,
+        " log level for requests (default 1)");
+      ( "--log-exceptions", Set_int log_exceptions,
+        " log level for exceptions (default 1)");
+      ( "--log-scheduler", Set_int log_scheduler,
+        " log level for scheduler debug (default 0)");
+      ( "--log-folder", Set_string log_folder, " log folder (default none)");
+      ( "--log-basename", Set_string log_basename,
+        " log basename (default basename of argv[0])");
+      ( "--log-perm", Set_int log_perm, " log permission (default 0o700)");
+      ( "--max-connections", Set_int max_connections,
+        " maximum number of simultaneous connections (default 32)");
+      ( "-c", Set_int max_connections, " same as --max-connections");
+      ( "--nb-threads", Set_int num_threads,
+        " maximum number of threads (default nbcore - 1)");
+      ( "-j", Set_int num_threads, " same as --nb-threads");
+      ( "--timeout", Set_float timeout,
+        " timeout in seconds, connection is closed after timeout second of inactivity (default: 32)");
+    ], (module Params : Parameters))
 
 let create ?(listens = [Address.make ()]) (module Params : Parameters) =
   let open Params in

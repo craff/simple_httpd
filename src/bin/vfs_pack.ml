@@ -24,6 +24,9 @@ let read_file filename =
   close_in ic;
   Buffer.contents buf
 
+let log k =
+  if !verbose then k (Printf.kfprintf (fun ch -> Printf.fprintf ch "\n%!") stderr)
+
 let split_comma s = Scanf.sscanf s "%s@,%s" (fun x y -> x,y)
 
 let ( // ) = Filename.concat
@@ -74,7 +77,7 @@ let emit ~perm ?max_size ?destination oc (l:entry list) : unit =
 
   let rec add_entry = function
     | File (html, vfs_path, actual_path) ->
-      if !verbose then Printf.eprintf "add file %S = %S\n%!" vfs_path actual_path;
+      log (fun k -> k  "add file %S = %S" vfs_path actual_path);
       begin
         try
           let content =
@@ -82,8 +85,8 @@ let emit ~perm ?max_size ?destination oc (l:entry list) : unit =
               begin
                 let ch = open_in actual_path in
                 let filename = actual_path in
-                Printf.eprintf "parsing %s\n%!" filename;
-                let (ml, _) =
+                log (fun k -> k "parsing %s" filename);
+                let (ml, _, _) =
                   Markup.channel ch |> Html5.parse_html ~dynamic:false ~filename
                   |> Html5.trees_to_ocaml ~dynamic:false ~filename
                 in
@@ -101,7 +104,7 @@ let emit ~perm ?max_size ?destination oc (l:entry list) : unit =
     | Path (_html, vfs_path, actual_path, store_path) ->
        let actual_path = actual_path // vfs_path in
        let disk_path = store_path // vfs_path in
-       if !verbose then Printf.eprintf "add path %S = %S in %S\n%!" vfs_path actual_path disk_path;
+       log (fun k -> k "add path %S = %S in %S" vfs_path actual_path disk_path);
        if disk_path <> actual_path then
          if Sys.command (spf "cp %s %s" actual_path disk_path) <> 0
          then failwith
@@ -121,16 +124,16 @@ let emit ~perm ?max_size ?destination oc (l:entry list) : unit =
        add_vfs_path vfs_path ~mtime ~mime zpath
 
     | MlHtml(vfs_path, actual_path) ->
-       if !verbose then Printf.eprintf "add mlhtml %S = %S\n%!" vfs_path actual_path;
+       log (fun k -> k "add mlhtml %S = %S" vfs_path actual_path);
        let ch = open_in actual_path in
        let filename = actual_path in
        (try
-         let (ml, prelude) =
+         let (ml, global, prelude) =
            Markup.channel ch |> Html5.parse_html ~dynamic:true ~filename
            |> Html5.trees_to_ocaml ~dynamic:true ~filename
          in
          fpf oc
-         "let () = (Dir.Embedded_fs.add_dynamic embedded_fs \n  \
+         "%s let () = (Dir.Embedded_fs.add_dynamic embedded_fs \n  \
           ~path:%S ~headers:[Headers.Content_Type, \"text/html\"]
           (fun request headers ->
              let module M = struct
@@ -144,11 +147,11 @@ let emit ~perm ?max_size ?destination oc (l:entry list) : unit =
                  ignore echo;
                  let module M = struct %s end in
                  ()) in
-             ( headers, cookies, input )))\n%!" vfs_path prelude ml
+             ( headers, cookies, input )))\n%!" global vfs_path prelude ml
        with Html5.Incomplete -> () (* no doctype *))
 
     | Url (vfs_path, url) ->
-      if !verbose then Printf.eprintf "add url %S = %S\n%!" vfs_path url;
+      log (fun k -> k "add url %S = %S" vfs_path url);
 
       begin match Curly.get ~args:["-L"] url with
         | Ok b ->
@@ -165,7 +168,7 @@ let emit ~perm ?max_size ?destination oc (l:entry list) : unit =
       end
 
     | Mirror (vfs_path, dir) ->
-      if !verbose then Printf.eprintf "mirror directory %S as %S\n%!" dir vfs_path;
+      log (fun k -> k "mirror directory %S as %S" dir vfs_path);
       let store = match destination with
         | None -> dir
         | Some d -> d
@@ -173,14 +176,10 @@ let emit ~perm ?max_size ?destination oc (l:entry list) : unit =
       let rec traverse vfs_path =
         let real_path = dir // vfs_path in
         let store_path = store // vfs_path in
-        Printf.eprintf "traverse %s %s\n%!" real_path store_path;
         if Sys.is_directory real_path then (
           if not (Sys.file_exists store_path && Sys.is_directory store_path) then
             Sys.mkdir store_path perm;
           let arr = Sys.readdir real_path in
-          Printf.eprintf "readdir %s => " real_path;
-          Array.iter (fun s -> Printf.eprintf "  %s" s) arr;
-          Printf.eprintf "\n%!";
           Array.iter (fun e -> traverse (vfs_path // e)) arr
         ) else (
           let basename = Filename.basename vfs_path in
@@ -212,7 +211,7 @@ let emit ~perm ?max_size ?destination oc (l:entry list) : unit =
       traverse ""
 
     | Source_file f ->
-      if !verbose then Printf.eprintf "read source file %S\n%!" f;
+      log (fun k -> k "read source file %S" f);
 
       let lines =
         read_file f |> String.split_on_char '\n'

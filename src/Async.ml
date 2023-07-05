@@ -62,7 +62,6 @@ and session_info =
   ; data : session_data Atomic.t
   ; cleanup : session_data -> unit
   ; mutable last_refresh : float (* protected by mutex_list in Session.ml *)
-  ; cookies : (string * string) list Atomic.t
   }
 
 and session = session_info Util.LinkedList.cell
@@ -858,7 +857,8 @@ let accept_loop status listens pipes maxc =
     with
     | Unix.Unix_error((EAGAIN|EWOULDBLOCK),_,_) -> ()
     | exn ->
-       Log.f (Exc 0) (fun k -> k "Exception during epoll_wait: %s" (printexn exn))
+       (** normal if client close connection brutally? *)
+       Log.f (Exc 1) (fun k -> k "Exception during epoll_wait: %s" (printexn exn))
   done
 
 let run ~nb_threads ~listens ~maxc ~timeout ~status handler =

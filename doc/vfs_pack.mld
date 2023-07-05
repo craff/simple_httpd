@@ -15,13 +15,13 @@ Here is an example of `.chaml` included in the distribution:
 {[
 <!DOCTYPE html>
 <html>
-  <ML prelude="true">
-    let count = try Request.get_cookie_int request "count"
-                with Not_found -> 0
-    let cookies = Cookies.(create ~max_age:3600L ~same_site:`Strict
-                        ~name:"count"  (string_of_int (count+1)) cookies)
-  </ML>
   <head>
+    <script type="ml/prelude">
+      let count = try Request.get_cookie_int request "count"
+                  with Not_found -> 0
+      let cookies = Cookies.(create ~max_age:3600L ~same_site:`Strict
+                               ~name:"count"  (string_of_int (count+1)) cookies)
+    </script>
   </head>
   <body>
     <h1>dynamic hello!</h1>
@@ -51,34 +51,60 @@ As you can see, some defect of php are avoided: no quote/double every where.
 
 There are four ways to insert ocaml code:
 
-- In all [<ML>...</ML>] sections [Simple_httpd] is open, the value [request :]
-  {!Simple_httpd.Request.t} is accessible.
+- In all [<ML>...</ML>] or [<script type="ml">...</script>] sections
+  correspond to OCaml code. In this code [Simple_httpd] is open, the value
+  [request :] {!Simple_httpd.Request.t} is accessible.
 
-- [<ML>...</ML>] sections which are not inside other [<ML>...</ML>] sections
-  are compiled as toplevel expression. You may define type, values, ...  In
-  these sections and you can use [echo] and [printf] provided automatically by
-  opening a module of type {!Simple_httpd.Input.Output} if they are not
-   "prelude" section.
+- OCaml sections which are not inside others are compiled as toplevel
+  expressions. You may define type, values, ...  In these sections and you can
+  use [echo] and [printf] provided automatically by opening a module of type
+  {!Simple_httpd.Input.Output} if they are not "prelude" section.
 
-- Some [<ML prelude="true">...</ML>] section can be added inside the [<html>]
-  tag but before the [<head>] or any other [<ML>] tag. they are executed
-  before any output is done to the server and and may update two values
-  [headers :] {!Simple_httpd.Headers.t} initialy empty and [cookies :]
+- Some [<script type="ml/prelude">...</script>] section can be added inside
+  the [<head>] tag but before any other OCaml sections. they are executed
+  before any output is done to the server and may shadow two values [headers
+  :] {!Simple_httpd.Headers.t} initialy empty and [cookies :]
   {!Simple_httpd.Cookies.t} that contain an initical
-  {!Simple_httpd.Headers.Cache_Control} or
-  {!Simple_httpd.Headers.ETag}. For instance, this allows to start a
-  {!Simple_httpd.Session} holding a counter. Values defined in this section
-  are part of a `Prelude` module which is open in the rest of the file.
+  {!Simple_httpd.Headers.Cache_Control} or {!Simple_httpd.Headers.ETag}. For
+  instance, this allows to read and modify cookies or start a
+  {!Simple_httpd.Session}.  Values defined in this section are part of a
+  `Prelude` module which is opened in the rest of the file.
+
+- Some [<script type="ml/global">...</script>] section can alse be added inside
+  inside the [<head>] tag, they are placed at the top level of the generated ml
+  file. This is usefull for instance to extend the [Async.session_data] type.
+  Here is an example using session:
+
+  {[
+  <!DOCTYPE html>
+  <html>
+  <head>
+    <script type="ml/global">
+      type Async.session_data += Count of int
+    </script>
+    <script type="ml/prelude">
+      let cookies, session = Session.check ~init:(fun _ -> Count 0) request
+      let count =
+        match Session.get_session_data session with
+        | Count n -> n
+        | _ -> -12
+        | exception Not_found -> -100
+      let _ = Session.set_session_data session (Count (count+1))
+    </script>
+  </head>
+  <body>
+  ...
+  ]}
 
 - In tag attributes one may use `name="$expression"` to evaluate the
    attribute using Ocaml. Use "\$..." if you want an attribute starting with
-   a question mark. This is limited to ocaml expression without double quote.
+   a dollar sign. This is limited to ocaml expression without double quote.
    Use [ {|...|} ] alternative syntax for string.
 
-- Inside [`<ML>...</ML>`] sections, html sections are interpreted as ocaml
+- Inside OCaml sections, html sections are interpreted as ocaml
    strings.
 
-- Nested [<ML>..</ML>`] are compiled as normal ocaml texts.
+- Nested OCaml are compiled as normal ocaml code with no modification.
   For instance, in the above example,
 
 {[

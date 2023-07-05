@@ -741,12 +741,19 @@ end
 
 (** Module to handle session data *)
 module Session : sig
-  (** This module allows to mange session which are common to several client
+  (** This module allows to manage sessions which are common to several clients
       and can survive a deconnection of the clients. This does not provide
       any form of authentication, but it is easy to use them to implement
-      authentication. *)
+      authentication.
 
-  type session
+      It is recommended to create session only for authenticated connection:
+      sessions require some memory (around 100 bytes) on the server, and if
+      you have a session life time of one hour, an attaquant could exhaust
+      available memory. Unauthenticated session with a short life comparable
+      to the connection timeout could be acceseptable, as clients also uses
+      some memory. *)
+
+  type t
   (** type for session *)
 
   type session_data = Async.session_data
@@ -762,48 +769,60 @@ module Session : sig
       - {!Mutex.t} to protect the above.
    *)
 
-  val check : ?session_life_time:float ->
-              ?init:(unit -> session_data) ->
-              ?finalise:(session_data -> unit) ->
-              ?check:(session -> bool) ->
-              ?error:(Response_code.t*Headers.t) ->
-              'a Filter.t
-  (** Check or create a new session. This is a filter!
+  val check: ?session_life_time:float ->
+            ?init:(unit -> session_data) ->
+            ?finalise:(session_data -> unit) ->
+            ?check:(t -> bool) ->
+            ?filter:(Http_cookie.t -> Http_cookie.t option) ->
+            ?error:(Response_code.t*Headers.t) ->
+            'a Request.t -> Cookies.t * t
+   (** Check or create a new session and add the session cookies to the
+       cookie of the request. This can fail if
+       - the session cookie is changed
+       - the ip address changes
+       - the function check returns false
+
+       If it fails, all cookies in the request are expired by the resposne sent.
 
       @param session_life_time: session are destroyed if not accessed after
         this time.
       @param initial value for the session data (default: NoData)
       @param finalise function called on the session data when it is detroyed.
       @param check some extra check, the session will be destroy if it fails.
+      @param filter this parameter is called on all request cookies.  If the
+        filter return None, the cookie is expired. The default is to keep all
+        cookies unchanged. The session cookies named ["SESSION_KEY"] and
+        ["SESSION_ADDR"] are not passed to the filter.
       @param error status code and hadears to send in case of error. Can
-        be used to redirect to a login or error page *)
+        be used to redirect to a login or error page. *)
 
-  (** get the client session. The session must have been initialized with [check]
-      otherwise NoSession may be raised *)
-  val get_session : 'a Request.t -> session
+  val filter : ?session_life_time:float ->
+            ?init:(unit -> session_data) ->
+            ?finalise:(session_data -> unit) ->
+            ?check:(t -> bool) ->
+            ?filter:(Http_cookie.t -> Http_cookie.t option) ->
+            ?error:(Response_code.t*Headers.t) ->
+            'a Filter.t
+  (** Same as above as a filter. The cookies are added to the response. *)
+
+(** get the client session. The session must have been initialized with [check]
+      otherwise [NoSession] may be raised *)
+  val get_session : 'a Request.t -> t
   exception NoSession
 
   (** get the session data from a session *)
-  val get_session_data : session -> session_data
+  val get_session_data : t -> session_data
 
   (** update the session data *)
-  val set_session_data : session -> session_data -> unit
+  val set_session_data : t -> session_data -> unit
 
   (** update the session data and compute a new value at once *)
   val do_session_data :
-    session -> (session_data -> 'a * session_data) -> 'a
-
-  (** get a session cookie *)
-  val get_session_cookie : session -> string -> string option
-
-  (** set a session cookie *)
-  val set_session_cookie : session -> string -> string -> unit
+    t -> (session_data -> 'a * session_data) -> 'a
 
   (** remove all server side session information *)
-  val delete_session : session -> unit
+  val delete_session : t -> unit
 
-(** TODO: different life time if there is live client attached to the
-    session. *)
 end
 
 (** Some HTML combinators *)
@@ -841,20 +860,79 @@ module Server : sig
 
   module type Parameters = sig
     val max_connections : int ref
+    (** Maximum number of simultaneous connections (default: 32). Remember
+        that because of timeout, a lot of connections car remain opened. *)
+
     val num_threads : int ref
+    (** Number of system thread (ocaml domains) treating request. One more
+        thread is used to accept connection. The default is
+        [Domain.recommended_domain_count () - 1)]*)
+
     val timeout : float ref
+    (** Timeout before closing a connection in case of inactivity (default
+        300s = 5m). Currently timeout is only in to set socket option
+        SO_RCVTIMEO and SO_SNDTIMEO. Small timeout and the capacity of
+        Simple_httpd to handle many request should mitigate "slow lorris"
+        attacks. A timeout for the total request, or something else time
+        could be added in the future for better defense. *)
+
     val buf_size : int ref
+    (** Initial size of the buffer allocated by each client to parse request *)
+
     val ktls : bool ref
+    (** If true, use kerner tls supprot for ssl connection when available *)
 
     val log_requests : int ref
+    (** log level for requests information *)
+
     val log_exceptions : int ref
+    (** log level for exceptions *)
+
     val log_scheduler : int ref
+    (** log level to debug the scheduler *)
+
     val log_folder : string ref
+    (** if non empty, one log per domain will be written in the given
+        folder. The filename of the log is [log_basename-domainid.log]. Log
+        are recreated if deleted while the server is running to be compatible
+        with logrotate. *)
+
     val log_basename : string ref
+    (** basename for the log file (see above. default: [Filename.basename
+        Sys.argv[0]]. *)
+
     val log_perm : int ref
+    (** permission when creating log files and folder (default 0o700). *)
   end
 
   val args : unit -> (Arg.key * Arg.spec * Arg.doc) list * (module Parameters)
+  (** The defaut command line options. The idea is that all server using
+      Simple_httpd would share a common options set, making it easier to
+      use.
+
+      [args ()] returns a spec list suitable for OCaml's Arg module with a
+      module of type {!Parameters} whose references will be modified when parsing
+      the options.
+
+      The value of args corresponds to the following options:
+      {[
+  --buf-size         set the size of the buffer used for input and output (one per client) (default 32ko)
+  --ktls             use ktls over ssl (default false)
+  --log-requests     log level for requests (default 1)
+  --log-exceptions   log level for exceptions (default 1)
+  --log-scheduler    log level for scheduler debug (default 0)
+  --log-folder       log folder (default none)
+  --log-basename     log basename (default basename of argv[0])
+  --log-perm         log permission (default 0o700)
+  --max-connections  maximum number of simultaneous connections (default 32)
+  -c                 maximum number of simultaneous connections (default 32)
+  --nb-threads       maximum number of threads (default
+  -j                 maximum number of threads
+  --timeout          timeout in seconds, connection is closed after timeout second of inactivity (default: 300)
+  -help              Display this list of options
+  --help             Display this list of options
+      ]}
+   *)
 
   val create :  ?listens:Address.t list -> (module Parameters) -> t
   (** Create a new webserver.
