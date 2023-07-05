@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <script type="ml/global">
+      type Async.session_data += Count of int
+    </script>
+    <script type="ml/prelude">
+      let cookies, session = Session.check ~init:(fun _ -> Count 0) request
+      let count =
+	match Session.get_session_data session with
+	| Count n -> n
+	| _ -> -12
+        | exception Not_found -> -100
+      let _ = Session.set_session_data session (Count (count+1))
+    </script>
+  </head>
+  <body>
+    <h1>dynamic hello!</h1>
+    <ul>
+      <li> item 1 </li>
+      <li> item 2 </li>
+      <li> item 3 </li>
+      <li> item 4 </li>
+      <li> views: <ML>
+	  let _ = echo (string_of_int count);;
+	  let _ = echo (if count mod 2 = 0 then
+ 	                  <p>even (<ML> ^ string_of_int count ^ </ML>)</p>
+	                else <p>odd</p>)
+	</ML>
+      </li>
+    </ul>
+    <a href="."> escape from this file </a>
+    <br/>
+    request: <ML>
+      let _ = printf "%a" Request.pp request
+    </ML>
+  </body>
+</html>
