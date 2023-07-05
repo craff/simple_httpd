@@ -155,7 +155,7 @@ Use cases might include:
 
 ## Documentation
 
-See https://craff.github.io/simple_httpd
+See https://raffalli.eu/simple_httpd/simple_httpd
 
 ## License
 

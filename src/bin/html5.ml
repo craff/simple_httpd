@@ -18,7 +18,7 @@ let print_tag name attributes =
              if len > 0 && value.[0] = '$' then
                let s = String.sub value 1 (len - 1) in
                args := s :: !args;
-               "%S"
+               "%s"
              else if len > 1 && value.[0] = '\\' && value.[1] = '$' then
                String.sub value 1 (len - 1)
              else value
@@ -57,7 +57,7 @@ let is_ml name attrs =
     lower name = "ml" ||
       (lower name = "script" &&
          List.exists (fun (name, value) ->
-             lower name = "type" && (String.starts_with ~prefix:"ml/" value))
+             lower name = "type" && (value="ml" || String.starts_with ~prefix:"ml/" value))
            attrs)
   in
   let ml_kind =

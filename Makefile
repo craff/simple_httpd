@@ -18,12 +18,9 @@ clean:
 doc:
 	@dune build @doc
 
-.PHONY: send_doc
-send_doc: doc
-	rsync -r _build/default/_doc/_html/ ~/WWW/
-	rsync -r tests/small.png tests/big.png ~/WWW/
-	rsync -r _build/default/_doc/_html/ my:WWW/simple_httpd/
-	rsync -r tests/small.png tests/big.png my:WWW/simple_httpd/
+.PHONY: install_doc
+install_doc: doc
+	rsync -r _build/default/_doc/_html/ ~/WWW2/main/simple_httpd
 
 .PHONY: install
 install: build
