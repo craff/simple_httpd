@@ -1,5 +1,6 @@
 type t
-type session_data = Async.session_data
+type session_data = Async.session_data = ..
+type session_data += NoData
 
 (** Managment of sessions using cookies *)
 

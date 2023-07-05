@@ -20,7 +20,7 @@ doc:
 
 .PHONY: install_doc
 install_doc: doc
-	rsync -r _build/default/_doc/_html/ ~/WWW2/main/simple_httpd
+	rsync -r _build/default/_doc/_html/ ~/WWW2/main/simple_httpd/
 
 .PHONY: install
 install: build

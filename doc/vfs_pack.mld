@@ -1,14 +1,15 @@
 {0 Vfs_pack web site compiler}
 
-vfs_pack is a binary too that will compile your website to a ML site that
-can ve used with {!Simple_httpd.Dir.add_vfs}. It will
+The binary [vfs_pack], provided with [Simple_httpd], will compile your website to
+a ML module of type {!Simple_httpd.Dir.VFS} that can be used with
+{!Simple_httpd.Dir.add_vfs}. It will
 
-- compile a directory structure to a list of Route (see {!Simple_httpd.Route},
-- It can be configured to allow directory listing or redirection to `index.html`,
-- Large files are not compiled into memory and may be installed in a separate
-  directory
-- precompiled version of large file (with deflate a.k.a zlib) can be stored too.
-- dynamic `.chaml` can be used to produce dynamic pages.
+- compile a directory structure to a list of Route (see {!Simple_httpd.Route}),
+- it can be configured to allow directory listing or redirection to [index.html],
+- large files are not stored into memory but may be installed in a separate
+  directory,
+- precompressed version of file (with deflate a.k.a zlib) can be stored too.
+- dynamic [.chaml] can be used to produce dynamic pages.
 
 Here is an example of `.chaml` included in the distribution:
 
@@ -30,49 +31,49 @@ Here is an example of `.chaml` included in the distribution:
       <li> item 2 </li>
       <li> item 3 </li>
       <li> item 4 </li>
-      <li> views: <ML>
+      <li> views: <script type="ml">
 	  let _ = echo (string_of_int count);;
 	  let _ = echo (if count mod 2 = 0 then
  	                  <p>even (<ML> ^ string_of_int count ^ </ML>)</p>
 	                else <p>odd</p>)
-	</ML>
+	</script>
       </li>
     </ul>
     <a href="."> escape from this file </a>
     <br/>
-    request: <ML>
+    request: <script type="ml">
       let _ = printf "%a" Request.pp request
-    </ML>
+    </script>
   </body>
 </html>
 ]}
 
-As you can see, some defect of php are avoided: no quote/double every where.
+As you can see, some defect of php are avoided: no quote everywhere.
 
 There are four ways to insert ocaml code:
 
-- In all [<ML>...</ML>] or [<script type="ml">...</script>] sections
+- In all [<script type="ml">...</script>] sections
   correspond to OCaml code. In this code [Simple_httpd] is open, the value
   [request :] {!Simple_httpd.Request.t} is accessible.
 
 - OCaml sections which are not inside others are compiled as toplevel
   expressions. You may define type, values, ...  In these sections and you can
-  use [echo] and [printf] provided automatically by opening a module of type
-  {!Simple_httpd.Input.Output} if they are not "prelude" section.
+  use [echo] and [printf] provided because a module of type
+  {!Simple_httpd.Input.Output} is open if they are not "prelude" section.
 
 - Some [<script type="ml/prelude">...</script>] section can be added inside
   the [<head>] tag but before any other OCaml sections. they are executed
   before any output is done to the server and may shadow two values [headers
-  :] {!Simple_httpd.Headers.t} initialy empty and [cookies :]
-  {!Simple_httpd.Cookies.t} that contain an initical
+  :] {!Simple_httpd.Headers.t} initially empty and [cookies :]
+  {!Simple_httpd.Cookies.t} that contain an initial
   {!Simple_httpd.Headers.Cache_Control} or {!Simple_httpd.Headers.ETag}. For
   instance, this allows to read and modify cookies or start a
   {!Simple_httpd.Session}.  Values defined in this section are part of a
   `Prelude` module which is opened in the rest of the file.
 
-- Some [<script type="ml/global">...</script>] section can alse be added inside
+- Some [<script type="ml/global">...</script>] section can also be added inside
   inside the [<head>] tag, they are placed at the top level of the generated ml
-  file. This is usefull for instance to extend the [Async.session_data] type.
+  file. This is useful for instance to extend the [Async.session_data] type.
   Here is an example using session:
 
   {[
@@ -104,7 +105,7 @@ There are four ways to insert ocaml code:
 - Inside OCaml sections, html sections are interpreted as ocaml
    strings.
 
-- Nested OCaml are compiled as normal ocaml code with no modification.
+- Nested OCaml sections are emitted as ocaml code with no modification.
   For instance, in the above example,
 
 {[
@@ -116,7 +117,7 @@ There are four ways to insert ocaml code:
 	</ML>
 ]}
 
-is compiled as
+is transformed to
 
 {[
   let _ = echo (if n mod 2 = 0 then
@@ -124,26 +125,26 @@ is compiled as
 	          else "<li>odd</li>")
 ]}
 
-Here is the documentation of the `vfs_pack` command line:
+Here is the documentation of the [vfs_pack] command line:
 
 {[
 vfs-pack [opt]+
 
-Builds an OCaml module containing a `Simple_httpd.Dir.Embedded_fs.t`
+Builds an OCaml module containing a {!Simple_httpd.Dir.Embedded_fs.t}
 virtual file system. This is useful to pack assets into an OCaml binary,
 for example.
 
 Each entry in the VFS can be added from the command line.
 
   -v             verbose mode
-  -o             set output file
+  -o             <file> set output file
   --file         <name,file> adds name=file to the VFS
   --url          <name,url> adds name=url to the VFS
-  --mirror       <prefix,dir> copies directory dir into the VFS under prefix
-  --max-size     <size>, max size to hold file in memory (default: infinite). Bigger filed are copie to the folder given by --desination. A compressed version .zlib is also produced.
-  --destination  set the destination folder to use with mirror
-  --perm         set the permission of created folder
-  -F             <file> reads entries from the file, on per line written using this command line option syntax.
+  --mirror       <prefix,dir> adds prefix=dir to the vfs, copying all files in directory dir
+  --max-size     <size>, max size to hold file in memory (default: infinite). Bigger filed are copied to the folder given by --destination. A compressed version .zlib is also produced if it is at least 10% smaller.
+  --destination  <dir> set the destination folder to use with mirror
+  --perm         <int> set the permission of created folder
+  -F             <file> reads entries from the file, written using this command line option syntax.
   -help          Display this list of options
   --help         Display this list of options
 ]}

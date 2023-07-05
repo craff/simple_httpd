@@ -1,7 +1,9 @@
 open Response_code
 
 type t = Async.session
-type session_data = Async.session_data
+
+type session_data = Async.session_data = ..
+type session_data += NoData = Async.NoData
 
 module LinkedList = Util.LinkedList
 

@@ -9,7 +9,6 @@ type entry =
   | Url of string * string
   | Path of bool * string * string * string
   | Mirror of string * string
-  | Source_file of string
   | MlHtml of string * string
 
 let read_file filename =
@@ -210,23 +209,6 @@ let emit ~perm ?max_size ?destination oc (l:entry list) : unit =
       in
       traverse ""
 
-    | Source_file f ->
-      log (fun k -> k "read source file %S" f);
-
-      let lines =
-        read_file f |> String.split_on_char '\n'
-        |> List.map String.trim
-        |> List.filter ((<>) "")
-      in
-
-      let process_line line =
-        let vfs_path, path = split_comma line in
-        if is_url path then add_entry (Url(vfs_path, path))
-        else add_entry (Mirror (vfs_path, path))
-      in
-
-      List.iter process_line lines
-
   in
   List.iter add_entry l;
 
@@ -261,28 +243,37 @@ let () =
     let vfs_path, path = split_comma s in
     let vfs_path, path = if path="" then "", vfs_path else vfs_path, path in
     add_entry (Mirror (vfs_path, path))
-  and add_source f = add_entry (Source_file f)
   and add_url s =
     let vfs_path, path = split_comma s in
     if is_url path then add_entry (Url(vfs_path, path))
     else invalid_arg (spf "--url: invalid URL %S" path)
   in
 
-  let opts = [
+  let rec opts = lazy ([
     "-v", Arg.Set verbose, " verbose mode";
-    "-o", Arg.Set_string out, " set output file";
+    "-o", Arg.Set_string out, " <file> set output file";
     "--file", Arg.String add_file, " <name,file> adds name=file to the VFS";
     "--url", Arg.String add_url, " <name,url> adds name=url to the VFS";
-    "--mirror", Arg.String add_mirror, " <prefix,dir> copies directory dir into the VFS under prefix";
-    "--max-size", Arg.Set_int max_size, " <size>, max size to hold file in memory (default: infinite). Bigger filed are copie to the folder given by --desination. A compressed version .zlib is also produced.";
+    "--mirror", Arg.String add_mirror, " <prefix,dir> adds prefix=dir to the vfs, copying all files in directory dir";
+    "--max-size", Arg.Set_int max_size, " <size>, max size to hold file in memory (default: infinite). Bigger filed are copied to the folder given by --destination. A compressed version .zlib is also produced if it is at least 10% smaller.";
     ("--destination", Arg.String (fun s -> destination := Some s),
-     " set the destination folder to use with mirror");
+     " <dir> set the destination folder to use with mirror (default the same as dir)");
     ("--perm", Arg.Set_int perm,
-     " set the permission of created folder");
-    ("-F", Arg.String add_source,
-     " <file> reads entries from the file, on per line written using this command line option syntax.");
-  ] |> Arg.align in
-  Arg.parse opts (fun _ -> raise (Arg.Help "no positional arg")) help;
+     " <int>set the permission of created folder");
+    ("-F", Arg.String parse_source,
+     " <file> reads entries from the file, written using this command line option syntax.");
+  ] |> Arg.align)
+
+  and parse args =
+    let opts = Lazy.force opts in
+    Arg.parse_argv ~current:(ref 0) args opts (fun _ -> raise (Arg.Help "no positional arg")) help
+
+  and parse_source f =
+      log (fun k -> k "read source file %S" f);
+      let args = Arg.read_arg f in
+      parse args
+  in
+  parse Sys.argv;
 
   let out, close =
     if !out="" then stdout,ignore

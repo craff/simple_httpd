@@ -2,7 +2,7 @@
 <html>
   <head>
     <script type="ml/global">
-      type Async.session_data += Count of int
+      type Session.session_data += Count of int
     </script>
     <script type="ml/prelude">
       let cookies, session = Session.check ~init:(fun _ -> Count 0) request

@@ -89,9 +89,6 @@ module Async : sig
       be identified as one session using session cookies.
    *)
 
-  type session_data = ..
-  type session_data += NoData
-
   (** Connection status. Holds the number of clients per domain.  *)
   type status = {
       nb_connections : int Atomic.t array
@@ -756,7 +753,8 @@ module Session : sig
   type t
   (** type for session *)
 
-  type session_data = Async.session_data
+  type session_data = ..
+  type session_data += NoData
   (** This type is an extensible variant that you can extend to hold some data
       which resides in the server memory.  These data will be lost if the
       server reboots.
