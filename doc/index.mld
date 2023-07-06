@@ -3,15 +3,15 @@
 This library implements a HTTP/1.1 server for Linux using domains and
 algebraic effect. It uses [epoll] and [eventfd] to schedule the treatment of
 clients efficiently, with one domain used to accept request and several
-domains to handle these requests. ̀Simple_httpd` can listen to several adresses
-and ports and use this information together with the headers `Host` field to
+domains to handle these requests. [Simple_httpd] can listen to several adresses
+and ports and use this information together with the headers [Host] field to
 decide how to answer the request. It is relatively fast and can handle
-thousands of simultaneous connections, because if uses then `sendfile` system
-call and other TCP options to gain efficiency.
+thousands of simultaneous connections. If uses memory cache, [sendfile] system
+call and other TCP options to reach an efficiency comparable or better than nginx on static files.
 
-Through a bunch of modules, described here {!Simple_httpd} it provides:
+Through a bunch of modules, described here {!Simple_httpd}, we provide:
 
-- Routing, by address, port, module and url.
+- Routing, by address, port, host and url path.
 
 - Handling of static files possibly using a memory cache or a virtual file system.
 
@@ -23,61 +23,41 @@ Through a bunch of modules, described here {!Simple_httpd} it provides:
 - A {!Simple_httpd.Host} module dedicated to write single server handling
   several sites.
 
-- A {{:./vfs_pack.html}web site compiler `vfs_pack`}.
+- A {{:./vfs_pack.html}web site compiler vfs_pack}.
 
-- {{:./vfs_pack.html}`vfs_pack`} includes an equivalent of php files that are
-  compiled to OCaml.
+- {{:./vfs_pack.html}vfs_pack} includes an equivalent of php files that are
+  compiled to OCaml, but much faster than php (and also safer).
 
-- Pretty fast: Here are some curves showing the performance on static files
+- It is pretty fast: Here are some curves showing the performance on static files
 compared to nginx and apache:
 
-{%html: <p align="center"><img src="https://raffalli.eu/simple_httpd/small.png" alt="comparison for small files"/></p>%}
+{%html: <p align="center"><img src="https://raffalli.eu/simple_httpd/bench/small.png" alt="comparison for small files"/></p>%}
 
-{%html: <p align="center"><img src="https://raffalli.eu/simple_httpd/big.png" alt="comparison for large files"/></p>%}
+{%html: <p align="center"><img src="https://raffalli.eu/simple_httpd/bench/big.png" alt="comparison for large files"/></p>%}
 
 On the above graphs,
-- [sh_cc] is for {!Simple_httpd.Dir.add_vfs} using {{:./vfs_pack.html}`vfs_pack`}
+- [sh_cc] is for {!Simple_httpd.Dir.add_vfs} using {{:./vfs_pack.html} vfs_pack}
 - [sh_dir] is for {!Simple_httpd.Dir.add_dir_path}
 - [sh_ssl] is like [sh_dir] under ssl
 - [apache] and [nginx] are the usual servers with their defaut configuration on
   debian 12 except for accepting more connections than the default.
 
-Here is an histogram showing the difference between [.php] and [.chaml] on a similar file. It is obtained using {{:https://github.com/tsenart/vegeta} vegeta} with 1000 requests per seconds for 2 minutes. It is worst noticing the stability of [Simple_httpd] compared to [php]. Here is the result with {!Simple_httpd.Dir.add_vfs} using {{:./vfs_pack.html}`vfs_pack`}:
-{[
-Bucket           #      %       Histogram
-[0s,     100µs]  0      0.00%
-[100µs,  200µs]  2983   2.49%   #
-[200µs,  300µs]  50127  41.77%  ###############################
-[300µs,  400µs]  62521  52.10%  #######################################
-[400µs,  500µs]  2502   2.08%   #
-[500µs,  750µs]  1485   1.24%
-[750µs,  1ms]    344    0.29%
-[1ms,    2ms]    36     0.03%
-[2ms,    3ms]    0      0.00%
-[3ms,    4ms]    1      0.00%
-[4ms,    5ms]    1      0.00%
-[5ms,    +Inf]   0      0.00%
-]}
-And a similar php files using the standard configuration of php 8.2 and apache under debian 12:
-{[
-Bucket           #      %       Histogram
-[0s,     100µs]  0      0.00%
-[100µs,  200µs]  0      0.00%
-[200µs,  300µs]  8      0.01%
-[300µs,  400µs]  384    0.32%
-[400µs,  500µs]  824    0.69%
-[500µs,  750µs]  93195  77.66%  ##########################################################
-[750µs,  1ms]    19514  16.26%  ############
-[1ms,    2ms]    4410   3.67%   ##
-[2ms,    3ms]    185    0.15%
-[3ms,    4ms]    90     0.07%
-[4ms,    5ms]    64     0.05%
-[5ms,    1s]     927    0.77%
-[1s,     5s]     64     0.05%
-[5s,     10s]    263    0.22%
-[10s,    1m0s]   72     0.06%
-[1m0s,   +Inf]   0      0.00%
-]}
+Here is a graph showing the difference between [.php] and [.chaml] on a
+similar file. It shows that simple_httpd can serve more than 5 times more requests.
+
+{%html: <p align="center"><img src="https://raffalli.eu/simple_httpd/bench/chaml.png" alt="comparison chaml versus php"/></p>%}
+
+Here is a plot of the latency obtained using {{:https://github.com/tsenart/vegeta}
+vegeta} with 1000 requests per seconds for 2 minutes. It is worst noticing the
+stability of [Simple_httpd] compared to [php].
+
+Here is the result with {!Simple_httpd.Dir.add_vfs} using {{:./vfs_pack.html}`vfs_pack`}:
+
+{%html: <p align="center"><iframe style="background:white;" width="95%" height="650px" src="https://raffalli.eu/simple_httpd/bench/chaml.html"></iframe></p>%}
+
+And a similar php files using the standard configuration of php 8.2 and apache under debian 12 (you must play with the smoothing parameter in the text box to see something on this graph):
+
+{%html: <p align="center"><iframe style="background:white;" width="95%" height="650px" src="https://raffalli.eu/simple_httpd/bench/php.html"></iframe></p>%}
 
 See [examples/echo.ml] below, that demonstrates some of the features by
 declaring a few endpoints, including one for uploading files and a virtual

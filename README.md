@@ -1,32 +1,40 @@
 # Simple_httpd [![build](https://github.com/craff/simple_httpd/workflows/build/badge.svg)](https://github.com/craff/simple_httpd/actions)
 
-Simple HTTP server, fork of
-[![tiny_httpd](https://github.com/c-cube/tiny_httpd)] using OCaml 5 domain and effect,
-simple routing, URL encoding/decoding, static asset serving,
-and optional compression with camlzip.
+Simple HTTP is library to build web server and site.  It started as a fork of
+[![tiny_httpd](https://github.com/c-cube/tiny_httpd)] to experiment with OCaml
+5 domain and effect to replace threads.
+
+It provides simple routing, based on URL path, address, port or even the Host
+field of the HTTP header. It can serve static files from your disk (and update
+on your disk are reflected immediatly), but can also compile a directory using
+a provided tool `vfs_pack`. Compression with camlzip is supported in both
+cases (only deflate, but we plane to add gzip). Through `vfs_pack` you can use
+`.chaml` files which is similar to `.php`, but compiled with `OCaml`.
+
 It also supports [server-sent events](https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events/Using_server-sent_events)
 ([w3c](https://html.spec.whatwg.org/multipage/server-sent-events.html#event-stream-interpretation))
 
-It now supports SSL and uses OCaml 5.0.0 and epoll to get best performance.
-Unfortunatly, it is Linux only, but we plan to use kqueue to support BSD,
-and maybe windows later.
+SSL is available and we use OCaml 5.0.0, epoll, evenfd and TCP_CORK options to
+get the best performance. Unfortunatly, it is Linux only, but we plan to use
+kqueue to support BSD, and maybe windows later.
 
-For small request it can handle more then 1K simultaneous connection and
-serve more than 100K request per second.
+For small request it can handle more then 1K simultaneous connection and serve
+more than 100K request per second. Some graph showing the performance is
+available on the [documentation](https://raffalli.eu/simple_httpd).
 
-Out goal is to have a minimal library able to cover the maximum use case.
-It is not as Tiny as Tiny_httpd, but it is
+Out goal is to have a library able to cover the maximum use case, but simple
+to use. Like Tiny_httpd, it is
 still free from all forms of `ppx`, async monads, etc. 🙃 and the dependencies
-remain relatively minimal.
+remain relatively minimal (although there are now growing).
 
 **Note**: it can be useful to add the `jemalloc` opam package for long running
 server, as it does a good job at controlling memory usage.
 
 The basic echo server from `src/examples/minimal.ml`:
 
+[https://github.com/craff/simple_httpd/blob/c7dde278b19da562bcfd64aa0643ebcf0553bd70/examples/minimal.ml](test)
+
 ```ocaml
-
-
 module S = Simple_httpd
 
 let () =
