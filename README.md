@@ -35,30 +35,31 @@ The basic echo server from `src/examples/minimal.ml`:
 https://github.com/craff/simple_httpd/blob/c7dde278b19da562bcfd64aa0643ebcf0553bd70/examples/minimal.ml#L1-L27
 
 ```sh
-$ dune exec examples/minimal.exe -j 1000 &
-listening on http://127.0.0.1:8080
+>>> dune exec -- examples/minimal.exe -c 1000 --log-requests 0 &
+[4] 341587
+listening on http://127.0.0.1:8080bs: 0)
 
-# the path "echo" just prints the request.
-$ curl -X GET http://localhost:8080/echo --data "howdy y'all"
+>>> dune exec -- examples/minimal.exe -j 1000 --curl -X GET http://localhost:8080/echo --data "howdy y'all"
 echo:
-{meth=GET;
- headers=Host: localhost:8080
-         User-Agent: curl/7.66.0
-         Accept: */*
-         Content-Length: 10
-         Content-Type: application/x-www-form-urlencoded;
- path="/echo"; body="howdy y'all"}
-$ wrk -t5 -c500 -d5 http://localhost:8080/echo
-Running 5s test @ http://localhost:8081/echo
+{meth=GET; host=localhost:8080;
+ headers=[Content-Type: application/x-www-form-urlencoded
+          Content-Length: 11
+          Accept: */*
+          User-Agent: curl/7.88.1
+          Host: localhost:8080];
+ path="/echo"; body="howdy y'all"; path_components=["echo"]; query=[]}
+
+>>> wrk -t5 -c500 -d5 http://localhost:8080/echo
+Running 5s test @ http://localhost:8080/echo
   5 threads and 500 connections
   Thread Stats   Avg      Stdev     Max   +/- Stdev
-    Latency    13.37ms   11.80ms 142.23ms   85.34%
-    Req/Sec     8.51k     2.52k   24.75k    69.60%
-  212877 requests in 5.06s, 38.37MB read
-Requests/sec:  42067.76
-Transfer/sec:      7.58MB
+    Latency     4.09ms    2.80ms  48.13ms   85.33%
+    Req/Sec    24.79k     2.26k   30.04k    70.80%
+  618815 requests in 5.05s, 100.92MB read
+Requests/sec: 122487.56
+Transfer/sec:     19.98MB
 ```
-Using wrk, we see the good performances: 40000 request per seconds, on
+Using wrk, we see the good performances: more than 120000 requests per seconds, on
 my small 6 core laptop, with the 5 client threads and 5 server threads running
 on the same CPU.
 
