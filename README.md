@@ -39,7 +39,7 @@ https://github.com/craff/simple_httpd/blob/c7dde278b19da562bcfd64aa0643ebcf0553b
 [4] 341587
 listening on http://127.0.0.1:8080bs: 0)
 
->>> dune exec -- examples/minimal.exe -j 1000 --curl -X GET http://localhost:8080/echo --data "howdy y'all"
+>>> curl -X GET http://localhost:8080/echo --data "howdy y'all"
 echo:
 {meth=GET; host=localhost:8080;
  headers=[Content-Type: application/x-www-form-urlencoded
