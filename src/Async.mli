@@ -113,7 +113,6 @@ type socket_type =
 
 exception NoRead
 exception NoWrite
-exception SockError of socket_type * exn
 exception ClosedByHandler
 exception TimeOut
 

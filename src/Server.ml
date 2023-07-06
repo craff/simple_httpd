@@ -233,11 +233,6 @@ let handle_client_ (self:t) (client:Async.client) : unit =
         log (Req 0) (fun k -> k "response sent after %fms" (1e3 *. (Unix.gettimeofday () -. req.start_time)));
         if !cont then Async.yield ()
       with
-      | Sys_error _ | Unix.Unix_error _ | Async.ClosedByHandler | Async.TimeOut as e ->
-         log (Exc 1) (fun k -> k "broken connection (%s)"
-                                    (Async.printexn e));
-         cont := false; (* connection broken somehow *)
-
       | Headers.Bad_req (c,s,headers,cookies) ->
          log (Req 0) (fun k -> k "not 200 status: %d (%s)" (c :> int) s);
          let res = Response.make_raw ~headers ~cookies ~code:c s in
@@ -246,6 +241,13 @@ let handle_client_ (self:t) (client:Async.client) : unit =
            with Sys_error _ | Unix.Unix_error _ -> ()
          end;
          if not ((c :> int) < 500) then cont := false else Async.yield ()
+
+      | Sys_error _ | Unix.Unix_error _
+        | Ssl.Write_error _ | Ssl.Read_error _
+        | Async.ClosedByHandler | Async.TimeOut as e ->
+         log (Exc 1) (fun k -> k "probably broken connection (%s)"
+                                    (Async.printexn e));
+         cont := false; (* connection broken somehow *)
 
       | e ->
          log (Exc 0) (fun k -> k "internal server error (%s)"

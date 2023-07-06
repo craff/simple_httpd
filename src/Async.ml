@@ -127,15 +127,9 @@ let pp_sock_info = function
   | Pipe   -> "Pipe"
   | Lock   -> "Lock"
 
-exception SockError of socket_type * exn
-
 let printexn e =
   match e with
-  | SockError (_, e) -> Printf.sprintf "SockError(%s)" (Printexc.to_string e)
   | e -> (Printexc.to_string e)
-
-let clientError exn = raise (SockError(Client,exn))
-let ioError exn = raise(SockError(Io,exn))
 
 type pending_status =
   NoEvent | Wait : 'a pending -> pending_status | TooSoon of bool
@@ -359,7 +353,6 @@ let rec read c s o l =
   with Unix.(Unix_error((EAGAIN|EWOULDBLOCK),_,_))
      | Ssl.(Read_error(Error_want_read|Error_want_write
                         |Error_want_connect|Error_want_accept|Error_zero_return)) ->        perform_read c s o l
-       | exn -> clientError exn
 
 and perform_read c s o l =
   perform (Io {sock = c.sock; fn = (fun () -> read c s o l) })
@@ -371,7 +364,6 @@ let rec write c s o l =
     | Ssl.(Write_error(Error_want_read|Error_want_write
                        |Error_want_connect|Error_want_accept|Error_zero_return)) ->
      perform_write c s o l
-  | exn -> clientError exn
 
 and perform_write c s o l =
   perform (Io {sock = c.sock; fn = (fun () -> write c s o l) })
@@ -391,7 +383,6 @@ let rec sendfile c fd o l =
      | Ssl.(Write_error(Error_want_read|Error_want_write
                         |Error_want_connect|Error_want_accept|Error_zero_return)) ->
           perform_sendfile c fd o l
-     | exn -> clientError exn
 
 and perform_sendfile c fd o l =
   perform (Io {sock = c.sock; fn = (fun () -> sendfile c fd o l) })
@@ -444,7 +435,6 @@ module Io = struct
   with Unix.(Unix_error((EAGAIN|EWOULDBLOCK),_,_)) ->
         register io;
         schedule_io io.sock (fun () -> read io s o l)
-     | exn -> ioError exn
 
   let rec write (io:t) s o l =
   try
@@ -452,7 +442,6 @@ module Io = struct
   with Unix.(Unix_error((EAGAIN|EWOULDBLOCK),_,_)) ->
         register io;
         schedule_io io.sock (fun () -> write io s o l)
-     | exn -> ioError exn
 
 end
 
@@ -857,7 +846,7 @@ let accept_loop status listens pipes maxc =
     with
     | Unix.Unix_error((EAGAIN|EWOULDBLOCK),_,_) -> ()
     | exn ->
-       (** normal if client close connection brutally? *)
+       (* normal if client close connection brutally? *)
        Log.f (Exc 1) (fun k -> k "Exception during epoll_wait: %s" (printexn exn))
   done
 
