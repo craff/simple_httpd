@@ -32,7 +32,7 @@ server, as it does a good job at controlling memory usage.
 
 The basic echo server from `src/examples/minimal.ml`:
 
-[https://github.com/craff/simple_httpd/blob/c7dde278b19da562bcfd64aa0643ebcf0553bd70/examples/minimal.ml](test)
+https://github.com/craff/simple_httpd/blob/c7dde278b19da562bcfd64aa0643ebcf0553bd70/examples/minimal.ml#L1-27
 
 ```ocaml
 module S = Simple_httpd
