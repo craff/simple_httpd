@@ -170,8 +170,8 @@ csv_out "apache php ssl" php_report_ssl.txt timings/dynamic.csv
 
 python3 plot.py
 
-#wrk tests
+wrk tests
 
 dune exec ./bench.exe
 
-gnuplot plot.gplot
+python3 plot2.py

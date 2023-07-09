@@ -39,9 +39,6 @@ type client =
   ; mutable start_time : float (* last time request started *)
   ; mutable locks : mutex list
   ; buf : Buffer.t (* used to parse headers *)
-  ; mutable read : Bytes.t -> int -> int -> int
-  ; mutable write : Bytes.t -> int -> int -> int
-  ; mutable sendfile : Unix.file_descr -> int -> int -> int
   }
 
 and mutex_state = Unlocked | Locked of client | Deleted
@@ -77,9 +74,6 @@ let fake_client =
       start_time = 0.0;
       locks = [];
       accept_by = 0;
-      read = (fun _ -> assert false);
-      write = (fun _ -> assert false);
-      sendfile = (fun _ -> assert false);
     }
 
 let set_session ?session client =
@@ -349,7 +343,7 @@ module Ssl = struct include Ssl include Ssl.Runtime_lock end
 
 let rec read c s o l =
   try
-    c.read s o l
+    apply c Unix.read Ssl.read s o l
   with Unix.(Unix_error((EAGAIN|EWOULDBLOCK),_,_))
      | Ssl.(Read_error(Error_want_read|Error_want_write
                         |Error_want_connect|Error_want_accept|Error_zero_return)) ->        perform_read c s o l
@@ -359,7 +353,7 @@ and perform_read c s o l =
 
 let rec write c s o l =
   try
-    c.write s o l
+    apply c Unix.single_write Ssl.write s o l
   with Unix.(Unix_error((EAGAIN|EWOULDBLOCK),_,_))
     | Ssl.(Write_error(Error_want_read|Error_want_write
                        |Error_want_connect|Error_want_accept|Error_zero_return)) ->
@@ -378,7 +372,7 @@ let ssl_sendfile c fd o l =
 
 let rec sendfile c fd o l =
   try
-    c.sendfile  fd o l
+    apply c Util.sendfile ssl_sendfile fd o l
   with Unix.(Unix_error((EAGAIN|EWOULDBLOCK),_,_))
      | Ssl.(Write_error(Error_want_read|Error_want_write
                         |Error_want_connect|Error_want_accept|Error_zero_return)) ->
@@ -654,9 +648,6 @@ let loop id st listens pipe timeout handler () =
                         start_time = now (); locks = [];
                         acont = N; buf = Buffer.create 4_096;
                         accept_by = index;
-                        read = (fun _ -> assert false);
-                        write = (fun _ -> assert false);
-                        sendfile = (fun _ -> assert false);
                       } in
          dinfo.cur_client <- client;
          let info = { ty = Client; client; pd = NoEvent } in
@@ -681,30 +672,8 @@ let loop id st listens pipe timeout handler () =
               in
               ignore (fn ());
               client.ssl <- Some chan;
-              if Ssl.ktls_send_available chan then
-                begin
-                  client.write <- Unix.single_write sock;
-                  client.sendfile <- Util.ssl_sendfile chan
-                end
-              else
-                begin
-                  client.write <- Ssl.write chan;
-                  client.sendfile <- ssl_sendfile chan;
-                end;
-              if Ssl.ktls_recv_available chan then
-                begin
-                  client.read <- Unix.read sock
-                end
-              else
-                begin
-                  client.read <- Ssl.read chan;
-                end;
               Log.f (Req 2) (fun k -> k "[%d] ssl connection established" client.id);
-           | None ->
-              client.read <- Unix.read sock;
-              client.write <- Unix.single_write sock;
-              client.sendfile <- Util.sendfile sock
-
+           | None -> ()
          end;
          handler client; close EndHandling
       | Action ({ fn; cont; _ }, p, e) ->

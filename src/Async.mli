@@ -55,9 +55,6 @@ type client = private {
     mutable start_time : float;       (** start of request *)
     mutable locks : Mutex.t list;     (** all lock, locked by this client *)
     buf : Buffer.t;                   (** used to parse headers *)
-    mutable read : bytes -> int -> int -> int;
-    mutable write : bytes -> int -> int -> int;
-    mutable sendfile : Unix.file_descr -> int -> int -> int
   }
 
 and session_info =

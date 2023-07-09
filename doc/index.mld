@@ -29,7 +29,19 @@ Through a bunch of modules, described here {!Simple_httpd}, we provide:
   compiled to OCaml, but much faster than php (and also safer).
 
 - It is pretty fast: Here are some curves showing the performance on static files
-compared to nginx and apache:
+compared to nginx and apache.
+
+First a plot of the latency obtained using {{:https://github.com/tsenart/vegeta}
+[vegeta]} with 1000 requests per seconds for 15s, on a small static file.
+Simple_httpd uses {!Simple_httpd.Dir.add_vfs} using {{:./vfs_pack.html}[vfs_pack]} from the [example/echo.ml] file shown below:
+
+{%html: <p align="center"><img src="https://raffalli.eu/simple_httpd/bench/static.svg" alt="Latencies for static files"/></p>%}
+
+Here is the same graphic for a small chaml/php dynamic file.
+
+{%html: <p align="center"><img src="https://raffalli.eu/simple_httpd/bench/dynamic.svg" alt="Latencies for dynamic files"/></p>%}
+
+Here are some other graph showing the maximum number of requests possible, using {{:https://github.com/wg/wrk}[wrk]}
 
 {%html: <p align="center"><img src="https://raffalli.eu/simple_httpd/bench/small.png" alt="comparison for small files"/></p>%}
 
@@ -42,22 +54,11 @@ On the above graphs,
 - [apache] and [nginx] are the usual servers with their defaut configuration on
   debian 12 except for accepting more connections than the default.
 
-Here is a graph showing the difference between [.php] and [.chaml] on a
+Here is a similar graph showing the difference between [.php] and [.chaml] on a
 similar file. It shows that simple_httpd can serve more than 5 times more requests.
 
 {%html: <p align="center"><img src="https://raffalli.eu/simple_httpd/bench/chaml.png" alt="comparison chaml versus php"/></p>%}
 
-Here is a plot of the latency obtained using {{:https://github.com/tsenart/vegeta}
-vegeta} with 1000 requests per seconds for 2 minutes. It is worst noticing the
-stability of [Simple_httpd] compared to [php].
-
-Here is the result with {!Simple_httpd.Dir.add_vfs} using {{:./vfs_pack.html}`vfs_pack`}:
-
-{%html: <p align="center"><iframe style="background:white;" width="95%" height="650px" src="https://raffalli.eu/simple_httpd/bench/chaml.html"></iframe></p>%}
-
-And a similar php files using the standard configuration of php 8.2 and apache under debian 12 (you must play with the smoothing parameter in the text box to see something on this graph):
-
-{%html: <p align="center"><iframe style="background:white;" width="95%" height="650px" src="https://raffalli.eu/simple_httpd/bench/php.html"></iframe></p>%}
 
 See [examples/echo.ml] below, that demonstrates some of the features by
 declaring a few endpoints, including one for uploading files and a virtual
@@ -68,6 +69,7 @@ To go further, you should start reading {!Simple_httpd} the main module of the l
 {[
 (* echo.ml: a fairly complete example *)
 open Simple_httpd
+open Response_code
 module H = Headers
 
 (** Parse command line options *)
@@ -76,10 +78,14 @@ module H = Headers
 let addr = ref "127.0.0.1"
 let port = ref 8080
 let top_dir = ref None
+let ssl_cert = ref ""
+let ssl_priv = ref ""
 
 (** Server.args provides a bunch and standard option to control the
     maximum number of connections, logs, etc... *)
 let args, parameters = Server.args ()
+module Params = (val parameters)
+
 let _ =
   Arg.parse (Arg.align ([
       "--addr", Arg.Set_string addr, " set address";
@@ -87,10 +93,22 @@ let _ =
       "--port", Arg.Set_int port, " set port";
       "-p", Arg.Set_int port, " set port";
       "--dir", Arg.String (fun s -> top_dir := Some s), " set the top dir for file path";
+      "--ssl", Tuple[Set_string ssl_cert; Set_string ssl_priv], " give ssl certificate and private key";
+
     ] @ args)) (fun _ -> raise (Arg.Bad "")) "echo [option]*"
 
+let ssl =
+  if !ssl_cert <> "" then
+    begin
+      Ssl_threads.init (); Ssl.init ();
+      let ctx = Ssl.create_context ~ktls:!Params.ktls Ssl.TLSv1_2 Ssl.Server_context in
+      Ssl.use_certificate ctx !ssl_cert !ssl_priv;
+      Some ctx
+    end
+  else None
+
 (** Server initialisation *)
-let listens = [Address.make ~addr:!addr ~port:!port ()]
+let listens = [Address.make ~addr:!addr ~port:!port ?ssl ()]
 let server = Server.create parameters ~listens
 
 (** Compose the above filter with the compression filter
@@ -100,13 +118,13 @@ let filter, get_stats =
   let filter_stat, get_stats = Stats.filter () in
   let filter_zip =
     Camlzip.filter ~compress_above:1024 ~buf_size:(16*1024) () in
-  (Route.compose_cross filter_zip filter_stat, get_stats)
+  (Filter.compose_cross filter_zip filter_stat, get_stats)
 
 (** Add a route answering 'Hello world' to [http://localhost/hello/world] *)
 let _ =
   Server.add_route_handler ~meth:GET server ~filter
     Route.(exact "hello" @/ string @/ return)
-    (fun name _req -> Response.make_string ("hello " ^name ^"!\n"))
+    (fun name _req -> Response.make_string (Printf.sprintf "hello %s" name))
 
 (** Add an echo request *)
 let _ =
@@ -125,7 +143,7 @@ let _ =
   Server.add_route_handler_stream ~meth:PUT server ~filter
     Route.(exact "upload" @/ string @/ return)
     (fun path req ->
-        Log.f (fun k->k "start upload %S, headers:\n%s\n\n%!" path
+        Log.f (Req 0) (fun k->k "start upload %S, headers:\n%s\n\n%!" path
                      (Format.asprintf "%a" Headers.pp (Request.headers req)));
         try
           let oc = open_out @@ "/tmp/" ^ path in
@@ -133,7 +151,8 @@ let _ =
           flush oc;
           Response.make_string "uploaded file"
         with e ->
-          Response.fail ~code:500 "couldn't upload file: %s" (Printexc.to_string e)
+          Response.fail ~code:internal_server_error
+            "couldn't upload file: %s" (Printexc.to_string e)
       )
 
 (** Access to the statistics *)

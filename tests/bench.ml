@@ -66,7 +66,7 @@ let _ = csv := add_column !csv "file" fst (List.map fst values)
 let _ = csv := add_column !csv "nbc" string_of_int (List.map snd values)
 
 let data =
-  Printf.printf "serve_files\n%!";
+  Printf.printf "simple_httpd chaml\n%!";
   measure
     (Some "../_build/default/examples/echo.exe -c 2100 --log-requests 0")
     (fun ((file, d), c) ->
@@ -74,20 +74,75 @@ let data =
         c d file)
     values
 
-let _ = csv := add_column !csv "sh\\\\_cc" string_of_float data
+let _ = csv := add_column !csv "simple_httpd chaml" string_of_float data
 
 let data =
-  Printf.printf "measure apache\n%!";
-  measure None
+  Printf.printf "simple_httpd chaml ssl\n%!";
+  measure
+    (Some "../_build/default/examples/echo.exe -c 2100 --ssl ../_build/default/tests/domain.crt ../_build/default/tests/domain.key -c 2100 --port=8443 --log-requests 0")
     (fun ((file, d), c) ->
-      let file = Filename.remove_extension file ^ ".php" in
-      Printf.sprintf "wrk -t5 -c%d --timeout 10 -d%d http://localhost:80/nginx/%s"
+      Printf.sprintf "wrk -t5 -c%d --timeout 10 -d%d https://localhost:8443/vfs/%s"
         c d file)
     values
 
-let _ = csv := add_column !csv "apache" string_of_float data
+let _ = csv := add_column !csv "simple_httpd chaml ssl" string_of_float data
+(*
+let data =
+  Printf.printf "simple_https chaml ssl+ktls\n%!";
+  measure
+    (Some "../_build/default/examples/echo.exe -c 2100 --ktls --ssl ../_build/default/tests/domain.crt ../_build/default/tests/domain.key -c 2100 --port=8444 --log-requests 0")
+    (fun ((file, d), c) ->
+      Printf.sprintf "wrk -t5 -c%d --timeout 10 -d%d https://localhost:8444/vfs/%s"
+        c d file)
+    values
 
-let _ = Csv.save "bench_chaml.csv" !csv
+let _ = csv := add_column !csv "simple_httpd chaml ssl+ktls" string_of_float data
+ *)
+let data =
+  Printf.printf "apache php\n%!";
+  measure None
+    (fun ((file, d), c) ->
+      let file = Filename.remove_extension file ^ ".php" in
+      Printf.sprintf "wrk -t5 -c%d --timeout 10 -d%d http://localhost/nginx/%s"
+        c d file)
+    values
+
+let _ = csv := add_column !csv "apache php" string_of_float data
+
+let data =
+  Printf.printf "apache php ssl\n%!";
+  measure None
+    (fun ((file, d), c) ->
+      let file = Filename.remove_extension file ^ ".php" in
+      Printf.sprintf "wrk -t5 -c%d --timeout 10 -d%d https://localhost/nginx/%s"
+        c d file)
+    values
+
+let _ = csv := add_column !csv "apache php ssl" string_of_float data
+
+let data =
+  Printf.printf "nginx php\n%!";
+  measure None
+    (fun ((file, d), c) ->
+      let file = Filename.remove_extension file ^ ".php" in
+      Printf.sprintf "wrk -t5 -c%d --timeout 10 -d%d http://localhost:7080/%s"
+        c d file)
+    values
+
+let _ = csv := add_column !csv "nginx php" string_of_float data
+
+let data =
+  Printf.printf "nginx php ssl\n%!";
+  measure None
+    (fun ((file, d), c) ->
+      let file = Filename.remove_extension file ^ ".php" in
+      Printf.sprintf "wrk -t5 -c%d --timeout 10 -d%d https://localhost:7443/%s"
+        c d file)
+    values
+
+let _ = csv := add_column !csv "nginx php ssl" string_of_float data
+
+let _ = Csv.save "timings/bench_chaml.csv" !csv
 
 (* ======================== TEST of static files ====================== *)
 
@@ -100,7 +155,7 @@ let _ = csv := add_column !csv "file" fst (List.map fst values)
 let _ = csv := add_column !csv "nbc" string_of_int (List.map snd values)
 
 let data =
-  Printf.printf "serve_files\n%!";
+  Printf.printf "measure vfs_pack\n%!";
   measure
     (Some "../_build/default/tests/serve_files.exe --log-requests 0 --dir /var/www/nginx -c 2100 --timeout 10")
     (fun ((file, d), c) ->
@@ -108,8 +163,30 @@ let data =
         c d file)
     values
 
-let _ = csv := add_column !csv "sh\\\\_cc" string_of_float data
+let _ = csv := add_column !csv "simple_httpd vfs_path" string_of_float data
 
+let data =
+  Printf.printf "measure vfs_pack ssl\n%!";
+  measure
+    (Some "../_build/default/tests/serve_files.exe --log-requests 0 --ssl ../_build/default/tests/domain.crt ../_build/default/tests/domain.key -c 2100 --port=9443 --dir /var/www/nginx -c 2100 --timeout 10")
+    (fun ((file, d), c) ->
+      Printf.sprintf "wrk -t5 -c%d --timeout 10 -d%d https://localhost:9443/%s"
+        c d file)
+    values
+
+let _ = csv := add_column !csv "simple_httpd vfs_path ssl" string_of_float data
+(*
+let data =
+  Printf.printf "measure vfs_pack ssl+ktls\n%!";
+  measure
+    (Some "../_build/default/tests/serve_files.exe --log-requests 0 --ktls --ssl ../_build/default/tests/domain.crt ../_build/default/tests/domain.key -c 2100 --port=9444 --dir /var/www/nginx -c 2100 --timeout 10")
+    (fun ((file, d), c) ->
+      Printf.sprintf "wrk -t5 -c%d --timeout 10 -d%d https://localhost:9444/%s"
+        c d file)
+    values
+
+let _ = csv := add_column !csv "simple_httpd vfs_path ssl+ktls" string_of_float data
+ *)
 let data =
   Printf.printf "measure http_of_dir\n%!";
   measure
@@ -119,10 +196,10 @@ let data =
         c d file)
     values
 
-let _ = csv := add_column !csv "sh\\\\_dir" string_of_float data
+let _ = csv := add_column !csv "simple_httpd add_dir_path" string_of_float data
 
 let data =
-  Printf.printf "measure http_of_dir\n%!";
+  Printf.printf "measure http_of_dir ssl\n%!";
   measure
     (Some "../_build/default/src/bin/http_of_dir.exe --log-requests 0 --ssl ../_build/default/tests/domain.crt ../_build/default/tests/domain.key -c 2100 --port=8443 --timeout 10 /var/www/nginx")
     (fun ((file, d), c) ->
@@ -130,10 +207,10 @@ let data =
         c d file)
     values
 
-let _ = csv := add_column !csv "sh\\\\_ssl" string_of_float data
-
+let _ = csv := add_column !csv "simple_httpd add_dir_path ssl" string_of_float data
+(*
 let data =
-  Printf.printf "measure http_of_dir\n%!";
+  Printf.printf "measure http_of_dir ssl+ktls\n%!";
   measure
     (Some "../_build/default/src/bin/http_of_dir.exe --log-requests 0 --ktls --ssl ../_build/default/tests/domain.crt ../_build/default/tests/domain.key -c 2100 --port=8444 --timeout 10 /var/www/nginx")
     (fun ((file, d), c) ->
@@ -141,8 +218,8 @@ let data =
         c d file)
     values
 
-let _ = csv := add_column !csv "sh\\\\_ktls" string_of_float data
-
+let _ = csv := add_column !csv "simple_httpd ssl+ktls" string_of_float data
+ *)
 let data =
   Printf.printf "measure nginx\n%!";
   measure None
@@ -153,14 +230,35 @@ let data =
 
 let _ = csv := add_column !csv "nginx" string_of_float data
 
+
+let data =
+  Printf.printf "measure nginx ssl\n%!";
+  measure None
+    (fun ((file, d), c) ->
+      Printf.sprintf "wrk -t5 -c%d --timeout 10 -d%d https://localhost:7443/%s"
+        c d file)
+    values
+
+let _ = csv := add_column !csv "nginx ssl" string_of_float data
+
 let data =
   Printf.printf "measure apache\n%!";
   measure None
     (fun ((file, d), c) ->
-      Printf.sprintf "wrk -t5 -c%d --timeout 10 -d%d http://localhost:80/nginx/%s"
+      Printf.sprintf "wrk -t5 -c%d --timeout 10 -d%d http://localhost/nginx/%s"
         c d file)
     values
 
 let _ = csv := add_column !csv "apache" string_of_float data
 
-let _ = Csv.save "bench.csv" !csv
+let data =
+  Printf.printf "measure apache ssl\n%!";
+  measure None
+    (fun ((file, d), c) ->
+      Printf.sprintf "wrk -t5 -c%d --timeout 10 -d%d https://localhost/nginx/%s"
+        c d file)
+    values
+
+let _ = csv := add_column !csv "apache ssl" string_of_float data
+
+let _ = Csv.save "timings/bench.csv" !csv

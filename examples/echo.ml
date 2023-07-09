@@ -15,7 +15,6 @@ let ssl_priv = ref ""
 (** Server.args provides a bunch and standard option to control the
     maximum number of connections, logs, etc... *)
 let args, parameters = Server.args ()
-module Params = (val parameters)
 
 let _ =
   Arg.parse (Arg.align ([
@@ -32,7 +31,7 @@ let ssl =
   if !ssl_cert <> "" then
     begin
       Ssl_threads.init (); Ssl.init ();
-      let ctx = Ssl.create_context ~ktls:!Params.ktls Ssl.TLSv1_2 Ssl.Server_context in
+      let ctx = Ssl.create_context Ssl.TLSv1_2 Ssl.Server_context in
       Ssl.use_certificate ctx !ssl_cert !ssl_priv;
       Some ctx
     end

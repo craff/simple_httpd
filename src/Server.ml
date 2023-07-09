@@ -102,7 +102,6 @@ module type Parameters = sig
   val num_threads : int ref
   val timeout : float ref
   val buf_size : int ref
-  val ktls : bool ref
 
   val log_requests : int ref
   val log_exceptions : int ref
@@ -118,7 +117,6 @@ let args () =
       let num_threads = ref (Domain.recommended_domain_count () - 1)
       let timeout = ref 300.0
       let buf_size = ref (8 * 4_096)
-      let ktls = ref false
 
       let log_requests   = ref 1
       let log_scheduler  = ref 0
@@ -133,7 +131,6 @@ let args () =
   ([
       ( "--buf-size", Set_int buf_size,
         " set the size of the buffer used for input and output (one per client)");
-      ( "--ktls", Set ktls, " use ktls over ssl (default false)");
       ( "--log-requests", Set_int log_requests,
         " log level for requests (default 1)");
       ( "--log-exceptions", Set_int log_exceptions,

@@ -877,9 +877,6 @@ module Server : sig
     val buf_size : int ref
     (** Initial size of the buffer allocated by each client to parse request *)
 
-    val ktls : bool ref
-    (** If true, use kerner tls supprot for ssl connection when available *)
-
     val log_requests : int ref
     (** log level for requests information *)
 
