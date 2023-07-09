@@ -43,22 +43,18 @@ Here is the same graphic for a small chaml/php dynamic file.
 
 Here are some other graph showing the maximum number of requests possible, using {{:https://github.com/wg/wrk}[wrk]}
 
-{%html: <p align="center"><img src="https://raffalli.eu/simple_httpd/bench/small.png" alt="comparison for small files"/></p>%}
+{%html: <p align="center"><img src="https://raffalli.eu/simple_httpd/bench/bench_foo_1k.svg" alt="comparison for small files"/></p>%}
 
-{%html: <p align="center"><img src="https://raffalli.eu/simple_httpd/bench/big.png" alt="comparison for large files"/></p>%}
+{%html: <p align="center"><img src="https://raffalli.eu/simple_httpd/bench/bench_foo_10M.svg" alt="comparison for large files"/></p>%}
 
-On the above graphs,
-- [sh_cc] is for {!Simple_httpd.Dir.add_vfs} using {{:./vfs_pack.html} vfs_pack}
-- [sh_dir] is for {!Simple_httpd.Dir.add_dir_path}
-- [sh_ssl] is like [sh_dir] under ssl
-- [apache] and [nginx] are the usual servers with their defaut configuration on
-  debian 12 except for accepting more connections than the default.
+- [apache] and [nginx] are the usual servers with [php-fpm] and their defaut
+  configuration on debian 12 except for accepting more connections than the
+  default.
 
 Here is a similar graph showing the difference between [.php] and [.chaml] on a
 similar file. It shows that simple_httpd can serve more than 5 times more requests.
 
-{%html: <p align="center"><img src="https://raffalli.eu/simple_httpd/bench/chaml.png" alt="comparison chaml versus php"/></p>%}
-
+{%html: <p align="center"><img src="https://raffalli.eu/simple_httpd/bench/bench_chaml_bar.html.svg" alt="comparison chaml versus php"/></p>%}
 
 See [examples/echo.ml] below, that demonstrates some of the features by
 declaring a few endpoints, including one for uploading files and a virtual

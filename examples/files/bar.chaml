@@ -5,7 +5,7 @@
       let count = try Request.get_cookie_int request "count"
                   with Not_found -> 0
       let cookies = Cookies.(create ~max_age:3600L ~same_site:`Strict
-                               ~name:"count"  (string_of_int (count+1)) cookies)
+                               ~name:"count"  (string_of_int (count+1)) empty)
     </script>
   </head>
   <body>
@@ -15,18 +15,18 @@
       <li> item 2 </li>
       <li> item 3 </li>
       <li> item 4 </li>
-      <li> views: <ML>
+      <li> views: <ml>
 	  let _ = echo (string_of_int count);;
 	  let _ = echo (if count mod 2 = 0 then
- 	                  <p>even (<ML> ^ string_of_int count ^ </ML>)</p>
+ 	                  <p>even (<ML> ^ string_of_int count ^ </ml>)</p>
 	                else <p>odd</p>)
 	</ML>
       </li>
     </ul>
     <a href="."> escape from this file </a>
     <br/>
-    request: <ML>
+    request: <ml>
       let _ = printf "%a" Request.pp request
-    </ML>
+    </ml>
   </body>
 </html>

@@ -220,8 +220,8 @@ let trees_to_ocaml ~dynamic ~filename t =
 (*
 let test =
   {html|<!DOCTYPE html><html><head><title>coucou</title></head>
-   <ML>let tmp = "background: black;"</ML>
-   <body><ML>let x = <h1 style="?tmp">coucou, c'est l'été<ML>^ test ^</ML></h1></ML><ML>ouput_string x</ML></body>|html}
+   <script type="ml">let tmp = "background: black;"</script>
+   <body><script type="ml">let x = <h1 style="?tmp">coucou, c'est l'été<script type="ml">^ test ^</script></h1></script><script type="ml">ouput_string x</script></body>|html}
 
 let t = string test |> parse_html |> trees_to_ocaml
  *)

@@ -126,27 +126,33 @@ let emit ~perm ?max_size ?destination oc (l:entry list) : unit =
        log (fun k -> k "add mlhtml %S = %S" vfs_path actual_path);
        let ch = open_in actual_path in
        let filename = actual_path in
+       let modulename =
+         String.capitalize_ascii (Filename.chop_extension (Filename.basename filename))
+       in
        (try
          let (ml, global, prelude) =
            Markup.channel ch |> Html5.parse_html ~dynamic:true ~filename
            |> Html5.trees_to_ocaml ~dynamic:true ~filename
          in
          fpf oc
-         "%s let () = (Dir.Embedded_fs.add_dynamic embedded_fs \n  \
+           "module %s = struct %s end \n  \
+            let () = (Dir.Embedded_fs.add_dynamic embedded_fs \n  \
           ~path:%S ~headers:[Headers.Content_Type, \"text/html\"]
           (fun request headers ->
              let module M = struct
-               let cookies = Cookies.empty
-               let _ = ignore headers; ignore cookies (* avoid warnings *)
+               open %s  [@@warning \"-33\"]
+               let [@warning \"-32\"] cookies = Cookies.empty
                %s
-             end in let open M in
+             end in let open [@warning \"-33\"] M in let open [@warning \"-33\"] %s in
              let input =
                Input.of_output (fun (module Output) ->
-                 let open Output in
-                 ignore echo;
+                 let open Output [@warning \"-33\"] in
                  let module M = struct %s end in
                  ()) in
-             ( headers, cookies, input )))\n%!" global vfs_path prelude ml
+            ( headers, cookies, input )))\n%!"
+           modulename global vfs_path
+           modulename prelude
+           modulename ml
        with Html5.Incomplete -> () (* no doctype *))
 
     | Url (vfs_path, url) ->

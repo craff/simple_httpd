@@ -174,7 +174,7 @@ let data =
         c d file)
     values
 
-let _ = csv := add_column !csv "simple_httpd vfs_path ssl" string_of_float data
+let _ = csv := add_column !csv "simple_httpd vfs_pack ssl" string_of_float data
 (*
 let data =
   Printf.printf "measure vfs_pack ssl+ktls\n%!";
@@ -185,7 +185,7 @@ let data =
         c d file)
     values
 
-let _ = csv := add_column !csv "simple_httpd vfs_path ssl+ktls" string_of_float data
+let _ = csv := add_column !csv "simple_httpd vfs_pack ssl+ktls" string_of_float data
  *)
 let data =
   Printf.printf "measure http_of_dir\n%!";

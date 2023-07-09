@@ -37,6 +37,8 @@ jobs:
           ocaml-compiler: ${{ matrix.ocaml-compiler }}
           opam-depext-flags: --with-test
 
+      - run: opam pin add https://github.com/savonet/ocaml-ssl#master -k git
+
       - run: opam pin add https://github.com/craff/markup#latest -k git
 
       - run: opam install . --deps-only --with-test
