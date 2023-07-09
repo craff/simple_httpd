@@ -34,7 +34,7 @@ def bars(name, title):
 
     name = os.path.splitext(name)[0] + ".svg"
     plt.savefig(name)
-    plt.show()
+    #plt.show()
 
 bars('timings/static.csv', 'Latencies for static files')
 bars('timings/dynamic.csv', 'Latencies for php/chaml files')
