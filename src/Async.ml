@@ -696,7 +696,9 @@ let loop id st listens pipe timeout handler () =
                   client.read <- Unix.read sock
                 end
               else
-                client.read <- Ssl.read chan;
+                begin
+                  client.read <- Ssl.read chan;
+                end;
               Log.f (Req 2) (fun k -> k "[%d] ssl connection established" client.id);
            | None ->
               client.read <- Unix.read sock;

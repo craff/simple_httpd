@@ -5,17 +5,21 @@ set xlabel 'Number of simultaneous connections'
 set ylabel 'Request per seconds'
 
 set title '1k file'
-set output 'small.png'
-plot for [col=3:7] 'bench.csv' using (strcol(1) eq "foo_1k" ? $2 : '') : col with points
+set output 'timings/small.png'
+plot for [col=3:7] 'timings/bench.csv' using (strcol(1) eq "foo_1k" ? $2 : '') : col with points
 
 set title '100k file'
-set output 'medium.png'
-plot for [col=3:7] 'bench.csv' using (strcol(1) eq "foo_100k" ? $2 : '') : col with points
+set output 'timings/medium.png'
+plot for [col=3:7] 'timings/bench.csv' using (strcol(1) eq "foo_100k" ? $2 : '') : col with points
 
 set title '10M file'
-set output 'big.png'
-plot for [col=3:7] 'bench.csv' using (strcol(1) eq "foo_10M" ? $2 : '') : col with points
+set output 'timings/big.png'
+plot for [col=3:7] 'timings/bench.csv' using (strcol(1) eq "foo_10M" ? $2 : '') : col with points
 
 set title 'chaml/php file'
-set output 'chaml.png'
-plot for [col=3:4] 'bench_chaml.csv' using (strcol(1) eq "bar.html" ? $2 : '') : col with points
+set output 'timings/chaml.png'
+plot for [col=3:4] 'timings/bench_chaml.csv' using (strcol(1) eq "bar.html" ? $2 : '') : col with points
+
+set title 'static file latencies'
+set output 'timings/static.png'
+plot 'timings/statics.csv' with points

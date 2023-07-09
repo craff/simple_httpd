@@ -9,10 +9,14 @@ module H = Headers
 let addr = ref "127.0.0.1"
 let port = ref 8080
 let top_dir = ref None
+let ssl_cert = ref ""
+let ssl_priv = ref ""
 
 (** Server.args provides a bunch and standard option to control the
     maximum number of connections, logs, etc... *)
 let args, parameters = Server.args ()
+module Params = (val parameters)
+
 let _ =
   Arg.parse (Arg.align ([
       "--addr", Arg.Set_string addr, " set address";
@@ -20,10 +24,22 @@ let _ =
       "--port", Arg.Set_int port, " set port";
       "-p", Arg.Set_int port, " set port";
       "--dir", Arg.String (fun s -> top_dir := Some s), " set the top dir for file path";
+      "--ssl", Tuple[Set_string ssl_cert; Set_string ssl_priv], " give ssl certificate and private key";
+
     ] @ args)) (fun _ -> raise (Arg.Bad "")) "echo [option]*"
 
+let ssl =
+  if !ssl_cert <> "" then
+    begin
+      Ssl_threads.init (); Ssl.init ();
+      let ctx = Ssl.create_context ~ktls:!Params.ktls Ssl.TLSv1_2 Ssl.Server_context in
+      Ssl.use_certificate ctx !ssl_cert !ssl_priv;
+      Some ctx
+    end
+  else None
+
 (** Server initialisation *)
-let listens = [Address.make ~addr:!addr ~port:!port ()]
+let listens = [Address.make ~addr:!addr ~port:!port ?ssl ()]
 let server = Server.create parameters ~listens
 
 (** Compose the above filter with the compression filter
@@ -39,7 +55,7 @@ let filter, get_stats =
 let _ =
   Server.add_route_handler ~meth:GET server ~filter
     Route.(exact "hello" @/ string @/ return)
-    (fun name _req -> Response.make_string ("hello " ^name ^"!\n"))
+    (fun name _req -> Response.make_string (Printf.sprintf "hello %s" name))
 
 (** Add an echo request *)
 let _ =

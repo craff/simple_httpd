@@ -57,11 +57,10 @@ let measure server cmd values =
 let nb_conn = [10;50;100;200;300;400;500;600;700;800;900;1000]
 
 (* ======================== TEST of .chaml ====================== *)
+let csv = ref []
 
 let files = ["bar.html", 1]
 let values = List.(flatten (map (fun file -> map (fun n -> (file,n)) nb_conn) files))
-
-let csv = ref []
 
 let _ = csv := add_column !csv "file" fst (List.map fst values)
 let _ = csv := add_column !csv "nbc" string_of_int (List.map snd values)
@@ -134,6 +133,17 @@ let data =
 let _ = csv := add_column !csv "sh\\\\_ssl" string_of_float data
 
 let data =
+  Printf.printf "measure http_of_dir\n%!";
+  measure
+    (Some "../_build/default/src/bin/http_of_dir.exe --log-requests 0 --ktls --ssl ../_build/default/tests/domain.crt ../_build/default/tests/domain.key -c 2100 --port=8444 --timeout 10 /var/www/nginx")
+    (fun ((file, d), c) ->
+      Printf.sprintf "wrk -t5 -c%d --timeout 10 -d%d https://localhost:8444/%s"
+        c d file)
+    values
+
+let _ = csv := add_column !csv "sh\\\\_ktls" string_of_float data
+
+let data =
   Printf.printf "measure nginx\n%!";
   measure None
     (fun ((file, d), c) ->
@@ -152,6 +162,5 @@ let data =
     values
 
 let _ = csv := add_column !csv "apache" string_of_float data
-
 
 let _ = Csv.save "bench.csv" !csv
