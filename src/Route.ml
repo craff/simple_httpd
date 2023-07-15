@@ -1,5 +1,6 @@
 open Response_code
 exception Pass (* raised to test the next handler *)
+let pass () = raise Pass
 
 type path = string list (* split on '/' *)
 
@@ -144,14 +145,14 @@ let rec eval :
   fun path route f ->
   begin match path, route with
   | [], Fire -> f
-  | _, Fire -> raise Pass
+  | _, Fire -> pass ()
   | path, Rest -> f path
-  | [], Compose _ -> raise Pass
+  | [], Compose _ -> pass ()
   | x::path, Compose (ty, route) ->
      match (ty,route) with
-     | (Exact s,route) -> if x <> s then raise Pass else eval path route f
+     | (Exact s,route) -> if x <> s then pass () else eval path route f
      | (Int,    route) -> (try let x = int_of_string x in eval path route (f x)
-                           with _ -> raise Pass)
+                           with _ -> pass ())
      | (String, route) -> eval path route (f x)
   end
 
@@ -221,7 +222,7 @@ let add_route_handler
        insert POST route t fn
   in
   let kn (default, specific) = match hostnames with
-    | None -> gn default
+    | None | Some [] -> gn default
     | Some l ->
        List.iter (fun h ->
            let tree =
@@ -250,10 +251,10 @@ let find (handlers : handlers) (req : Input.t Request.t) =
       | None -> [default]
       | Some host ->
          match String.split_on_char ':' host with
-           []       -> [default]
          | host:: _ ->
-            try [Hashtbl.find specific host ; default]
-            with Not_found ->  [default]
+            (try [Hashtbl.find specific host ; default]
+             with Not_found -> [default])
+         | _       -> [default]
   in
   let rec kn = function
     | []           -> Response.fail_raise ~code:not_found "not found"

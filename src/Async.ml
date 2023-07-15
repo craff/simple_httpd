@@ -249,6 +249,8 @@ module Log = struct
           Printf.kfprintf (fun oc -> Printf.fprintf oc "\n%!") ch fmt
         )
     )
+
+  let _ = Address.forward_log := f (Exc 0)
 end
 
 
@@ -389,7 +391,9 @@ let cur_client () =
   i.cur_client
 
 let register_starttime cl =
-  cl.start_time <- now ()
+  let r = now () in
+  cl.start_time <- r;
+  r
 
 module type Io = sig
   type t
@@ -661,7 +665,7 @@ let loop id st listens pipe timeout handler () =
          begin
            match linfo.ssl with
            | Some ctx ->
-              let chan = Ssl.embed_socket sock ctx in
+              let chan = Ssl.embed_socket sock (Atomic.get ctx) in
               let rec fn () =
                 try
                   Ssl.accept chan; 1

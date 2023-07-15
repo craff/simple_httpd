@@ -22,7 +22,7 @@ let pp out l =
   let pp_pair out (k,v) = Format.fprintf out "@[<h>%s: %s@]" (to_string k) v in
   Format.fprintf out "@[<v>%a@]" (Format.pp_print_list pp_pair) l
 let set_cookies cookies h =
-  List.fold_left (fun h (_, c) ->
+  List.fold_left (fun h c ->
       (Set_Cookie, Http_cookie.to_set_cookie c) :: h) h cookies
 
 (*  token = 1*tchar
@@ -42,7 +42,7 @@ let parse_ ~buf (bs:Input.t) : t * Cookies.t =
          if k = Cookie then
            begin
              let new_cookies = Cookies.parse v in
-             (headers, List.fold_left (fun acc (_, c) ->
+             (headers, List.fold_left (fun acc c ->
                            Cookies.add c acc) cookies new_cookies)
            end
          else

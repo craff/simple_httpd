@@ -106,7 +106,7 @@ let vfs_of_dir (top:string) : vfs =
       in
       let mtime = Some stats.st_mtime in
       let mime =  Magic_mime.lookup f in
-      let headers = [(Headers.Content_Type,mime)] in
+      let headers = [(Headers.Content_Type, mime)] in
       FI { content; size; mtime; headers }
   end in
   (module M)
@@ -185,10 +185,18 @@ let add_vfs_ ?addresses ?hostnames ?(filter=(fun x -> (x, fun r -> r)))
     if prefix="" then Route.rest
     else Route.exact_path prefix Route.rest
   in
+  let check must_exists ope path =
+    let path = String.concat "/" path in
+    if contains_dot_dot path then (
+      log (Exc 0) (fun k->k "%s fails %s (dotdot)" ope path);
+      Response.fail_raise ~code:forbidden "Path is forbidden");
+    if must_exists && not (VFS.contains path) then Route.pass ();
+    path
+  in
   if config.delete then (
-    Server.add_route_handler ?addresses ?hostnames ~filter ~meth:DELETE server (route())
-      (fun path _req ->
-         let path = String.concat "/" path in
+    Server.add_route_handler ?addresses ?hostnames ~filter ~meth:DELETE
+      server (route())
+      (fun path -> let path = check true "delete" path in fun _req ->
          if contains_dot_dot path then (
            Log.f (Exc 0) (fun k->k "delete fails %s (dotdot)" path);
            Response.fail_raise ~code:forbidden "invalid path in delete"
@@ -204,13 +212,13 @@ let add_vfs_ ?addresses ?hostnames ?(filter=(fun x -> (x, fun r -> r)))
                   "delete fails: %s (%s)" path (Async.printexn e))
       )))
     else (
-      Server.add_route_handler ~filter server ~meth:DELETE (route())
+      Server.add_route_handler ?addresses ?hostnames ~filter ~meth:DELETE server (route())
         (fun _ _  ->
           Response.fail_raise ~code:method_not_allowed "delete not allowed");
     );
 
   if config.upload then (
-    Server.add_route_handler_stream server ~meth:PUT (route())
+    Server.add_route_handler_stream ?addresses ?hostnames ~meth:PUT server (route())
       ~filter:(fun req ->
           match Request.get_header_int req Headers.Content_Length with
           | Some n when n > config.max_upload_size ->
@@ -220,8 +228,7 @@ let add_vfs_ ?addresses ?hostnames ?(filter=(fun x -> (x, fun r -> r)))
              Response.fail_raise ~code:forbidden "invalid path (contains '..')"
           | _ -> filter req
         )
-      (fun path req ->
-         let path = String.concat "/" path in
+      (fun path -> let path = check false "upload" path in fun req ->
          let write, close =
            try VFS.create path
            with e ->
@@ -237,18 +244,14 @@ let add_vfs_ ?addresses ?hostnames ?(filter=(fun x -> (x, fun r -> r)))
          Response.make_raw ~code:created "upload successful"
       )
   ) else (
-    Server.add_route_handler ~filter server ~meth:PUT (route())
+    Server.add_route_handler ?addresses ?hostnames ~filter ~meth:PUT server (route())
       (fun _ _  -> Response.make_raw ~code:method_not_allowed
                      "upload not allowed");
   );
 
   if config.download then (
-    Server.add_route_handler ~filter server ~meth:GET (route())
-      (fun path req ->
-        let path = String.concat "/" path in
-        if contains_dot_dot path then (
-          log (Exc 0) (fun k->k "download fails %s (dotdot)" path);
-          Response.fail_raise ~code:forbidden "Path is forbidden");
+    Server.add_route_handler ?addresses ?hostnames ~filter ~meth:GET server (route())
+      (fun path -> let path = check true "download" path in fun req ->
         let FI info = VFS.read_file path in
         let mtime =  match info.mtime with
           | None -> None
@@ -332,7 +335,7 @@ let add_vfs_ ?addresses ?hostnames ?(filter=(fun x -> (x, fun r -> r)))
         )
       )
   ) else (
-    Server.add_route_handler server ~filter ~meth:GET (route())
+    Server.add_route_handler ?addresses ?hostnames ~filter ~meth:GET server (route())
       (fun _ _  -> Response.make_raw ~code:method_not_allowed "download not allowed");
   );
   ()

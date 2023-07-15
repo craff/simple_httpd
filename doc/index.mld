@@ -47,9 +47,10 @@ Here are some other graph showing the maximum number of requests possible, using
 
 {%html: <p align="center"><img src="https://raffalli.eu/simple_httpd/bench/bench_foo_10M.svg" alt="comparison for large files"/></p>%}
 
-- [apache] and [nginx] are the usual servers with [php-fpm] and their defaut
-  configuration on debian 12 except for accepting more connections than the
-  default.
+[apache] and [nginx] are the usual servers with [php-fpm] and their defaut
+configuration on debian 12 except for accepting more connections than the
+default. There is a (reproducible) problem with nginx and php without ssl with
+a few extreme value that impact the mean (and the 99% quantile that we could had to remove).
 
 Here is a similar graph showing the difference between [.php] and [.chaml] on a
 similar file. It shows that simple_httpd can serve more than 5 times more requests.

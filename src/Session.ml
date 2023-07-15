@@ -113,12 +113,13 @@ let mk_cookies (sess : Async.session) filter c =
   let session = LinkedList.get sess in
   let max_age = Int64.of_float session.life_time in
   let c = List.filter_map
-            (fun (name,c) ->
+            (fun c ->
+              let name = Http_cookie.name c in
               if name = "SESSION_KEY" || name = "SESSION_ADDR" then
                 None
               else match filter c with
-                   | Some x -> Some (name, x)
-                   | None -> Some (name, Http_cookie.expire c)) c
+                   | Some x -> Some x
+                   | None -> Some (Http_cookie.expire c)) c
   in
   let c = Cookies.create ~name:"SESSION_KEY" ~max_age
             ~same_site:`Strict session.key c in

@@ -26,12 +26,7 @@ let _ =
 
 let ssl =
   if !ssl_cert <> "" then
-    begin
-      Ssl_threads.init (); Ssl.init ();
-      let ctx = Ssl.create_context Ssl.TLSv1_2 Ssl.Server_context in
-      Ssl.use_certificate ctx !ssl_cert !ssl_priv;
-      Some ctx
-    end
+    Some Address.{ cert = !ssl_cert; priv = !ssl_priv; protocol = Ssl.TLSv1_3 }
   else None
 
 (** Server initialisation *)

@@ -96,3 +96,5 @@ val empty_handler : 'a -> handler
 
 val find : handlers -> Input.t Request.t ->
            (Input.t Request.t * (Response.t -> Response.t) * unit treatment)
+
+val pass : unit -> 'a

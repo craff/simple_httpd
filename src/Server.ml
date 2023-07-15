@@ -102,6 +102,7 @@ module type Parameters = sig
   val num_threads : int ref
   val timeout : float ref
   val buf_size : int ref
+  val ssl_reload_period : int -> unit
 
   val log_requests : int ref
   val log_exceptions : int ref
@@ -117,6 +118,7 @@ let args () =
       let num_threads = ref (Domain.recommended_domain_count () - 1)
       let timeout = ref 300.0
       let buf_size = ref (8 * 4_096)
+      let ssl_reload_period = Address.set_ssl_reload_period
 
       let log_requests   = ref 1
       let log_scheduler  = ref 0
@@ -143,6 +145,8 @@ let args () =
       ( "--log-perm", Set_int log_perm, " log permission (default 0o700)");
       ( "--max-connections", Set_int max_connections,
         " maximum number of simultaneous connections (default 32)");
+      ( "--ssl-reload-period", Int ssl_reload_period,
+        " period, in seconds, at which all ssl certificates are checked for renewal (default 1 day)");
       ( "-c", Set_int max_connections, " same as --max-connections");
       ( "--nb-threads", Set_int num_threads,
         " maximum number of threads (default nbcore - 1)");
@@ -157,6 +161,7 @@ let create ?(listens = [Address.make ()]) (module Params : Parameters) =
   let max_connections = !max_connections in
   let buf_size = !buf_size in
   let timeout = !timeout in
+
   Log.set_log_requests !log_requests;
   Log.set_log_scheduler !log_scheduler;
   Log.set_log_exceptions !log_exceptions;

@@ -1,8 +1,9 @@
-Requests      [total, rate, throughput]         15000, 1000.07, 1000.05
-Duration      [total, attack, wait]             14.999s, 14.999s, 282.093µs
-Latencies     [min, mean, 50, 90, 95, 99, max]  121.386µs, 271.399µs, 273.761µs, 325.78µs, 336.78µs, 364.231µs, 6.348ms
-Bytes In      [total, mean]                     3210000, 214.00
+Requests      [total, rate, throughput]         15000, 1000.07, 0.00
+Duration      [total, attack, wait]             14.999s, 14.999s, 427.592µs
+Latencies     [min, mean, 50, 90, 95, 99, max]  288.085µs, 385.567µs, 375.283µs, 449.905µs, 473.286µs, 525.409µs, 1.416ms
+Bytes In      [total, mean]                     0, 0.00
 Bytes Out     [total, mean]                     0, 0.00
-Success       [ratio]                           100.00%
-Status Codes  [code:count]                      200:15000  
+Success       [ratio]                           0.00%
+Status Codes  [code:count]                      0:15000  
 Error Set:
+Get "https://localhost:8444/vfs/foo.html": dial tcp 0.0.0.0:0->[::1]:8444: connect: connection refused

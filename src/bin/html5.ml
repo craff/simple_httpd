@@ -23,7 +23,7 @@ let print_tag name attributes =
                String.sub value 1 (len - 1)
              else value
            in
-           Printf.sprintf " %s=%S" (snd name) value)
+           Printf.sprintf " %s=\"%s\"" (snd name) value)
     |> String.concat ""
   in
   (Printf.sprintf "<%s%s>" (name_to_string name) attributes, List.rev !args)
@@ -32,6 +32,12 @@ let print_closing name =
   Printf.sprintf "</%s>" (name_to_string name)
 
 type attrs = (name * string) list
+
+let find_attr name (attrs:attrs) =
+  snd (List.find
+         (fun ((_,n),_) ->
+           String.lowercase_ascii n = String.lowercase_ascii name) attrs)
+
 type ml_kind = Global | Prelude | Normal
 type tree_c =
   | Doctype of doctype
@@ -48,7 +54,7 @@ and tree = { loc : location; c : tree_c }
 
 let noloc c = { loc = (-1,-1); c }
 
-let doctype ~loc d = {loc; c = Doctype(d) }
+let doctype loc d = {loc; c = Doctype(d) }
 
 let lower name = String.lowercase_ascii (snd name)
 
@@ -73,7 +79,7 @@ let is_ml name attrs =
   in
   (is_ml, ml_kind)
 
-let element ~dynamic ~filename ~loc name attrs children =
+let element ~dynamic ~filename loc name attrs children =
   let (is_ml, ml_kind) = is_ml name attrs in
   {loc; c =
   if is_ml && dynamic then
@@ -87,10 +93,10 @@ let element ~dynamic ~filename ~loc name attrs children =
   else
     Element(name,attrs,children)}
 
-let text ~loc l = {loc; c = Text(l)}
-let comment ~loc c = {loc; c = Comment(c)}
-let pi ~loc s1 s2 = {loc; c = PI(s1,s2)}
-let xml ~loc x = {loc; c = Xml(x)}
+let text loc l = {loc; c = Text(l)}
+let comment loc c = {loc; c = Comment(c)}
+let pi loc s1 s2 = {loc; c = PI(s1,s2)}
+let xml loc x = {loc; c = Xml(x)}
 
 let parse_html ~dynamic ~filename s =
   let report (line,col) err =

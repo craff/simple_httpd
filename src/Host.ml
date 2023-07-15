@@ -1,7 +1,7 @@
 open Server
 open Dir
 
-module type HostInit = sig
+module type Init = sig
   val server : t
 
   val add_route_handler :
@@ -31,7 +31,7 @@ module type Host = sig
   val addresses : Address.t list
   val hostnames : string list
 
-  module Init(_:HostInit) : sig end
+  module Init(_:Init) : sig end
 end
 
 let collect_addresses (hosts : (module Host) list) : Address.t list =
@@ -42,8 +42,14 @@ let collect_addresses (hosts : (module Host) list) : Address.t list =
       let addr' =
         List.find (fun a -> a.addr = addr.addr && a.port = addr.port) !res
       in
-      if addr.ssl <> addr'.ssl then
-        failwith "addresses with incompatible certificate";
+      begin
+        match (addr.ssl, addr'.ssl) with
+        | Some a1, Some a2 when a1 != a2 ->
+           failwith "addresses with incompatible certificate"
+        | (None, Some _) | (Some _, None) ->
+           failwith "addresses with incompatible certificate";
+        | _, _ -> ()
+      end;
       if addr.reuse <> addr'.reuse then
         failwith "addresses with incompatible reuse option";
     with Not_found -> res := addr :: !res

@@ -105,19 +105,17 @@ let read_exactly ~size (bs:Input.t) : Input.t =
 let parse_req_start ~client ~buf (bs:Input.t)
     : Input.t t option =
   try
-    Async.register_starttime client;
-    let line = Input.read_line ~buf bs in
-    let start_time = Unix.gettimeofday () in
-    let meth, path, version =
-      try
-        let meth, path, version = Scanf.sscanf line "%s %s HTTP/1.%d" (fun x y z->x,y,z) in
-        if version != 0 && version != 1 then raise Exit;
-        meth, path, version
-      with e ->
-        log (Exc 1) (fun k->k "INVALID REQUEST LINE: `%s` (%s)" line (Printexc.to_string e));
-        fail_raise ~code:bad_request "Invalid request line"
-    in
-    let meth = Method.of_string meth in
+    let start_time = Async.register_starttime client in
+    let meth = Method.parse bs in
+    let _ = Input.exact_char ' ' () bs in
+    let path = Input.read_until ~buf ~target:" " bs; Buffer.contents buf in
+    let _ = Input.exact_string "HTTP/" () bs in
+    let major = Input.int bs in
+    let _ = Input.exact_char '.' () bs in
+    let minor = Input.int bs in
+    let _ = Input.exact_char '\r' () bs in
+    let _ = Input.exact_char '\n' () bs in
+    if major != 1 || (minor != 0 && minor != 1) then raise Exit;
     log (Req 0) (fun k->k "From %s: %s, path %S" (Util.addr_of_sock client.sock)
                           (Method.to_string meth) path);
     let (headers, cookies) = Headers.parse_ ~buf bs in
@@ -137,13 +135,16 @@ let parse_req_start ~client ~buf (bs:Input.t)
     in
     let req = {
         meth; query; host; client; path; path_components;
-        headers; cookies; http_version=(1, version); body=bs; start_time;
+        headers; cookies; http_version=(major, minor); body=bs; start_time;
         trailer = ref None;
       } in
     Some req
   with
   | End_of_file -> None
   | Headers.Bad_req _ as e -> raise e
+  | Exit | Input.FailParse ->
+     log (Exc 1) (fun k->k "Invalid request line");
+     fail_raise ~code:bad_request "Invalid request line"
   | e -> fail_raise ~code:internal_server_error "exception: %s" (Async.printexn e)
 
 let parse_multipart_ ~bound req =

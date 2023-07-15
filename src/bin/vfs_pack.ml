@@ -105,7 +105,7 @@ let emit ~perm ?max_size ?destination oc (l:entry list) : unit =
        let disk_path = store_path // vfs_path in
        log (fun k -> k "add path %S = %S in %S" vfs_path actual_path disk_path);
        if disk_path <> actual_path then
-         if Sys.command (spf "cp %s %s" actual_path disk_path) <> 0
+         if Sys.command (spf "cp '%s' '%s'" actual_path disk_path) <> 0
          then failwith
                 (spf "vfs_pack: can not copy path %s to %s" actual_path disk_path);
        let stats = Unix.stat actual_path in

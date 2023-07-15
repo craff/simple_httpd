@@ -1,7 +1,7 @@
 open Server
 open Dir
 
-module type HostInit = sig
+module type Init = sig
   val server : t
 
   val add_route_handler :
@@ -31,7 +31,7 @@ module type Host = sig
   val addresses : Address.t list
   val hostnames : string list
 
-  module Init(_:HostInit) : sig end
+  module Init(_:Init) : sig end
 end
 
 val start_server : (module Server.Parameters) -> (module Host) list -> unit

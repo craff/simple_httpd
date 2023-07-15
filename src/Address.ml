@@ -6,13 +6,95 @@ let unset_index = -1
 type t =
   { addr : string
   ; port : int
-  ; ssl  : Ssl.context option
+  ; ssl  : Ssl.context Atomic.t option
   ; reuse : bool
   ; mutable index : index
   }
 
+type ssl =
+  { protocol : Ssl.protocol
+  ; cert  : string
+  ; priv : string
+  ; mutable addr : t
+  ; mutable mtime : float
+  }
+
+
+let all_ssl = Atomic.make []
+
+let add_ssl ssl =
+  Util.update_atomic all_ssl (fun old_ssl -> ssl :: old_ssl)
+
+let forward_log
+    : (((('a, out_channel, unit, unit) format4 -> 'a) -> unit) -> unit) ref
+    = ref (fun _ -> assert false)
+
+let ssl_reload_period = ref (24 * 3600)
+
+let set_ssl_reload_period : int -> unit = (fun n -> ssl_reload_period := n)
+
+let rec renew_ssl () =
+  Unix.sleep !ssl_reload_period;
+  let renew ssl =
+    try
+      let mtime1 = (Unix.stat ssl.priv).st_mtime in
+      let mtime2 = (Unix.stat ssl.cert).st_mtime in
+      let mtime = max mtime1 mtime2 in
+      if mtime > ssl.mtime then
+        begin
+          ssl.mtime <- mtime;
+          let ctx = Ssl.create_context ssl.protocol Ssl.Server_context in
+          Ssl.use_certificate ctx ssl.cert ssl.priv;
+          match ssl.addr.ssl with
+          | None -> assert false
+          | Some a -> Atomic.set a ctx
+        end
+    with e ->
+      !forward_log (fun k -> k "failed to renew ssl certificate %S, %S because %s"
+                    ssl.cert ssl.priv (Printexc.to_string e))
+  in
+  List.iter renew (Atomic.get all_ssl);
+  renew_ssl ()
+
+type ssl_info =
+  { protocol : Ssl.protocol
+  ; cert : string
+  ; priv : string
+  }
+
+let init_ssl = ref false
+
 let make ?(addr="0.0.0.0") ?(port=8080) ?ssl ?(reuse=true) () =
-  { addr ; port ; ssl; reuse; index = unset_index }
+  let ctx, fill =
+    match ssl with
+    | None -> (None, fun _ -> ())
+    | Some {protocol; cert; priv} ->
+       try
+         if not !init_ssl then (
+           Ssl_threads.init ();
+           Ssl.init ();
+           ignore (Thread.create renew_ssl ());
+           init_ssl := true);
+         let mtime1 = (Unix.stat priv).st_mtime in
+         let mtime2 = (Unix.stat cert).st_mtime in
+         let mtime = max mtime1 mtime2 in
+         let ctx = Ssl.create_context protocol Ssl.Server_context in
+         Ssl.use_certificate ctx cert priv;
+         let dummy =
+           { addr = ""; port = 0; ssl = None
+             ; reuse = false; index = -1 }
+         in
+         let ssl = { mtime; cert; priv; protocol; addr = dummy } in
+         add_ssl ssl;
+         (Some (Atomic.make ctx), fun addr -> ssl.addr <- addr)
+       with e ->
+         !forward_log
+           (fun k -> k "failed to read ssl certificate %S, %S because %s"
+                       cert priv (Printexc.to_string e));
+         raise e
+  in
+  let addr = { addr ; port ; ssl = ctx; reuse; index = unset_index } in
+  fill addr; addr
 
 let register fn addrs =
   let a = Array.of_list addrs in

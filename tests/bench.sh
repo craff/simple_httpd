@@ -47,9 +47,18 @@ echo "apache php"
 echo 'GET http://localhost/nginx/bar.php' \
 	| vegeta attack -rate 1000 -duration $duration > timings/res.bin
 
-cat timings/res.bin | vegeta report > timings/php_report.txt
-cat timings/res.bin | vegeta report -type=hist[100us,200us,300us,400us,500us,750us,1ms,2ms,3ms,4ms,5ms,1s,5s,10s,1m] > timings/php.txt
-cat timings/res.bin | vegeta plot > timings/php.html
+cat timings/res.bin | vegeta report > timings/apache_php_report.txt
+cat timings/res.bin | vegeta report -type=hist[100us,200us,300us,400us,500us,750us,1ms,2ms,3ms,4ms,5ms,1s,5s,10s,1m] > timings/apache_php.txt
+cat timings/res.bin | vegeta plot > timings/apache_php.html
+
+echo "nginx php"
+
+echo 'GET http://localhost:7080/bar.php' \
+	| vegeta attack -rate 1000 -duration $duration > timings/res.bin
+
+cat timings/res.bin | vegeta report > timings/nginx_php_report.txt
+cat timings/res.bin | vegeta report -type=hist[100us,200us,300us,400us,500us,750us,1ms,2ms,3ms,4ms,5ms,1s,5s,10s,1m] > timings/nginx_php.txt
+cat timings/res.bin | vegeta plot > timings/nginx_php.html
 
 echo "apache static"
 
@@ -94,39 +103,23 @@ cat timings/res.bin | vegeta report > timings/sh_report_ssl.txt
 cat timings/res.bin | vegeta report -type=hist[100us,200us,300us,400us,500us,750us,1ms,2ms,3ms,4ms,5ms] > timings/sh_ssl.txt
 cat timings/res.bin | vegeta plot > timings/sh_ssl.html
 
-dune exec -- ../examples/echo.exe -c 2100 --port 8444 --ktls --log-requests 0 --ssl ../_build/default/tests/domain.crt ../_build/default/tests/domain.key &
-PID=$!
-
-sleep 1
-
-echo "simple_httpd ssl+ktls chaml"
-
-echo 'GET https://localhost:8444/vfs/bar.html' \
-	| vegeta attack -insecure -rate 1000 -duration $duration > timings/res.bin
-
-cat timings/res.bin | vegeta report > timings/chaml_report_ktls.txt
-cat timings/res.bin | vegeta report -type=hist[100us,200us,300us,400us,500us,750us,1ms,2ms,3ms,4ms,5ms] > timings/chaml_ktls.txt
-cat timings/res.bin | vegeta plot > timings/chaml_ktls.html
-
-echo "simple_httpd ssl+ktls static"
-
-echo 'GET https://localhost:8444/vfs/foo.html' \
-	| vegeta attack -insecure -rate 1000 -duration $duration > timings/res.bin
-
-kill $PID
-
-cat timings/res.bin | vegeta report > timings/sh_report_ktls.txt
-cat timings/res.bin | vegeta report -type=hist[100us,200us,300us,400us,500us,750us,1ms,2ms,3ms,4ms,5ms] > timings/sh_ktls.txt
-cat timings/res.bin | vegeta plot > timings/sh_ktls.html
-
 echo "apache ssl php"
 
 echo 'GET https://localhost/nginx/bar.php' \
 	| vegeta attack -insecure -rate 1000 -duration $duration > timings/res.bin
 
-cat timings/res.bin | vegeta report > timings/php_report_ssl.txt
-cat timings/res.bin | vegeta report -type=hist[100us,200us,300us,400us,500us,750us,1ms,2ms,3ms,4ms,5ms,1s,5s,10s,1m] > timings/php_ssl.txt
-cat timings/res.bin | vegeta plot > timings/php_ssl.html
+cat timings/res.bin | vegeta report > timings/apache_php_report_ssl.txt
+cat timings/res.bin | vegeta report -type=hist[100us,200us,300us,400us,500us,750us,1ms,2ms,3ms,4ms,5ms,1s,5s,10s,1m] > timings/apache_php_ssl.txt
+cat timings/res.bin | vegeta plot > timings/apache_php_ssl.html
+
+echo "nginx ssl php"
+
+echo 'GET https://localhost:7443/bar.php' \
+	| vegeta attack -insecure -rate 1000 -duration $duration > timings/res.bin
+
+cat timings/res.bin | vegeta report > timings/nginx_php_report_ssl.txt
+cat timings/res.bin | vegeta report -type=hist[100us,200us,300us,400us,500us,750us,1ms,2ms,3ms,4ms,5ms,1s,5s,10s,1m] > timings/nginx_php_ssl.txt
+cat timings/res.bin | vegeta plot > timings/nginx_php_ssl.html
 
 echo "apache ssl static"
 
@@ -153,7 +146,6 @@ function csv_out() {
 
 echo ,min, mean, 50%, 90%, 95%, 99%, max > timings/static.csv
 csv_out "simple_httpd" sh_report.txt timings/static.csv
-csv_out "simple_httpd ssl+ktls" sh_report_ktls.txt timings/static.csv
 csv_out "simple_httpd ssl" sh_report_ssl.txt timings/static.csv
 csv_out "nginx" nginx_report.txt timings/static.csv
 csv_out "nginx ssl" nginx_report_ssl.txt timings/static.csv
@@ -163,14 +155,15 @@ csv_out "apache ssl" apache_report_ssl.txt timings/static.csv
 
 echo ,min, mean, 50%, 90%, 95%, 99%, max > timings/dynamic.csv
 csv_out "simple_httpd chaml" chaml_report.txt timings/dynamic.csv
-csv_out "simple_httpd chaml ssl+ktls" chaml_report_ktls.txt timings/dynamic.csv
 csv_out "simple_httpd chaml ssl" chaml_report_ssl.txt timings/dynamic.csv
-csv_out "apache php" php_report.txt timings/dynamic.csv
-csv_out "apache php ssl" php_report_ssl.txt timings/dynamic.csv
+csv_out "nginx php" nginx_php_report.txt timings/dynamic.csv
+csv_out "nginx php ssl" nginx_php_report_ssl.txt timings/dynamic.csv
+csv_out "apache php" apache_php_report.txt timings/dynamic.csv
+csv_out "apache php ssl" apache_php_report_ssl.txt timings/dynamic.csv
 
 python3 plot.py
 
-wrk tests
+echo wrk tests
 
 dune exec ./bench.exe
 

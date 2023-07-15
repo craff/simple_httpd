@@ -51,12 +51,7 @@ let _ =
 
 let ssl =
   if !ssl_cert <> "" then
-    begin
-      Ssl_threads.init (); Ssl.init ();
-      let ctx = Ssl.create_context Ssl.TLSv1_2 Ssl.Server_context in
-      Ssl.use_certificate ctx !ssl_cert !ssl_priv;
-      Some ctx
-    end
+    Some Address.{ cert = !ssl_cert; priv = !ssl_priv; protocol = Ssl.TLSv1_3 }
   else None
 
 open Host
@@ -65,7 +60,7 @@ module Main = struct
   let addresses = [Address.make ~addr:!addr ~port:!port ?ssl ()]
   let hostnames = []
 
-  module Init(I:HostInit) = struct
+  module Init(I:Init) = struct
     open I
     let _ = add_dir_path ~config ~prefix:"" !dir
     let _ = add_route_handler Route.(exact "status" @/ return)

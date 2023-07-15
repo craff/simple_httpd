@@ -48,14 +48,26 @@ module Address : sig
     private
       { addr : string  (** The actual address in format "0.0.0.0" *)
       ; port : int     (** The port *)
-      ; ssl  : Ssl.context option (** An optional ssl context *)
+      ; ssl  : Ssl.context Atomic.t option (** An optional ssl context *)
       ; reuse : bool   (** Can we reuse the socket *)
       ; mutable index : index (** The index used to refer to the address *)
       }
 
+  (** type givent the relevant information for a ssl certificate *)
+  type ssl_info =
+    { protocol : Ssl.protocol (** protocol to use *)
+    ; cert : string           (** file name of the certificate *)
+    ; priv : string           (** file name of the private key *)
+    }
+
   (** The constructor to build an address *)
-  val make : ?addr:string -> ?port:int -> ?ssl:Ssl.context ->
+  val make : ?addr:string -> ?port:int -> ?ssl:ssl_info ->
              ?reuse:bool -> unit -> t
+
+  (** set the period in seconds at which all ssl certificates are checked for
+      renewal (default 1 day) *)
+  val set_ssl_reload_period : int -> unit
+
 end
 
 (** Module dealing with the asynchronous treatment of clients by each domain *)
@@ -371,7 +383,7 @@ module Cookies : sig
     Cookies are data that are maintend both on server and clients.
     This is a module to get and set cookies in the headers. *)
 
-  type t = (string * Http_cookie.t) list
+  type t = Http_cookie.t list
 
   val empty : t
   val parse : string -> t
@@ -677,6 +689,13 @@ module Route : sig
       {{:../../simple_httpd_caml*zip/Simple_httpd_camlzip/index.html}Simple_httpd_camlzip} uses this to compress the
       response only if [deflate] is allowed using the header named
     {!Headers.Accept_Encoding}. *)
+
+  val pass : unit -> 'a
+  (** This function may be called in a handler to try the next request.
+      It must be raised after reading only the path, not the request.
+      Your handler should look like:
+      [fun path -> if bad path then pass (); fun req -> ...]
+   *)
 end
 
 module Filter : sig
@@ -876,6 +895,10 @@ module Server : sig
 
     val buf_size : int ref
     (** Initial size of the buffer allocated by each client to parse request *)
+
+    val ssl_reload_period : int -> unit
+    (** Set ssl period in seconds at which all ssl certificates are checked for
+        renewal (default 1 day)*)
 
     val log_requests : int ref
     (** log level for requests information *)
@@ -1286,7 +1309,7 @@ module Host : sig
 
   (** A module of this type is provided to Init functor to allow you to
       initialize the route of your host *)
-  module type HostInit = sig
+  module type Init = sig
     val server : t
 
     val add_route_handler :
@@ -1330,7 +1353,7 @@ module Host : sig
     (** accept only request from this hostnames (or any hostname if the list is
         empty *)
 
-    module Init(_:HostInit) : sig end
+    module Init(_:Init) : sig end
     (** This function must initialize all the route of your server.*)
   end
 

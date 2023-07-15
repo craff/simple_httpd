@@ -22,3 +22,15 @@ let of_string = function
   | "HEAD" -> HEAD
   | "DELETE" -> DELETE
   | s -> Headers.fail_raise ~code:bad_request "unknown method %S" s
+
+let parse input =
+  let open Input in
+  branch_char (function
+      | 'G' -> exact_string "ET" GET
+      | 'P' -> branch_char (function
+                   | 'U' -> exact_char 'T' PUT
+                   | '0' -> exact_string "ST" POST
+                   | _   -> fail_parse ())
+      | 'H' -> exact_string "EAD" HEAD
+      | 'D' -> exact_string "ELETE" DELETE
+      | _   -> fail_parse ()) input

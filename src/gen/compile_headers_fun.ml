@@ -82,9 +82,6 @@ let to_string = function
 let _ = Printf.printf "%s" {|
 exception Invalid_header of string
 exception End_of_headers
-exception Found of header
-
-type fn = Cell of (char -> fn) [@unboxed]
 |}
 
 let both c1 =
@@ -97,33 +94,18 @@ let rec fn first tree k =
       let k = k ^ String.make 1 c0 in
       fn false t k) tree.nodes;
   let cases = List.map (fun (c,(_,t)) ->
-                  Printf.sprintf "    | %s -> cell_%d" (both c) t.id) tree.nodes
+                  Printf.sprintf "    | %s -> fn_%d _input" (both c) t.id) tree.nodes
   in
   let default = Printf.sprintf "    | c -> raise (Invalid_header (%S ^ String.make 1 c))" k in
   let cases = String.concat "\n" (cases @ [default]) in
-  Printf.printf "let cell_%d = Cell (fun c -> %smatch c with ':' -> %s\n%s)\n"
+  Printf.printf "let fn_%d = Input.branch_char (fun c _input -> %smatch c with %s\n%s)\n"
   tree.id
   (if first then "if c = '\\r' then raise End_of_headers;\n"
             else "")
   (match tree.leaf with
-   | None -> Printf.sprintf "    raise (Invalid_header %S)" k
-   | Some h -> Printf.sprintf "    raise (Found %s)" (to_cstr h)) cases
+   | None -> ""
+   | Some h -> Printf.sprintf "  ':' -> %s" (to_cstr h)) cases
 
 let _ = fn true tree ""
 
-let _ = Printf.printf "%s\n%!"
-"let parse self =
-  let open Input in
-  let acc = ref cell_0 in
-  try
-    while true do
-      for j = self.off to self.off + self.len - 1 do
-        self.consume 1;
-        let Cell f = !acc in
-        acc := f (Bytes.get self.bs j);
-      done;
-      self.fill_buf();
-      if self.len = 0 then raise End_of_file
-    done;
-    assert false
-  with Found k -> k"
+let _ = Printf.printf "let parse = fn_0\n%!"

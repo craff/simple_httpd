@@ -1,19 +1,18 @@
 open Http_cookie
 exception BadCookies of string
-type nonrec t = (string * t) list
+type nonrec t = t list
 
 let empty = []
 
 let parse s =
   match of_cookie s with
-  | Ok l ->
-     List.fold_left (fun acc c -> (name c, c)::acc) [] l
+  | Ok l -> l
   | Error err -> raise (BadCookies err)
 
 let add c cookies =
   let name = name c in
-  let cookies = List.filter (fun (n, _) -> n <> name) cookies in
-  (name, c) :: cookies
+  let cookies = List.filter (fun c -> Http_cookie.name c  <> name) cookies in
+  c :: cookies
 
 let create : ?path:string ->
              ?domain:string ->
@@ -33,15 +32,15 @@ let create : ?path:string ->
      | Error err -> raise (BadCookies err)
 
 let get name cookies =
-  List.assoc name cookies
+  List.find (fun c -> Http_cookie.name c = name) cookies
 
 let delete_all cookies =
-  List.map (fun (name, c) -> (name, Http_cookie.expire c)) cookies
+  List.map Http_cookie.expire cookies
 
 let delete name cookies =
   try
-    let c = List.assoc name cookies in
-    let cookies = List.filter (fun (n,_) -> n <> name) cookies in
-    (name, Http_cookie.expire c) :: cookies
+    let c = get name cookies in
+    let cookies = List.filter (fun c -> Http_cookie.name c <> name) cookies in
+    Http_cookie.expire c :: cookies
   with
     Not_found -> cookies

@@ -374,7 +374,7 @@ let update_atomic a fn =
     let old = Atomic.get a in
     let b = fn old in
     if Atomic.compare_and_set a old b then ()
-    else (Printf.eprintf "LOOP\n%!"; gn ())
+    else gn ()
   in
   gn ()
 
@@ -383,7 +383,7 @@ let get_update_atomic a fn =
     let old = Atomic.get a in
     let (x, b) = fn old in
     if Atomic.compare_and_set a old b then x
-    else (Printf.eprintf "LOOP\n%!"; gn ())
+    else gn ()
   in
   gn ()
 

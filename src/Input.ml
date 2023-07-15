@@ -251,6 +251,12 @@ let read_char (self:t) : char =
   self.consume 1;
   c
 
+let peek_char (self:t) : char =
+  self.fill_buf();
+  if self.len <= 0 then raise End_of_file;
+  let c = Bytes.get self.bs self.off in
+  c
+
 (* put [n] bytes from the input into bytes *)
 let read_exactly_ ~too_short (self:t) (bytes:bytes) (n:int) : unit =
   assert (Bytes.length bytes >= n);
@@ -443,6 +449,50 @@ let read_chunked ~buf ~fail ~trailer (bs:t) : t=
         refill:= false;
       )
     ()
+
+exception FailParse
+let fail_parse : unit -> 'a = fun () -> raise FailParse
+
+let [@inline] branch_char : (char -> t -> 'a) -> t -> 'a = fun fn self ->
+  let c = read_char self in
+  fn c self
+
+let [@inline] exact_char : char -> 'a -> t -> 'a = fun c r self ->
+  let c' = peek_char self in
+  if c <> c' then raise FailParse;
+  self.consume 1;
+  r
+
+let [@inline] exact_string : string -> 'a -> t -> 'a = fun s r self ->
+  for i = 0 to String.length s - 1 do
+    let c = read_char self in
+    if c <> s.[i] then raise FailParse
+  done;
+  r
+
+let [@inline] star : (t -> unit) -> t -> unit = fun parse self ->
+  try
+    while true do
+      parse self
+    done
+  with FailParse -> ()
+
+let [@inline] plus : (t -> unit) -> t -> unit = fun parse self ->
+  parse self;
+  star parse self
+
+let [@inline] blank self = plus (exact_char ' ' ()) self
+let [@inline] space self = star (exact_char ' ' ()) self
+
+let [@inline] int self =
+  let rec fn first r =
+    let c = peek_char self in
+    if c < '0' || c > '9' then if first then fail_parse () else r else
+      (self.consume 1;
+       fn false (r * 10 + Char.code c - Char.code '0'));
+
+  in
+  fn true 0
 
 (*$= & ~printer:Q.(Print.string)
   "tototitititutux" (of_output (fun (module O) -> O.echo "tototi"; O.echo "tititutu"; O.echo "x") |> read_all ~buf:(Buffer.create 16))

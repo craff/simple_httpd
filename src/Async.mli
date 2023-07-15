@@ -87,7 +87,7 @@ val flush : client -> unit
 (** This register the starttime of a request. You may use it to compute
     Request timeout (as opposed to socket timeout which are included
     and reset the timeout if you know a request requires time. *)
-val register_starttime : client -> unit
+val register_starttime : client -> float
 
 (** Module with function similar to Unix.read and Unix.single_write
     but that will perform scheduling *)

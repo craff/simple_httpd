@@ -3,7 +3,7 @@
     Cookies are data that are maintend both on server and clients.
     This is a module to get and set cookies in the headers. *)
 
-type t = (string * Http_cookie.t) list
+type t = Http_cookie.t list
 
 val empty : t
 val parse : string -> t

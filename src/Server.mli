@@ -12,6 +12,7 @@ module type Parameters = sig
   val num_threads : int ref
   val timeout : float ref
   val buf_size : int ref
+  val ssl_reload_period : int -> unit
 
   val log_requests : int ref
   val log_exceptions : int ref
