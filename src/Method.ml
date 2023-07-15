@@ -29,7 +29,7 @@ let parse input =
       | 'G' -> exact_string "ET" GET
       | 'P' -> branch_char (function
                    | 'U' -> exact_char 'T' PUT
-                   | '0' -> exact_string "ST" POST
+                   | 'O' -> exact_string "ST" POST
                    | _   -> fail_parse ())
       | 'H' -> exact_string "EAD" HEAD
       | 'D' -> exact_string "ELETE" DELETE

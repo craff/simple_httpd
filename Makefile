@@ -20,10 +20,10 @@ doc:
 
 .PHONY: install_doc
 install_doc: doc
-	rsync -r _build/default/_doc/_html/ ~/WWW2/main/simple_httpd/
-	rsync tests/timings/*.txt ~/WWW2/main/simple_httpd/bench/
-	rsync tests/timings/*.html ~/WWW2/main/simple_httpd/bench/
-	rsync tests/timings/*.svg ~/WWW2/main/simple_httpd/bench/
+	rsync -r _build/default/_doc/_html/ ~/WWW2/Raffalli/simple_httpd/
+	rsync tests/timings/*.txt ~/WWW2/Raffalli/simple_httpd/bench/
+	rsync tests/timings/*.html ~/WWW2/Raffalli/simple_httpd/bench/
+	rsync tests/timings/*.svg ~/WWW2/Raffalli/simple_httpd/bench/
 
 .PHONY: install
 install: build
