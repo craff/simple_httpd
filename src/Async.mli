@@ -46,6 +46,7 @@ type client = private {
     id : int;                         (** Unique identifier *)
     mutable connected : bool;         (** Is the client still connected *)
     sock : Unix.file_descr;           (** The sockect for the client *)
+    peer : string;                    (** peer IP *)
     accept_by : int;                  (** index in the listens table of the
                                           adress:port that received the connection *)
     mutable ssl  : Ssl.socket option; (** An eventual ssl context

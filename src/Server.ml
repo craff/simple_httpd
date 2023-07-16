@@ -1,8 +1,7 @@
 open Response_code
 
 type buf = Buffer.t
-
-let log      = Log.f
+let log = Log.f
 
 module type SERVER_SENT_GENERATOR = sig
   val set_headers : Headers.t -> unit

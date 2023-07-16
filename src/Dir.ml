@@ -197,10 +197,6 @@ let add_vfs_ ?addresses ?hostnames ?(filter=(fun x -> (x, fun r -> r)))
     Server.add_route_handler ?addresses ?hostnames ~filter ~meth:DELETE
       server (route())
       (fun path -> let path = check true "delete" path in fun _req ->
-         if contains_dot_dot path then (
-           Log.f (Exc 0) (fun k->k "delete fails %s (dotdot)" path);
-           Response.fail_raise ~code:forbidden "invalid path in delete"
-         ) else (
            Response.make_string
              (try
                 log (Req 1) (fun k->k "done delete %s" path);
@@ -210,7 +206,7 @@ let add_vfs_ ?addresses ?hostnames ?(filter=(fun x -> (x, fun r -> r)))
                                          (Async.printexn e));
                 Response.fail_raise ~code:internal_server_error
                   "delete fails: %s (%s)" path (Async.printexn e))
-      )))
+      ))
     else (
       Server.add_route_handler ?addresses ?hostnames ~filter ~meth:DELETE server (route())
         (fun _ _  ->

@@ -32,3 +32,4 @@ val index : t -> index
 val forward_log
     : ((((string -> string -> string -> unit, out_channel, unit, unit) format4 ->
          string -> string -> string -> unit) -> unit) -> unit) ref
+val dummy : t

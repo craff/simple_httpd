@@ -1,7 +1,7 @@
 open Response_code
 
 let fail_raise = Headers.fail_raise
-let log      = Log.f
+let log = Log.f
 
 type body = String of string
           | Stream of Input.t

@@ -388,6 +388,6 @@ let get_update_atomic a fn =
   gn ()
 
 let addr_of_sock sock =
-  match Unix.getsockname sock
+  match Unix.getpeername sock
   with ADDR_UNIX name -> "UNIX:" ^ name
      | ADDR_INET (addr, _) -> Unix.string_of_inet_addr addr

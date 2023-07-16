@@ -31,6 +31,7 @@ type client =
   { id : int
   ; mutable connected : bool
   ; sock : Unix.file_descr
+  ; peer : string
   ; accept_by : int (* index of the socket that accepted the connection in the
                        listens table *)
   ; mutable ssl : Ssl.socket option
@@ -66,6 +67,7 @@ and session = session_info Util.LinkedList.cell
 let fake_client =
     { sock = Unix.stdout;
       ssl = None;
+      peer = "";
       connected = false;
       session = None;
       acont = N;
@@ -169,8 +171,6 @@ let fake_domain_info =
 
 let all_domain_info = Array.make max_domain fake_domain_info
 
-let is_client cl = cl.id <> fake_client.id
-
 let global_get_client () =
   let id = Domain.self () in
   all_domain_info.((id :> int)).cur_client
@@ -195,11 +195,15 @@ module Log = struct
   let set_log_scheduler  n = log_status.scheduler  <- n
   let set_log_exceptions n = log_status.exceptions <- n
 
-  let do_log ty =
-    match ty with
+  let do_log = function
     | Req n -> n < log_status.requests
     | Sch n -> n < log_status.scheduler
     | Exc n -> n < log_status.exceptions
+
+  let str_log = function
+    | Req n -> "Req", n
+    | Sch n -> "Scg", n
+    | Exc n -> "Exc", n
 
   let log_files = ref [||]
   let log_folder = ref ""
@@ -243,9 +247,9 @@ module Log = struct
               end
             else stdout
           in
-          if is_client cl then
-            Printf.fprintf ch "%.6f %3d %10d: "
-              (Unix.gettimeofday ()) id cl.id;
+          let log,lvl = str_log ty in
+          Printf.fprintf ch "%.6f %2d %10d %s%d: "
+            (Unix.gettimeofday ()) id cl.id log lvl;
           Printf.kfprintf (fun oc -> Printf.fprintf oc "\n%!") ch fmt
         )
     )
@@ -616,8 +620,8 @@ let loop id st listens pipe timeout handler () =
                    add_ready (Accept (index, sock, l))
                  done
                with Unix.Unix_error((EAGAIN|EWOULDBLOCK),_,_) -> ()
-                  | e -> Log.f (Exc 0) (fun k -> k "EXCEPTION IN ACCEPT RECPT: %s"
-                                                  (Printexc.to_string e))
+                  | e -> Log.f (Exc 0) (fun k -> k "unexpected accept recv: %s"
+                                                   (Printexc.to_string e))
              end
           | { pd = NoEvent ; _ } as r ->
              let e = Polly.Events.((err lor hup) land evt <> empty) in
@@ -637,8 +641,7 @@ let loop id st listens pipe timeout handler () =
         add_ready Wait
       with e -> add_ready Wait; raise e
     with
-    | exn -> Log.f (Exc 0) (fun k -> k "UNEXPECTED EXCEPTION IN POLL: %s\n%!"
-                                       (printexn exn));
+    | exn -> Log.f (Exc 0) (fun k -> k "unexpected poll: %s\n%!" (printexn exn));
              (*check now;*) poll () (* FIXME: which exception *)
   in
   let step v =
@@ -648,6 +651,7 @@ let loop id st listens pipe timeout handler () =
          poll ()
       | Accept (index, sock, linfo) ->
          let client = { sock; ssl = None; id = new_id ();
+                        peer = Util.addr_of_sock sock;
                         connected = true; session = None;
                         start_time = now (); locks = [];
                         acont = N; buf = Buffer.create 4_096;
@@ -708,7 +712,7 @@ let loop id st listens pipe timeout handler () =
              continue cont ();
            end
     with e -> (try close e
-               with e -> Log.f (Exc 1) (fun k -> k "exception during close: %s"
+               with e -> Log.f (Exc 1) (fun k -> k "close: %s"
                                                 (Printexc.to_string e)))
 
   in
@@ -802,7 +806,7 @@ let accept_loop status listens pipes maxc =
         Atomic.incr status.nb_connections.(did);
       with
       | Full ->
-         Log.f (Exc 0) (fun k -> k "Reject: too many clients");
+         Log.f (Exc 0) (fun k -> k "handler: reject too many clients");
          let (lsock, _) = Unix.accept sock in
          Unix.close lsock
       | Unix.Unix_error((EAGAIN|EWOULDBLOCK),_,_) -> continue := false
@@ -812,7 +816,7 @@ let accept_loop status listens pipes maxc =
            | None -> ()
            | Some s -> try Unix.close s with Unix.Unix_error _ -> ()
          end;
-         Log.f (Exc 0) (fun k -> k "Exception during accept: %s" (printexn exn))
+         Log.f (Exc 0) (fun k -> k "accept send: %s" (printexn exn))
     done
   in
   let nb_socks = Array.length listens in
@@ -822,7 +826,7 @@ let accept_loop status listens pipes maxc =
     | Unix.Unix_error((EAGAIN|EWOULDBLOCK),_,_) -> ()
     | exn ->
        (* normal if client close connection brutally? *)
-       Log.f (Exc 1) (fun k -> k "Exception during epoll_wait: %s" (printexn exn))
+       Log.f (Exc 1) (fun k -> k "epoll_wait: %s" (printexn exn))
   done
 
 let run ~nb_threads ~listens ~maxc ~timeout ~status handler =

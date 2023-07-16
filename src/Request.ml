@@ -105,8 +105,8 @@ let read_exactly ~size (bs:Input.t) : Input.t =
 let parse_req_start ~client ~buf (bs:Input.t)
     : Input.t t option =
   try
-    let start_time = Async.register_starttime client in
     let meth = Method.parse bs in
+    let start_time = Async.register_starttime client in
     let _ = Input.exact_char ' ' () bs in
     let path = Input.read_until ~buf ~target:" " bs; Buffer.contents buf in
     let _ = Input.exact_string "HTTP/" () bs in
@@ -116,7 +116,7 @@ let parse_req_start ~client ~buf (bs:Input.t)
     let _ = Input.exact_char '\r' () bs in
     let _ = Input.exact_char '\n' () bs in
     if major != 1 || (minor != 0 && minor != 1) then raise Exit;
-    log (Req 0) (fun k->k "From %s: %s, path %S" (Util.addr_of_sock client.sock)
+    log (Req 0) (fun k->k "From %s: %s, path %S" client.peer
                           (Method.to_string meth) path);
     let (headers, cookies) = Headers.parse_ ~buf bs in
     let host =

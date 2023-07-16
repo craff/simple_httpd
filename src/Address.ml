@@ -48,7 +48,7 @@ let rec renew_ssl () =
           match ssl.addr.ssl with
           | None -> assert false
           | Some a -> Atomic.set a ctx
-        end
+        end;
     with e ->
       !forward_log (fun k -> k "failed to renew ssl certificate %S, %S because %s"
                     ssl.cert ssl.priv (Printexc.to_string e))
@@ -63,6 +63,11 @@ type ssl_info =
   }
 
 let init_ssl = ref false
+
+let dummy =
+  { addr = ""; port = 0; ssl = None
+    ; reuse = false; index = -1 }
+
 
 let make ?(addr="0.0.0.0") ?(port=8080) ?ssl ?(reuse=true) () =
   let ctx, fill =
@@ -80,10 +85,6 @@ let make ?(addr="0.0.0.0") ?(port=8080) ?ssl ?(reuse=true) () =
          let mtime = max mtime1 mtime2 in
          let ctx = Ssl.create_context protocol Ssl.Server_context in
          Ssl.use_certificate ctx cert priv;
-         let dummy =
-           { addr = ""; port = 0; ssl = None
-             ; reuse = false; index = -1 }
-         in
          let ssl = { mtime; cert; priv; protocol; addr = dummy } in
          add_ssl ssl;
          (Some (Atomic.make ctx), fun addr -> ssl.addr <- addr)
