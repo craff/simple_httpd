@@ -51,6 +51,9 @@ val listens : t -> Address.t array
 val status : t -> Async.status
 (** Returns server status *)
 
+val html_status : ?log_size:int -> t -> Html.elt
+(** Returns a detailed server status as html *)
+
 val active_connections : t -> int
 (** Number of active connections *)
 

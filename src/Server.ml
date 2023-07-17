@@ -37,6 +37,49 @@ let status self = self.status
 
 let active_connections _self = failwith "unimplemented"
 
+let html_status ?(log_size=100) self =
+  let open Html in
+  let status = self.status in
+  let printf fmt = Printf.ksprintf (fun s -> txt s) fmt in
+  let log_line acc (date, client, rest) =
+    let open Unix in
+    tr[][td["class","scol"][printf "%02d-%02d-%d %02d:%02d:%02d"
+           date.tm_mday (date.tm_mon + 1) (date.tm_year+1900)
+           date.tm_hour date.tm_min date.tm_sec] ;
+           td["class","scol"][printf "%d" client] ;
+             td[][pre[][txt rest]]] :: acc
+  in
+  let log i =
+    table[](tr[][th[][txt "date"];th[][txt "client"];th[][txt "information"]] ::
+              List.fold_left log_line [] (Async.Log.get_log i log_size))
+  in
+
+  html [] [
+      head [] [title[][txt "server status"];
+               style[][txt "table, th, td { border: 1px solid black;
+                                            border-collapse: collapse; }
+                            .scol { text-align: right;
+                                    vertical-align: top;
+                                    padding: 5px;
+                            }"]
+        ];
+      body [] [
+          h1[][printf "Server status %d+1 threads" self.num_threads];
+          ol[](List.init (self.num_threads + 1) (fun i ->
+                  li[][if i = 0 then
+                         printf "Thread %d: accepting clients" i
+                       else
+                         begin
+                           let did = status.domain_ids.(i-1) in
+                           let pps = Async.all_domain_info.((did :> int)).pendings in
+                           printf "Thread %d: %d=%d-1 connections (%d)" i
+                             (Atomic.get (status.nb_connections.(i-1)))
+                             (Hashtbl.length pps) (did :> int)
+                           ;
+                         end;
+                       log i]));
+  ]]
+
 let add_route_handler ?addresses ?hostnames ?meth ?filter
     self route f : unit =
   let tr_req _oc req ~resp f =
@@ -166,12 +209,14 @@ let create ?(listens = [Address.make ()]) (module Params : Parameters) =
   Log.set_log_exceptions !log_exceptions;
   if !log_folder <> "" then
     Log.set_log_folder ~basename:!log_basename ~perm:!log_perm
-      !log_folder num_threads;
+      !log_folder (num_threads + 1);
   let max_connections = max 4 max_connections in
   if num_threads <= 0 || max_connections < num_threads then
     invalid_arg "bad number of threads or max connections";
   let status = Async.{
-      nb_connections = Array.init num_threads (fun _ -> Atomic.make 0)
+        nb_connections = Array.init num_threads (fun _ -> Atomic.make 0);
+        domain_ids = Array.init num_threads (fun _ -> Domain.self ());
+          (* will be changed when the threads are spawn *)
     }
   in
   let (listens, handlers) =

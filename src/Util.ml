@@ -255,6 +255,9 @@ module LinkedList = struct
 
   let create () = { head = Nil; tail = Nil }
 
+  let new_cell v = Cons { v; next = Nil; prev = Nil }
+  let fake_cell = Nil
+
   let is_cell = function
     | Nil -> false
     | Cons _ -> true
@@ -300,7 +303,7 @@ module LinkedList = struct
   let remove_cell : 'a cell -> 'a t -> unit =
     fun c l ->
       match c with
-      | Nil -> invalid_arg "LinkedList.remove_cell"
+      | Nil -> ()
       | Cons r ->
          (match r.prev with
           | Nil -> assert (l.head == c); l.head <- r.next
@@ -313,7 +316,7 @@ module LinkedList = struct
   let insert_first : 'a cell -> 'a t -> unit =
     fun c l ->
           match c with
-      | Nil -> invalid_arg "LinkedList.insert_first"
+      | Nil -> ()
       | Cons r ->
          assert (r.next = Nil);
          assert (r.prev = Nil);
@@ -329,7 +332,7 @@ module LinkedList = struct
   let insert_last : 'a cell -> 'a t -> unit =
     fun c l ->
           match c with
-      | Nil -> invalid_arg "LinkedList.insert_first"
+      | Nil -> ()
       | Cons r ->
          assert (r.next = Nil);
          assert (r.prev = Nil);

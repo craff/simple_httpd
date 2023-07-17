@@ -13,10 +13,9 @@
 
 (** Connection status. Holds the number of clients per domain.  *)
 type status = {
-    nb_connections : int Atomic.t array
+    nb_connections : int Atomic.t array;
+    domain_ids : Domain.id array;
   }
-
-val string_status : status -> string
 
 (** Simple_httpd notion of mutex. You must be careful with server wide mutex:
     a DoS attack could try to hold such a mutex. A mutex per session may be a good
@@ -56,6 +55,8 @@ type client = private {
     mutable start_time : float;       (** start of request *)
     mutable locks : Mutex.t list;     (** all lock, locked by this client *)
     buf : Buffer.t;                   (** used to parse headers *)
+    mutable last_seen_cell : client Util.LinkedList.cell;
+     (** pointer to the linked list used to detect timeout *)
   }
 
 and session_info =
@@ -135,4 +136,17 @@ module Log : sig
     | Exc of int
   val f : log_lvl ->
           ((('a, out_channel, unit, unit) format4 -> 'a) -> unit) -> unit
+  val get_log : int -> int -> (Unix.tm * int * string) list
 end
+
+type socket_info
+
+type domain_info =
+  { mutable cur_client : client (* the client currently running *)
+  ; pendings : (Unix.file_descr, socket_info) Hashtbl.t
+  ; poll_list : Polly.t
+  ; bytes : Bytes.t (* a preallocated buffer *)
+  ; last_seen : client Util.LinkedList.t
+  }
+
+val all_domain_info : domain_info array

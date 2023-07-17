@@ -58,6 +58,8 @@ module LinkedList : sig
   type 'a cell
 
   val create : unit -> 'a t
+  val new_cell : 'a -> 'a cell
+  val fake_cell : 'a cell
   val is_empty : 'a t -> bool
   val size : 'a t -> int
   val add_first : 'a -> 'a t -> 'a cell

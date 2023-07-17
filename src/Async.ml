@@ -1,9 +1,10 @@
 open Effect
 open Effect.Deep
-open Domain
+module LL = Util.LinkedList
 
 type status = {
-    nb_connections : int Atomic.t array
+    nb_connections : int Atomic.t array;
+    domain_ids : Domain.id array;
   }
 
 let max_domain = 16
@@ -40,6 +41,7 @@ type client =
   ; mutable start_time : float (* last time request started *)
   ; mutable locks : mutex list
   ; buf : Buffer.t (* used to parse headers *)
+  ; mutable last_seen_cell : client LL.cell
   }
 
 and mutex_state = Unlocked | Locked of client | Deleted
@@ -62,7 +64,7 @@ and session_info =
   ; mutable last_refresh : float (* protected by mutex_list in Session.ml *)
   }
 
-and session = session_info Util.LinkedList.cell
+and session = session_info LL.cell
 
 let fake_client =
     { sock = Unix.stdout;
@@ -76,6 +78,7 @@ let fake_client =
       start_time = 0.0;
       locks = [];
       accept_by = 0;
+      last_seen_cell = LL.fake_cell
     }
 
 let set_session ?session client =
@@ -117,12 +120,6 @@ type socket_type =
   | Pipe   (* pipe to receive the new connection *)
   | Lock   (* mutex *)
 
-let pp_sock_info = function
-  | Io     -> "Io"
-  | Client -> "Client"
-  | Pipe   -> "Pipe"
-  | Lock   -> "Lock"
-
 let printexn e =
   match e with
   | e -> (Printexc.to_string e)
@@ -130,20 +127,11 @@ let printexn e =
 type pending_status =
   NoEvent | Wait : 'a pending -> pending_status | TooSoon of bool
 
-let pp_status = function
-  | NoEvent -> "NoEvent"
-  | Wait _ -> "Wait"
-  | TooSoon _ -> "TooSoon"
-
 type socket_info =
   { ty : socket_type
   ; client : client
   ; mutable pd : pending_status
   }
-
-let pp_pendings tbl =
-  Hashtbl.fold (fun _ v acc ->
-      acc ^ ", " ^ pp_sock_info v.ty ^ " " ^ pp_status v.pd) tbl ""
 
 type domain_info =
   { mutable cur_client : client (* the client currently running *)
@@ -157,9 +145,9 @@ type domain_info =
       may block on the same mutex or io, they can be present several time
       in the table of several domains.
    *)
-
   ; poll_list : Polly.t
   ; bytes : Bytes.t (* a preallocated buffer *)
+  ; last_seen : client LL.t
   }
 
 let fake_domain_info =
@@ -167,6 +155,7 @@ let fake_domain_info =
   ; pendings = Hashtbl.create 16
   ; poll_list = Polly.create ()
   ; bytes = Bytes.create 0
+  ; last_seen = LL.create ()
   }
 
 let all_domain_info = Array.make max_domain fake_domain_info
@@ -210,11 +199,52 @@ module Log = struct
   let log_basename = ref ""
   let log_perm = ref 0o700
 
+  let fname_log i = Filename.concat !log_folder
+                      (!log_basename ^ "-" ^ string_of_int i ^ ".log")
+
   let open_log i =
-    let filename = Filename.concat !log_folder
-                     (!log_basename ^ "-" ^ string_of_int i ^ ".log")
-    in
+    let filename = fname_log i in
     open_out_gen [Open_wronly; Open_append; Open_creat] !log_perm filename
+
+  let get_log i nb_lines = try
+    let filename = fname_log i in
+    let ch = Unix.open_process_args_in "tail"
+               [|"tail"; "-n"; string_of_int nb_lines; filename|]
+    in
+    let r = ref [] in
+    let b = Buffer.create 1024 in
+    let cont = ref true in
+    let start line = String.length line > 0 && '0' <= line.[0] && line.[0] <= '9' in
+
+    let first_line =
+      ref (let rec fn () =
+             let line = input_line ch in
+             if start line then line else fn ()
+           in fn ())
+    in
+    let fn () =
+      let time, client, rest =
+        Scanf.sscanf !first_line "%f %d %d %n"
+          (fun time _ cl rest ->
+            time, cl,
+            String.sub !first_line rest (String.length !first_line - rest))
+      in
+      Buffer.add_string b rest;
+      let rec gn () =
+        let line = input_line ch in
+        if String.length line > 0 && '0' <= line.[0] && line.[0] <= '9' then
+          first_line := line
+        else
+          (Buffer.add_string b "\n"; Buffer.add_string b line; gn ())
+      in
+      (try gn () with End_of_file -> cont := false);
+      let date = Unix.gmtime time in
+      let r = (date, client, Buffer.contents b) in
+      Buffer.reset b;
+      r
+    in
+    while !cont do r := fn () :: !r done;
+    List.rev !r with _ -> []
 
   let set_log_folder ?(basename="log") ?(perm=0o700) folder nb_dom =
     log_perm := perm;
@@ -256,23 +286,6 @@ module Log = struct
 
   let _ = Address.forward_log := f (Exc 0)
 end
-
-
-let string_status st =
-  let b = Buffer.create 128 in
-  Printf.bprintf b "[%t] [%t]"
-    (fun b ->
-      Array.iteri (fun i a -> Printf.bprintf b "%s%d"
-                                (if i = 0 then "" else ", ")
-                                (Atomic.get a)) st.nb_connections)
-    (fun b ->
-      Array.iteri (fun i a -> Printf.bprintf b "%s%s"
-                                (if i = 0 then "" else "|| ")
-                                (pp_pendings a.pendings)) all_domain_info);
-  Buffer.contents b
-
-let print_status ch st =
-  output_string ch (string_status st)
 
 let yield () = perform Yield
 (*
@@ -397,6 +410,8 @@ let cur_client () =
 let register_starttime cl =
   let r = now () in
   cl.start_time <- r;
+  let ll = all_domain_info.((Domain.self () :> int)).last_seen in
+  Util.LinkedList.move_first cl.last_seen_cell ll;
   r
 
 module type Io = sig
@@ -419,7 +434,7 @@ module Io = struct
     let info = all_domain_info.(i) in
     if not r.waiting.(i) then begin
         r.waiting.(i) <- true;
-        Polly.(add info.poll_list r.sock Events.(inp lor out lor et));
+        Polly.(add info.poll_list r.sock Events.(inp lor out lor et lor rdhup));
       end;
     let c = cur_client () in
     Hashtbl.add info.pendings r.sock { ty = Io; client = c; pd = NoEvent }
@@ -475,6 +490,7 @@ type pollResult =
 
 let loop id st listens pipe timeout handler () =
   let did = Domain.self () in
+  st.domain_ids.(id) <- did;
 
   let poll_list = Polly.create () in
   Polly.(add poll_list pipe Events.(inp lor et));
@@ -488,12 +504,11 @@ let loop id st listens pipe timeout handler () =
   Hashtbl.add pendings pipe pipe_info;
 
   let bytes = Bytes.create (16 * 4_096) in
-  let dinfo = { cur_client = fake_client; pendings ; poll_list; bytes } in
+  let last_seen = LL.create () in
+  let dinfo = { cur_client = fake_client; pendings ; poll_list; bytes; last_seen} in
   let get_client () = dinfo.cur_client in
   all_domain_info.((did :> int)) <- dinfo;
 
-
-  let unregister s = Hashtbl.remove pendings s in
 
   (* Queue for ready sockets *)
   let ready = Queue.create () in
@@ -557,6 +572,7 @@ let loop id st listens pipe timeout handler () =
   let close ?client exn =
     let c = match client with None -> get_client () | Some c -> c in
     assert c.connected;
+    LL.remove_cell c.last_seen_cell last_seen;
     begin
       let fn s =
         (try Ssl.shutdown s with _ -> ());
@@ -564,14 +580,14 @@ let loop id st listens pipe timeout handler () =
       in
       try apply c Unix.close fn with Unix.Unix_error _ -> ()
     end;
-    unregister c.sock;
+    Hashtbl.remove pendings c.sock;
     Atomic.decr st.nb_connections.(id);
 
     begin
       match c.session with
       | None -> ()
       | Some sess ->
-         let sess = Util.LinkedList.get sess in
+         let sess = LL.get sess in
          let fn clients = List.filter (fun c' -> c != c') clients in
          Util.update_atomic sess.clients fn;
     end;
@@ -586,16 +602,29 @@ let loop id st listens pipe timeout handler () =
     c.connected <- false
   in
 
+  let rec remove_timeout t0 =
+    try
+      let cell = LL.tail last_seen in
+      let client = LL.get cell in
+      if client.start_time < t0 then
+        begin
+          close ~client TimeOut;
+          remove_timeout t0
+        end
+    with Not_found -> ()
+  in
+
   let rec poll () =
     let now = now () in
     try
       (* O(n) when n is the number of waiting lock *)
       get_sleep now;
+      remove_timeout (now -. timeout);
       let select_timeout =
         match Queue.is_empty ready, !sleeps with
         | false, _ -> 0.0
-        | _, (t,_,_)::_ -> (t -. now)
-        | _ -> -1.0
+        | _, (t,_,_)::_ -> min timeout (t -. now)
+        | _ -> timeout
       in
       let select_timeout = int_of_float (1e3 *. select_timeout) in
       let fn _ sock evt =
@@ -624,14 +653,14 @@ let loop id st listens pipe timeout handler () =
                                                    (Printexc.to_string e))
              end
           | { pd = NoEvent ; _ } as r ->
-             let e = Polly.Events.((err lor hup) land evt <> empty) in
+             let e = Polly.Events.((err lor hup lor rdhup) land evt <> empty) in
              r.pd <- TooSoon e
           | { pd = Wait a ; _ } as p ->
-             let e = Polly.Events.((err lor hup) land evt <> empty) in
+             let e = Polly.Events.((err lor hup lor rdhup) land evt <> empty) in
              add_ready (Action(a,p,e));
              p.pd <- NoEvent;
           | { pd = TooSoon b ; _ } as p ->
-             let e = Polly.Events.((err lor hup) land evt <> empty) in
+             let e = Polly.Events.((err lor hup lor rdhup) land evt <> empty) in
              p.pd <- TooSoon (b && e)
         in
         List.iter fn (find sock)
@@ -650,22 +679,24 @@ let loop id st listens pipe timeout handler () =
       | Wait ->
          poll ()
       | Accept (index, sock, linfo) ->
-         let client = { sock; ssl = None; id = new_id ();
-                        peer = Util.addr_of_sock sock;
-                        connected = true; session = None;
-                        start_time = now (); locks = [];
-                        acont = N; buf = Buffer.create 4_096;
-                        accept_by = index;
-                      } in
+         let client = { sock; ssl = None; id = new_id ()
+                      ; peer = Util.addr_of_sock sock
+                      ; connected = true; session = None
+                      ; start_time = now (); locks = []
+                      ; acont = N; buf = Buffer.create 4_096
+                      ; accept_by = index; last_seen_cell = LL.fake_cell
+                      }
+         in
+         client.last_seen_cell <- LL.add_first client dinfo.last_seen;
          dinfo.cur_client <- client;
          let info = { ty = Client; client; pd = NoEvent } in
-         Log.f (Req 1) (fun k -> k "[%d] accept connection (%a)" client.id print_status st);
+         Log.f (Req 1) (fun k -> k "[%d] accept connection" client.id);
          Unix.set_nonblock sock;
          Unix.(setsockopt_float sock SO_RCVTIMEO timeout);
          Unix.(setsockopt_float sock SO_SNDTIMEO timeout);
          Unix.(setsockopt sock TCP_NODELAY true); (* not clearly usefull *)
          Hashtbl.add pendings sock info;
-         Polly.(add poll_list sock Events.(inp lor out lor et));
+         Polly.(add poll_list sock Events.(inp lor out lor et lor rdhup));
          begin
            match linfo.ssl with
            | Some ctx ->
@@ -841,7 +872,7 @@ let run ~nb_threads ~listens ~maxc ~timeout ~status handler =
   let fn id =
     let (r, _) = pipes.(id) in
     Unix.set_nonblock r;
-    spawn (loop id status listens_r r timeout handler)
+    Domain.spawn (loop id status listens_r r timeout handler)
   in
   let pipes = Array.map snd pipes in
   let r = Array.init nb_threads fn in

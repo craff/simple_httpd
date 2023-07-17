@@ -99,14 +99,17 @@ let pi loc s1 s2 = {loc; c = PI(s1,s2)}
 let xml loc x = {loc; c = Xml(x)}
 
 let parse_html ~dynamic ~filename s =
-  let report (line,col) err =
-    Printf.eprintf "File %S, line %d, characters %d:\n %s\n%!"
-      filename line col (Error.to_string err);
-    exit 1;
+  let detailed_report opens (line,col) err =
+    match opens, err with
+    | ((_,"ml"), _, _)::_, (`Bad_token _ | `Bad_content _) -> ()
+    | _ ->
+       Printf.eprintf "File %S, line %d, characters %d:\n %s\n%!"
+         filename line col (Error.to_string err);
+       exit 1;
   in
   let element = element ~dynamic ~filename in
   let context = if dynamic then Some `Document else None in
-  s |> parse_html ~report ?context |>
+  s |> parse_html ~detailed_report ?context |>
     trees_with_loc ~element ~text ~comment ~pi ~xml ~doctype
 
 exception Incomplete

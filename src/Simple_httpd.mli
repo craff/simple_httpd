@@ -103,10 +103,9 @@ module Async : sig
 
   (** Connection status. Holds the number of clients per domain.  *)
   type status = {
-      nb_connections : int Atomic.t array
+      nb_connections : int Atomic.t array ;
+      domain_ids : Domain.id array
     }
-
-  val string_status : status -> string
 
   (** Record describing clients *)
   type client
@@ -977,6 +976,9 @@ module Server : sig
 
   val status : t -> Async.status
   (** Returns server status *)
+
+  val html_status : ?log_size:int -> t -> Html.elt
+  (** Returns a detailed server status as html *)
 
   val active_connections : t -> int
   (** Number of active connections *)
