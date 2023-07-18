@@ -143,7 +143,7 @@ let parse_req_start ~client ~buf (bs:Input.t)
   | End_of_file -> None
   | Headers.Bad_req _ as e -> raise e
   | Exit | Input.FailParse ->
-     log (Exc 1) (fun k->k "Invalid request line");
+     log (Exc 1) (fun k->k "Invalid request line %S" (Input.current bs));
      fail_raise ~code:bad_request "Invalid request line"
   | e -> fail_raise ~code:internal_server_error "exception: %s" (Async.printexn e)
 

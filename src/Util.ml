@@ -394,3 +394,12 @@ let addr_of_sock sock =
   match Unix.getpeername sock
   with ADDR_UNIX name -> "UNIX:" ^ name
      | ADDR_INET (addr, _) -> Unix.string_of_inet_addr addr
+
+let to_human ?(unit="o") f =
+  (if f > 1e12 then Printf.sprintf "%.2fT%s" (f /. 1e12)
+   else if f > 1e9 then Printf.sprintf "%.2fG%s" (f /. 1e9)
+   else if f > 1e6 then Printf.sprintf "%.2fM%s" (f /. 1e6)
+   else if f > 1e3 then Printf.sprintf "%.2fK%s" (f /. 1e3)
+   else Printf.sprintf "%d%s" (int_of_float f)) unit
+
+let to_human_int ?unit n = to_human ?unit (float n)

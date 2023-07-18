@@ -150,3 +150,5 @@ val blank : t -> unit
 val space : t -> unit
 
 val int : t -> int
+
+val current : t -> string

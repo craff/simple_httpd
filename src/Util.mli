@@ -81,3 +81,6 @@ val update_atomic : 'a Atomic.t -> ('a -> 'a) -> unit
 val get_update_atomic : 'a Atomic.t -> ('a -> 'b * 'a) -> 'b
 
 val addr_of_sock : Unix.file_descr -> string
+
+val to_human : ?unit:string -> float -> string
+val to_human_int : ?unit:string -> int -> string

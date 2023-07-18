@@ -494,6 +494,8 @@ let [@inline] int self =
   in
   fn true 0
 
+let current self = Bytes.to_string self.bs
+
 (*$= & ~printer:Q.(Print.string)
   "tototitititutux" (of_output (fun (module O) -> O.echo "tototi"; O.echo "tititutu"; O.echo "x") |> read_all ~buf:(Buffer.create 16))
 

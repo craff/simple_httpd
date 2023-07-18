@@ -690,7 +690,8 @@ let loop id st listens pipe timeout handler () =
          client.last_seen_cell <- LL.add_first client dinfo.last_seen;
          dinfo.cur_client <- client;
          let info = { ty = Client; client; pd = NoEvent } in
-         Log.f (Req 1) (fun k -> k "[%d] accept connection" client.id);
+         Log.f (Req 1)
+           (fun k -> k "[%d] accept connection from %s" client.id client.peer);
          Unix.set_nonblock sock;
          Unix.(setsockopt_float sock SO_RCVTIMEO timeout);
          Unix.(setsockopt_float sock SO_SNDTIMEO timeout);
