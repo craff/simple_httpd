@@ -10,8 +10,12 @@ build:
 test:
 	@dune runtest --no-buffer --force
 
+.PHONY: remove
+remove:
+	find . \( -name *~ -o -name \#* \) -print -exec rm \{\} \;
+
 .PHONY: clean
-clean:
+clean: remove
 	@dune clean
 
 .PHONY: doc
