@@ -3,7 +3,7 @@ module D = Dir
 module Pf = Printf
 
 let send_status server _req =
-  Response.make_string (Html.to_string (Server.html_status server))
+  Response.make_string (Html.to_string ~top:true (Status.html server))
 
 let parse_size s : int =
   try Scanf.sscanf s "%dM" (fun n -> n * 1_024 * 1_024)

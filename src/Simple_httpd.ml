@@ -55,4 +55,6 @@ module Html = Html
 
 module Server = Server
 
+module Status = Status
+
 module Host = Host

@@ -30,7 +30,7 @@ let parse input =
       | 'P' -> branch_char (function
                    | 'U' -> exact_char 'T' PUT
                    | 'O' -> exact_string "ST" POST
-                   | _   -> fail_parse ())
+                   | _   -> fail_parse input)
       | 'H' -> exact_string "EAD" HEAD
       | 'D' -> exact_string "ELETE" DELETE
-      | _   -> fail_parse ()) input
+      | _   -> fail_parse input) input

@@ -252,6 +252,40 @@ module Input : sig
         [bs]
         @param too_short is called if [bs] closes with still [n] bytes remaining
    *)
+
+  (** The following are a minimal set of non backtracking parsing combinators,
+      used to parse the first request line with no allocation. *)
+  exception FailParse of int
+  val fail_parse : t -> 'a
+  (** fail, return the current offset *)
+
+  val branch_char : (char -> t -> 'a) -> t -> 'a
+  (** branch from the value of one char *)
+
+  val exact_char : char -> 'a -> t -> 'a
+  (** parse exactly one char *)
+
+  val exact_string : string -> 'a -> t -> 'a
+  (** parse exactly the given string *)
+
+  val star : (t -> unit) -> t -> unit
+  (** repeat parsing 0 or more time, fail if partial parsing is possible *)
+
+  val plus : (t -> unit) -> t -> unit
+  (** repeat parsing 1 or more time, fail if partial parsing is possible *)
+
+  val blank : t -> unit
+  (** parse blank charaters *)
+
+  val space : t -> unit
+  (** parse spaces *)
+
+  val int : t -> int
+  (** parse a positive integer in decimal *)
+
+  val current : t -> string
+  (** return the current value of the buffer, usefull when capturing
+      [Fail_parse n] *)
 end
 
 (** Module providing logging facilities *)
@@ -977,11 +1011,11 @@ module Server : sig
   val status : t -> Async.status
   (** Returns server status *)
 
-  val html_status : ?log_size:int -> t -> Html.elt
-  (** Returns a detailed server status as html *)
+  val num_threads : t -> int
+  (** Number of threads used by the server *)
 
-  val active_connections : t -> int
-  (** Number of active connections *)
+  val max_connections : t -> int
+  (** Maximum number of connections allowed by the server *)
 
   (** {1 Route handlers}
 
@@ -1303,6 +1337,15 @@ module Dir : sig
 
   end
 end
+
+(** A module to get detail status about the server *)
+module Status : sig
+  val html : ?log_size:int -> Server.t -> Html.elt
+  (** Returns a detailed server status as html. If the server uses a
+      [log_folder], the given number of lines of the log is given for each
+      thread/domain.*)
+end
+
 
 (** Hight level module to write server handling multiple hosts/addresses *)
 module Host : sig

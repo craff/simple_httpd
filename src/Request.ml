@@ -115,7 +115,7 @@ let parse_req_start ~client ~buf (bs:Input.t)
     let minor = Input.int bs in
     let _ = Input.exact_char '\r' () bs in
     let _ = Input.exact_char '\n' () bs in
-    if major != 1 || (minor != 0 && minor != 1) then raise Exit;
+    if major != 1 || (minor != 0 && minor != 1) then Input.fail_parse bs;
     log (Req 0) (fun k->k "From %s: %s, path %S" client.peer
                           (Method.to_string meth) path);
     let (headers, cookies) = Headers.parse_ ~buf bs in
@@ -142,8 +142,8 @@ let parse_req_start ~client ~buf (bs:Input.t)
   with
   | End_of_file -> None
   | Headers.Bad_req _ as e -> raise e
-  | Exit | Input.FailParse ->
-     log (Exc 1) (fun k->k "Invalid request line %S" (Input.current bs));
+  | Input.FailParse n ->
+     log (Exc 1) (fun k->k "Invalid request line at %d: %S" n (Input.current bs));
      fail_raise ~code:bad_request "Invalid request line"
   | e -> fail_raise ~code:internal_server_error "exception: %s" (Async.printexn e)
 

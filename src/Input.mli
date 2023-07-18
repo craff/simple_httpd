@@ -132,8 +132,8 @@ val read_exactly :
     @param too_short is called if [bs] closes with still [n] bytes remaining
 *)
 
-exception FailParse
-val fail_parse : unit -> 'a
+exception FailParse of int
+val fail_parse : t -> 'a
 
 val branch_char : (char -> t -> 'a) -> t -> 'a
 
