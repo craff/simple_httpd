@@ -27,6 +27,8 @@ module Log = Async.Log
 
 module Mutex = Async.Mutex
 
+module Process = Process
+
 module Method = Method
 
 module Headers = Headers

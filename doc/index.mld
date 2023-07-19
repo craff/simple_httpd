@@ -3,11 +3,13 @@
 This library implements a HTTP/1.1 server for Linux using domains and
 algebraic effect. It uses [epoll] and [eventfd] to schedule the treatment of
 clients efficiently, with one domain used to accept request and several
-domains to handle these requests. [Simple_httpd] can listen to several adresses
-and ports and use this information together with the headers [Host] field to
-decide how to answer the request. It is relatively fast and can handle
-thousands of simultaneous connections. If uses memory cache, [sendfile] system
-call and other TCP options to reach an efficiency comparable or better than nginx on static files.
+domains to handle these requests. [Simple_httpd] can listen to several
+addresses and ports and use this information together with the headers [Host]
+field to decide how to answer the request.
+
+It is relatively fast and can handle thousands of simultaneous connections. It
+may use memory cache, [sendfile] system call and other TCP options to reach an
+efficiency comparable or better than nginx on static files.
 
 Through a bunch of modules, described here {!Simple_httpd}, we provide:
 
@@ -18,22 +20,28 @@ Through a bunch of modules, described here {!Simple_httpd}, we provide:
 - Basic managment of session and cookies. Simple_httpd sessions can for
   instance keep an open connection to a database server.
 
-- Support for ssl.
+- Support for ssl using {{:https://github.com/savonet/ocaml-ssl}ocaml-ssl}.
 
 - A {!Simple_httpd.Host} module dedicated to write single server handling
   several sites.
 
-- A {{:./vfs_pack.html}web site compiler vfs_pack}.
+- A {{:./vfs_pack.html}web site compiler vfs_pack}, the will cache small files
+  in memory and bigger files in a separate store, allowing not to store the
+  source of your websites on the server. Files in store or memory may be
+  pre-compressed with zlip (a.k.a. deflate).
 
 - {{:./vfs_pack.html}vfs_pack} includes an equivalent of php files that are
-  compiled to OCaml, but much faster than php (and also safer).
+  compiled to OCaml, but much faster than php (and also probably safer).
 
-- It is pretty fast: Here are some curves showing the performance on static files
-compared to nginx and apache.
+- It is pretty fast: Here are some curves showing the performance on static
+  files compared to nginx and apache. The 99% quantile is very, meaning that
+  {!Simple_httpd} handles very quickly most request.
 
-First a plot of the latency obtained using {{:https://github.com/tsenart/vegeta}
-[vegeta]} with 1000 requests per seconds for 15s, on a small static file.
-Simple_httpd uses {!Simple_httpd.Dir.add_vfs} using {{:./vfs_pack.html}[vfs_pack]} from the [example/echo.ml] file shown below:
+First, here is a plot of the latency obtained using
+{{:https://github.com/tsenart/vegeta} [vegeta]} with 1000 requests per seconds
+for 15s, on a small static file.  Simple_httpd uses
+{!Simple_httpd.Dir.add_vfs} using {{:./vfs_pack.html}[vfs_pack]} from the
+[example/echo.ml] file shown below:
 
 {%html: <p align="center"><img src="https://raffalli.eu/simple_httpd/bench/static.svg" alt="Latencies for static files"/></p>%}
 
@@ -41,16 +49,16 @@ Here is the same graphic for a small chaml/php dynamic file.
 
 {%html: <p align="center"><img src="https://raffalli.eu/simple_httpd/bench/dynamic.svg" alt="Latencies for dynamic files"/></p>%}
 
-Here are some other graph showing the maximum number of requests possible, using {{:https://github.com/wg/wrk}[wrk]}
+Here are some other graphs showing the maximum number of requests possible, using {{:https://github.com/wg/wrk}[wrk]}
 
 {%html: <p align="center"><img src="https://raffalli.eu/simple_httpd/bench/bench_foo_1k.svg" alt="comparison for small files"/></p>%}
 
 {%html: <p align="center"><img src="https://raffalli.eu/simple_httpd/bench/bench_foo_10M.svg" alt="comparison for large files"/></p>%}
 
-[apache] and [nginx] are the usual servers with [php-fpm] and their defaut
+[apache] and [nginx] are the usual servers with [php-fpm] and their default
 configuration on debian 12 except for accepting more connections than the
 default. There is a (reproducible) problem with nginx and php without ssl with
-a few extreme value that impact the mean (and the 99% quantile that we could had to remove).
+a few extreme value that impact the mean.
 
 Here is a similar graph showing the difference between [.php] and [.chaml] on a
 similar file. It shows that simple_httpd can serve more than 5 times more requests.
@@ -81,7 +89,6 @@ let ssl_priv = ref ""
 (** Server.args provides a bunch and standard option to control the
     maximum number of connections, logs, etc... *)
 let args, parameters = Server.args ()
-module Params = (val parameters)
 
 let _ =
   Arg.parse (Arg.align ([
@@ -96,21 +103,16 @@ let _ =
 
 let ssl =
   if !ssl_cert <> "" then
-    begin
-      Ssl_threads.init (); Ssl.init ();
-      let ctx = Ssl.create_context ~ktls:!Params.ktls Ssl.TLSv1_2 Ssl.Server_context in
-      Ssl.use_certificate ctx !ssl_cert !ssl_priv;
-      Some ctx
-    end
+    Some Address.{ cert = !ssl_cert; priv = !ssl_priv; protocol = Ssl.TLSv1_3 }
   else None
 
 (** Server initialisation *)
 let listens = [Address.make ~addr:!addr ~port:!port ?ssl ()]
 let server = Server.create parameters ~listens
 
-(** Compose the above filter with the compression filter
+(** Compose a simple stat filter with the compression filter
     provided by [Simple_httpd.Camlzip], than will compress output
-    when [deflate] is accepted *)
+    when [deflate] if accepted *)
 let filter, get_stats =
   let filter_stat, get_stats = Stats.filter () in
   let filter_zip =
@@ -190,8 +192,7 @@ let _ =
         Response.make_stream ~headers:mime_type str
       )
 
-(** Main pagen using the Html module (deprecated by vfs_pack and many other
-    solutions *)
+(** Main pagen using the Html module *)
 let _ =
   Server.add_route_handler server ~filter Route.return
     (fun _req ->
@@ -213,12 +214,6 @@ let _ =
          ] in
        let s = to_string ~top:true h in
        Response.make_string ~headers:[H.Content_Type, "text/html"] s)
-
-(** Output a message before starting the server *)
-let _ =
-  Array.iter (fun l ->
-    let open Address in
-    Printf.printf "listening on http://%s:%d\n%!" l.addr l.port) (Server.listens server)
 
 (** Start the server *)
 let _ =

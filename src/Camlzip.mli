@@ -2,8 +2,7 @@
 val filter :
   ?compress_above:int ->
   ?buf_size:int -> unit -> Input.t Route.Filter.t
-(** Middleware responsible for deflate compression/decompression.
-    @since 0.11 *)
+(** Filter responsible for deflate compression/decompression. *)
 
 val deflate_string : ?buf_size:int -> string -> string
 (** zlib string compression *)

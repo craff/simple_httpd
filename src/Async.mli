@@ -93,16 +93,16 @@ val register_starttime : client -> float
 
 (** Module with function similar to Unix.read and Unix.single_write
     but that will perform scheduling *)
-module type Io = sig
+module Io : sig
   type t
 
   val create : Unix.file_descr -> t
   val close : t -> unit
   val read : t -> Bytes.t -> int -> int -> int
   val write : t -> Bytes.t -> int -> int -> int
-end
 
-module Io : Io
+  val formatter : t -> Format.formatter
+end
 
 type socket_type =
   | Io
@@ -136,7 +136,12 @@ module Log : sig
     | Exc of int
   val f : log_lvl ->
           ((('a, out_channel, unit, unit) format4 -> 'a) -> unit) -> unit
-  val get_log : int -> int -> (Unix.tm * int * string) list
+
+  val log_folder : string ref
+  val log_basename : string ref
+  val log_perm : int ref
+
+  val fname : int -> string
 end
 
 type socket_info

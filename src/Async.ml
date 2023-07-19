@@ -191,7 +191,7 @@ module Log = struct
 
   let str_log = function
     | Req n -> "Req", n
-    | Sch n -> "Scg", n
+    | Sch n -> "Sch", n
     | Exc n -> "Exc", n
 
   let log_files = ref [||]
@@ -199,52 +199,12 @@ module Log = struct
   let log_basename = ref ""
   let log_perm = ref 0o700
 
-  let fname_log i = Filename.concat !log_folder
+  let fname i = Filename.concat !log_folder
                       (!log_basename ^ "-" ^ string_of_int i ^ ".log")
 
   let open_log i =
-    let filename = fname_log i in
+    let filename = fname i in
     open_out_gen [Open_wronly; Open_append; Open_creat] !log_perm filename
-
-  let get_log i nb_lines = try
-    let filename = fname_log i in
-    let ch = Unix.open_process_args_in "tail"
-               [|"tail"; "-n"; string_of_int nb_lines; filename|]
-    in
-    let r = ref [] in
-    let b = Buffer.create 1024 in
-    let cont = ref true in
-    let start line = String.length line > 0 && '0' <= line.[0] && line.[0] <= '9' in
-
-    let first_line =
-      ref (let rec fn () =
-             let line = input_line ch in
-             if start line then line else fn ()
-           in fn ())
-    in
-    let fn () =
-      let time, client, rest =
-        Scanf.sscanf !first_line "%f %d %d %n"
-          (fun time _ cl rest ->
-            time, cl,
-            String.sub !first_line rest (String.length !first_line - rest))
-      in
-      Buffer.add_string b rest;
-      let rec gn () =
-        let line = input_line ch in
-        if String.length line > 0 && '0' <= line.[0] && line.[0] <= '9' then
-          first_line := line
-        else
-          (Buffer.add_string b "\n"; Buffer.add_string b line; gn ())
-      in
-      (try gn () with End_of_file -> cont := false);
-      let date = Unix.gmtime time in
-      let r = (date, client, Buffer.contents b) in
-      Buffer.reset b;
-      r
-    in
-    while !cont do r := fn () :: !r done;
-    List.rev !r with _ -> []
 
   let set_log_folder ?(basename="log") ?(perm=0o700) folder nb_dom =
     log_perm := perm;
@@ -257,25 +217,26 @@ module Log = struct
       log_files := a
     with e -> failwith ("set_log_folder: " ^ Printexc.to_string e)
 
+  let get_log id =
+    let ch = !log_files.(id)in
+    (* reopen log file it no link: logrotate might delete it*)
+    if Unix.(fstat (Unix.descr_of_out_channel ch)).st_nlink < 1 then
+      begin
+        let ch = open_log id in
+          Printf.fprintf ch "%.6f %2d %10d Log0: log created\n%!"
+            (Unix.gettimeofday ()) id (-1);
+        !log_files.(id) <- ch;
+        ch
+      end
+    else ch
+
   let f ty k =
     if do_log ty then (
       k (fun fmt->
           let id = Domain.((self() :> int)) in
           let cl = global_get_client () in
           let ch =
-            if id < Array.length !log_files then
-              begin
-                let ch = !log_files.(id)in
-                (* reopen log file it no mode symlink: logrotate might delete it*)
-                if Unix.(fstat (Unix.descr_of_out_channel ch)).st_nlink < 1 then
-                  begin
-                    let ch = open_log id in
-                    !log_files.(id) <- ch;
-                    ch
-                  end
-                else ch
-              end
-            else stdout
+            if id < Array.length !log_files then get_log id else stdout
           in
           let log,lvl = str_log ty in
           Printf.fprintf ch "%.6f %2d %10d %s%d: "
@@ -283,6 +244,10 @@ module Log = struct
           Printf.kfprintf (fun oc -> Printf.fprintf oc "\n%!") ch fmt
         )
     )
+
+  let fname id =
+    let _ = get_log id in
+    fname id
 
   let _ = Address.forward_log := f (Exc 0)
 end
@@ -414,20 +379,11 @@ let register_starttime cl =
   Util.LinkedList.move_first cl.last_seen_cell ll;
   r
 
-module type Io = sig
-  type t
-
-  val create : Unix.file_descr -> t
-  val close : t -> unit
-  val read : t -> Bytes.t -> int -> int -> int
-  val write : t -> Bytes.t -> int -> int -> int
-end
-
 module Io = struct
   include IoTmp
 
   let close (s:t) =
-    Unix.close s.sock
+    Unix.(shutdown s.sock SHUTDOWN_ALL)
 
   let register (r : t) =
     let i = (Domain.self () :> int) in
@@ -437,7 +393,7 @@ module Io = struct
         Polly.(add info.poll_list r.sock Events.(inp lor out lor et lor rdhup));
       end;
     let c = cur_client () in
-    Hashtbl.add info.pendings r.sock { ty = Io; client = c; pd = NoEvent }
+    Hashtbl.replace info.pendings r.sock { ty = Io; client = c; pd = NoEvent }
 
   let create sock =
     let r = { sock
@@ -450,8 +406,8 @@ module Io = struct
   try
     Util.read io.sock  s o l
   with Unix.(Unix_error((EAGAIN|EWOULDBLOCK),_,_)) ->
-        register io;
-        schedule_io io.sock (fun () -> read io s o l)
+    register io;
+    schedule_io io.sock (fun () -> read io s o l)
 
   let rec write (io:t) s o l =
   try
@@ -459,6 +415,19 @@ module Io = struct
   with Unix.(Unix_error((EAGAIN|EWOULDBLOCK),_,_)) ->
         register io;
         schedule_io io.sock (fun () -> write io s o l)
+
+  let formatter (io:t) =
+    let open Format in
+    let out_string s o l = ignore (write io (Bytes.unsafe_of_string s) o l) in
+    let funs = {
+        out_string;
+        out_flush = (fun () -> ());
+        out_newline = (fun () -> out_string "\n" 0 1);
+        out_spaces = (fun n -> out_string (String.make n ' ') 0 n);
+        out_indent = (fun n -> out_string (String.make n ' ') 0 n);
+      }
+    in
+    formatter_of_out_functions funs
 
 end
 
@@ -576,9 +545,12 @@ let loop id st listens pipe timeout handler () =
     begin
       let fn s =
         (try Ssl.shutdown s with _ -> ());
-        Unix.close (Ssl.file_descr_of_socket s)
+        Unix.shutdown (Ssl.file_descr_of_socket s) SHUTDOWN_ALL
       in
-      try apply c Unix.close fn with Unix.Unix_error _ -> ()
+      let gn s =
+        Unix.shutdown s SHUTDOWN_ALL
+      in
+      try apply c gn fn with Unix.Unix_error _ -> ()
     end;
     Hashtbl.remove pendings c.sock;
     Atomic.decr st.nb_connections.(id);
@@ -607,7 +579,7 @@ let loop id st listens pipe timeout handler () =
       let cell = LL.tail last_seen in
       let client = LL.get cell in
       if client.start_time < t0 then
-        begin
+       begin
           close ~client TimeOut;
           remove_timeout t0
         end
@@ -653,15 +625,17 @@ let loop id st listens pipe timeout handler () =
                                                    (Printexc.to_string e))
              end
           | { pd = NoEvent ; _ } as r ->
-             let e = Polly.Events.((err lor hup lor rdhup) land evt <> empty) in
+             let e = Polly.Events.((err lor hup lor rdhup) land evt <> empty)
+             in
              r.pd <- TooSoon e
           | { pd = Wait a ; _ } as p ->
              let e = Polly.Events.((err lor hup lor rdhup) land evt <> empty) in
              add_ready (Action(a,p,e));
              p.pd <- NoEvent;
           | { pd = TooSoon b ; _ } as p ->
-             let e = Polly.Events.((err lor hup lor rdhup) land evt <> empty) in
-             p.pd <- TooSoon (b && e)
+             let e = Polly.Events.((err lor hup lor rdhup) land evt <> empty)
+             in
+             p.pd <- TooSoon (b || e)
         in
         List.iter fn (find sock)
       in

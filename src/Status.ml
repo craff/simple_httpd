@@ -1,17 +1,68 @@
 open Server
+open Log
+
+let get_log i nb_lines =
+  let filename = fname i in
+  try
+    let (pid, out) =
+      Process.create "tail" [|"tail"; "-n"; string_of_int nb_lines; filename|]
+    in
+    let ch = Input.of_io out in
+    let r = ref [] in
+    let b = Buffer.create 1024 in
+    let buf = Buffer.create 128 in
+    let cont = ref true in
+    let start line = String.length line > 0 && '0' <= line.[0] && line.[0] <= '9' in
+
+    let first_line =
+      ref (let rec fn () =
+             let line = Input.read_line ~buf ch in
+             if start line then line else fn ()
+           in fn ())
+    in
+    let fn () =
+      let time, client, rest =
+        Scanf.sscanf !first_line "%f %d %d %n"
+          (fun time _ cl rest ->
+            time, cl,
+            String.sub !first_line rest (String.length !first_line - rest))
+      in
+      Buffer.add_string b rest;
+      let rec gn () =
+        let line = Input.read_line ~buf ch in
+        if String.length line > 0 && '0' <= line.[0] && line.[0] <= '9' then
+          first_line := line
+        else
+          (Buffer.add_string b "\n"; Buffer.add_string b line; gn ())
+      in
+      (try gn () with Unix.(Unix_error(EPIPE,_,_)) | End_of_file -> cont := false);
+      let date = Unix.gmtime time in
+      let r = (date, client, Buffer.contents b) in
+      Buffer.reset b;
+      r
+    in
+    while !cont do r := fn () :: !r done;
+    ignore (Process.wait pid);
+    List.rev !r
+  with e -> [Unix.gmtime 0.0, 0,
+             Printf.sprintf "Can not read log file %s (exn: %s)\n%!"
+               filename (Printexc.to_string e)]
 
 let html ?(log_size=100) self =
   let open Html in
   let status = status self in
   let num_threads = num_threads self in
   let printf fmt = Printf.ksprintf (fun s -> txt s) fmt in
-  let pid = Unix.getpid () in
-  let ch = Unix.open_process_args_in "ps" [|"ps";"-p";
-                                   string_of_int pid;"-o";"%cpu,rss,vsz,pmem"|]
+  let mypid = Unix.getpid () in
+  let (pid,out) =
+    Process.create "ps" [| "ps";"-p"; string_of_int mypid;"-o"
+                         ; "%cpu,rss,vsz,pmem"|]
   in
-  let _ = input_line ch in
-  let ps = input_line ch in
-  Printf.eprintf "%S\n%!" ps;
+  let ch = Input.of_io out in
+  let buf = Buffer.create 128 in
+  let _ = Input.read_line ~buf ch in
+  let ps = Input.read_line ~buf ch in
+  ignore (Process.wait pid);
   let ps =
     Scanf.sscanf ps " %f %d %d %f"
       (fun cpu rss vsz pmem  ->
@@ -20,7 +71,6 @@ let html ?(log_size=100) self =
         Printf.sprintf "%.2f%% CPU, %s Memory (%s resident, %.2f%%)"
                    cpu vsz rss pmem)
   in
-  let _ = Unix.close_process_in ch in
   let log_line i acc (date, client, rest) =
     let open Unix in
     let acc = tr[][td["class","scol"][printf "%02d-%02d-%d %02d:%02d:%02d"
@@ -34,7 +84,7 @@ let html ?(log_size=100) self =
   let logs =
     let logs =
       List.init (num_threads + 1)
-        (fun i -> Async.Log.get_log i log_size)
+        (fun i -> get_log i log_size)
     in
     table[][
         thead[][

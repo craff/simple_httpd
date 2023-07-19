@@ -5,8 +5,9 @@ module Util : sig
   (** {1 Some utils for writing web servers} *)
 
   val percent_encode : ?skip:(char -> bool) -> string -> string
-  (** Encode the string into a valid path following
-      https://tools.ietf.org/html/rfc3986#section-2.1
+  (** [percent_encode ~skip s] Encodes the string [s] into a valid path
+      following {{:https://tools.ietf.org/html/rfc3986#section-2.1}rfc 3986
+      section 2.1}
       @param skip if provided, allows to preserve some characters, e.g. '/' in a path.
    *)
 
@@ -155,6 +156,8 @@ module Io : sig
     val close : t -> unit
     val read : t -> Bytes.t -> int -> int -> int
     val write : t -> Bytes.t -> int -> int -> int
+
+    val formatter : t -> Format.formatter
   end
 
 (** Representation of input streams, can be generated from string, file, ... *)
@@ -338,6 +341,31 @@ module Mutex : sig
   val unlock : t -> unit
 end
 
+(** Module for creating process to communicate with.
+   reading and writing are non blocking. *)
+module Process : sig
+  (** type to explain which channel of the process you are interested in *)
+
+  (** [create_process cmd args] creates a new process, with the given command
+      name and args. It returns a unix domain socket of type [Io.t] connected
+      to the standard input and output of the process. The stderr is connected
+      to the stderr of the server.
+
+      Note: there are some issues with the detection of the end of the
+      process. For instance, I had trouble with interfacing with the unix
+      [tail] command, when the file was empty. Some reason are
+      - no real flush unix domain socket
+      - epoll seems to miss the RDHUP event if the process life is too short ?*)
+  val create : string -> string array -> int * Io.t
+
+  (** wait for the given process to terminate. To be robust, it waits [time]
+      seconds (default 0.1s = 100ms) allowing other client to run until retrying
+      [Unix.waitpid [WNOHANG]].
+
+      This function can be used on any process not only those created by
+      {!create}. *)
+  val wait : ?time:float -> int -> Unix.process_status
+end
 
 (** Module defining HTML methods (GET,PUT,...) *)
 module Method : sig

@@ -1,7 +1,4 @@
-(** {1 Some utils for writing web servers}
-
-    @since 0.2
-*)
+(** {1 Some utils for writing web servers} *)
 
 val single_write : Unix.file_descr -> Bytes.t -> int -> int -> int
 val read : Unix.file_descr -> Bytes.t -> int -> int -> int
@@ -16,7 +13,7 @@ val file_descr_of_int : int -> Unix.file_descr
 
 val percent_encode : ?skip:(char -> bool) -> string -> string
 (** Encode the string into a valid path following
-    https://tools.ietf.org/html/rfc3986#section-2.1
+    {{:https://tools.ietf.org/html/rfc3986#section-2.1}rfc 3986 section 2.1}.
     @param skip if provided, allows to preserve some characters, e.g. '/' in a path.
 *)
 
@@ -26,32 +23,24 @@ val percent_decode : string -> string
     percent encodings. *)
 
 val split_query : string -> string * string
-(** Split a path between the path and the query
-    @since 0.5 *)
+(** Split a path between the path and the query *)
 
 val split_on_slash : string -> string list
-(** Split a string on ['/'], remove the trailing ['/'] if any.
-    @since 0.6 *)
+(** Split a string on ['/'], remove the trailing ['/'] if any. *)
 
 val get_non_query_path : string -> string
-(** get the part of the path that is not the query parameters.
-    @since 0.5 *)
+(** get the part of the path that is not the query parameters. *)
 
 val get_query : string -> string
-(** Obtain the query part of a path.
-    @since 0.4 *)
+(** Obtain the query part of a path. *)
 
 val parse_query : string -> ((string*string) list, string) result
 (** Parse a query as a list of ['&'] or [';'] separated [key=value] pairs.
-    The order might not be preserved.
-    @since 0.3
-*)
+    The order might not be preserved. 0.3 *)
 
 val pp_date : Format.formatter -> Unix.tm -> unit
 (** Print date (given in GMT) in the expected format for http (for instance
-    for expiration date of cookies.
-    @since 0.12
-*)
+    for expiration date of cookies. *)
 
 module LinkedList : sig
   type 'a t

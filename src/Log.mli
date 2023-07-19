@@ -11,3 +11,9 @@ type log_lvl =
 
 val f : log_lvl ->
         ((('a, out_channel, unit, unit) format4 -> 'a) -> unit) -> unit
+
+val log_folder : string ref
+val log_basename : string ref
+val log_perm : int ref
+
+val fname : int -> string
