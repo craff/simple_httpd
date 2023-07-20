@@ -14,6 +14,11 @@ module type Init = sig
     ?filter:Input.t Route.Filter.t ->
     ('a, Input.t Request.t -> Response.t) Route.t -> 'a -> unit
 
+  val add_route_handler_chaml :
+    ?meth:Method.t ->
+    ?filter:Input.t Route.Filter.t ->
+    ('a, Html.chaml) Route.t -> 'a -> unit
+
   val add_dir_path :
     ?filter:Input.t Route.Filter.t ->
     ?prefix:string ->

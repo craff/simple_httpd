@@ -16,4 +16,18 @@
   (flags :standard -warn-error -3)
   (ocamlopt_flags -O3))
 
+; avoid the rule for unique usage of ml file in executable
+(rule
+  (targets html52.ml)
+  (deps "html5.ml")
+  (action (with-stdout-to %{targets} (run cat html5.ml))))
+
+(executable
+  (name chaml)
+  (public_name chaml)
+  (modules chaml html52)
+  (libraries markup)
+  (flags :standard -warn-error -3)
+  (ocamlopt_flags -O3))
+
 (ocamllex http)

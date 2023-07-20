@@ -79,12 +79,12 @@ let is_ml name attrs =
   in
   (is_ml, ml_kind)
 
-let element ~dynamic ~filename loc name attrs children =
+let element ~filename loc name attrs children =
   let (is_ml, ml_kind) = is_ml name attrs in
   {loc; c =
-  if is_ml && dynamic then
+  if is_ml then
     Caml(ml_kind,attrs,children)
-  else if lower name = "include" && dynamic then
+  else if lower name = "include" then
     begin
       match children with
       | [{c = Text [s]; _}] -> Include s
@@ -98,23 +98,27 @@ let comment loc c = {loc; c = Comment(c)}
 let pi loc s1 s2 = {loc; c = PI(s1,s2)}
 let xml loc x = {loc; c = Xml(x)}
 
-let parse_html ~dynamic ~filename s =
+let parse_html ~dynamic:_ ?context ~filename ?(init_pos=(0,0)) s =
   let detailed_report opens (line,col) err =
     match opens, err with
-    | ((_,"ml"), _, _)::_, (`Bad_token _ | `Bad_content _) -> ()
+    | ((_,"ml"), _, _)::_, `Bad_token _ -> ()
+    | _, `Bad_content _ -> ()
     | _ ->
+       let (l0,c0) = init_pos in
+       let (line, col) = if line = 0 then (l0, col + c0)
+                         else (line + l0, col)
+       in
        Printf.eprintf "File %S, line %d, characters %d:\n %s\n%!"
          filename line col (Error.to_string err);
        exit 1;
   in
-  let element = element ~dynamic ~filename in
-  let context = if dynamic then Some `Document else None in
-  s |> parse_html ~detailed_report ?context |>
-    trees_with_loc ~element ~text ~comment ~pi ~xml ~doctype
+  let element = element ~filename in
+  s |> parse_html ~detailed_report ?context
+    |> trees_with_loc ~element ~text ~comment ~pi ~xml ~doctype
 
 exception Incomplete
 
-let trees_to_ocaml ~dynamic ~filename t =
+let trees_to_ocaml ~dynamic ?(caml=false) ~filename ?(init_pos=(0,0)) t =
   let buf = Buffer.create 4096 in
   let prelude = ref [] in
   let global = ref [] in
@@ -127,10 +131,15 @@ let trees_to_ocaml ~dynamic ~filename t =
       | `Start_element(name,attrs) ->
          let r, nargs = print_tag name attrs in
          args := !args @ nargs; r
-      | (`Comment _ | `Doctype _ | `PI _ | `Text _ | `Xml _) as s  ->
+      | `Text s ->
+         let s = [String.trim (String.concat " " s)] in
+         let r = ref (Some (`Text s)) in
+         let fn () = let x = !r in r := None; x in
+         stream fn |> normalize_text |> write_html |> to_string
+      | (`Comment _ | `Doctype _ | `PI _ | `Xml _) as s  ->
          let r = ref (Some s) in
          let fn () = let x = !r in r := None; x in
-         stream fn |> write_html |> to_string
+         stream fn |> normalize_text |> write_html |> to_string
     in
     if acc <> [] then
       begin
@@ -177,7 +186,9 @@ let trees_to_ocaml ~dynamic ~filename t =
           let hn buf i x =
             newline (if i = 0 then depth else depth + 1);
             match x.c with
-            | Text l -> pr buf "\n#%d %S\n" (fst x.loc) filename;
+            | Text l -> let ln, _col = init_pos in
+                        let blk = String.make (snd x.loc - 1) ' ' in
+                        pr buf "\n#%d %S\n%s" (fst x.loc + ln) filename blk;
                         List.iter (pr buf "%s") l
             | Include s ->
                let s = Filename.(concat (dirname filename) s) in
@@ -220,7 +231,8 @@ let trees_to_ocaml ~dynamic ~filename t =
        | PI (s,u) -> gn (`PI (s,u)) stack
        | Xml x -> gn (`Xml x) stack
   in
-  of_elems buf true (fold (fun acc x -> fn 0 acc [x]) [] t);
+  let depth = if caml then 1 else 0 in
+  of_elems buf (not caml) (fold (fun acc x -> fn depth acc [x]) [] t);
   (*if not !in_html then raise Incomplete;*)
   ( Buffer.contents buf
   , String.concat "\n" (List.rev !global)

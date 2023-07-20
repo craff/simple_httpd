@@ -52,6 +52,17 @@ let add_route_handler_stream ?addresses ?hostnames ?meth ?filter self route f =
   Route.add_route_handler ?filter ?addresses ?hostnames ?meth
     self.handlers route ~tr_req f
 
+let add_route_handler_chaml ?addresses ?hostnames ?meth ?filter self route f =
+  let headers = [Headers.Cache_Control, "no-store"] in
+  let tr_req _oc req ~resp f  =
+    let req = Request.read_body_full ~buf:(Request.client req).buf req in
+    let (headers, cookies, stream) = f req headers in
+    let r = Response.make_stream ~headers ~cookies stream in
+    resp r
+  in
+  Route.add_route_handler ?filter ?addresses ?hostnames ?meth
+    self.handlers route ~tr_req f
+
 let[@inline] _opt_iter ~f o = match o with
   | None -> ()
   | Some x -> f x

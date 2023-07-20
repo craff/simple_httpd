@@ -12,6 +12,8 @@
 (executable
   (name echo)
   (flags :standard -warn-error -a+8)
+  (preprocess (per_module
+    ((action (run %{bin:chaml} %{input-file})) echo)))
   (modules echo vfs)
   (libraries simple_httpd))
 

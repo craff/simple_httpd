@@ -111,26 +111,25 @@ let vfs_of_dir (top:string) : vfs =
   end in
   (module M)
 
-let html_list_dir (module VFS:VFS) ~prefix ~parent d : Html.elt =
+let html_list_dir (module VFS:VFS) ~prefix ~parent d : Html.chaml =
   let entries = VFS.list_dir d in
   Array.sort String.compare entries;
   let open Html in
 
   (* TODO: breadcrumbs for the path, each element a link to the given ancestor dir *)
   let head =
-    head[][
-      title[][txtf "list directory %S" VFS.descr];
-      meta[A.charset "utf-8"];
-    ] in
-
+    {html|<ml>printf <title>list directory %S</title> VFS.descr;;</ml>
+      <meta charset="utf-8"/>
+     |html}
+  in
   let n_hidden = ref 0 in
   Array.iter (fun f -> if is_hidden f then incr n_hidden) entries;
 
-  let file_to_elt f : elt option =
+  let file_to_elt f : elt =
     if not @@ contains_dot_dot (d // f) then (
       let fpath = d // f in
       if not @@ VFS.contains fpath then (
-        Some (li[][txtf "%s [invalid file]" f])
+        {html|<li><ml>printf "%s [invalid file]" f;;</ml></li>|html}
       ) else (
         let size =
           try
@@ -139,43 +138,33 @@ let html_list_dir (module VFS:VFS) ~prefix ~parent d : Html.elt =
             | _ -> ""
           with _ -> ""
         in
-        Some (li'[] [
-          sub_e @@ a[A.href ("/" // prefix // fpath)][txt f];
-          (if VFS.is_directory fpath then sub_e @@ txt "[dir]" else sub_empty);
-          sub_e @@ txt size;
-        ])
+        {html|<li><a href="$encode_path ({|/|} // prefix // fpath)">
+            <ml>echo f;;</ml></a>
+            <ml>if VFS.is_directory fpath then echo " dir";;</ml>
+            <ml>echo size;;</ml></li>|html}
       )
-    ) else None
+    ) else {html||html}
   in
-
-  let body = body'[] [
-    sub_e @@ h2[][txtf "Index of %S" (prefix // d)];
-    begin match parent with
-      | None -> sub_empty
-      | Some p ->
-        sub_e @@
-        a[A.href (encode_path ("/" // p))][txt"(parent directory)"]
-    end;
-
-    sub_e @@ ul' [] [
-      if !n_hidden>0 then
-        sub_e @@ details'[][
-          sub_e @@ summary[][txtf "(%d hidden files)" !n_hidden];
-          sub_seq (
-            seq_of_array entries
-            |> Seq.filter_map
-              (fun f -> if is_hidden f then file_to_elt f else None)
-          );
-        ] else sub_empty;
-      sub_seq (
-        seq_of_array entries
-        |> Seq.filter_map (fun f ->
-            if not (is_hidden f) then file_to_elt f else None)
-      )
-    ];
-  ]
-  in
-  html [][head; body]
+  {chaml|<!DOCTYPE html>
+   <html><head><script type="ml">head (module Output);;</script></head>
+    <body>
+      <h2><ml>printf "Index of %S" (prefix // d);;</ml></h2>
+      <ml>begin match parent with
+         | None -> ()
+         | Some p -> echo <a href="$encode_path ({|/|} // p)">parent directory</a>
+          end;;
+      </ml>
+      <ul>
+        <ml>if !n_hidden>0 then
+            echo (<details><ml>^Printf.sprintf "(%d hidden files)" !n_hidden^ </ml></details>);;
+          Array.iter (fun f -> if is_hidden f then file_to_elt f (module Output))
+            entries;;
+          Array.iter (fun f -> if not (is_hidden f) then file_to_elt f (module
+                                      Output))
+            entries;;
+        </ml>
+      </ul>
+    </body></html>|chaml}
 
 (* @param on_fs: if true, we assume the file exists on the FS *)
 let add_vfs_ ?addresses ?hostnames ?(filter=(fun x -> (x, fun r -> r)))
@@ -276,10 +265,10 @@ let add_vfs_ ?addresses ?hostnames ?(filter=(fun x -> (x, fun r -> r)))
                                    |> set Headers.Location (new_path ^ "?" ^ query)
                                    |> set Headers.Content_Type "text/plain")
             | Lists | Index_or_lists ->
-               let body = html_list_dir ~prefix vfs path ~parent
-                          |> Html.to_string_top in
+               let body = html_list_dir ~prefix vfs path ~parent in
                log (Req 1) (fun k->k "download index %s" path);
-               Response.make_string ~headers:[header_html] body
+               let (headers, cookies, str) = body req [header_html] in
+               Response.make_stream ~headers ~cookies str
             | Forbidden | Index ->
                Response.make_raw ~code:forbidden "listing dir not allowed"
         ) else (
@@ -471,5 +460,4 @@ module Embedded_fs = struct
       let delete _ = failwith "Embedded_fs is read-only"
 
     end in (module M)
-
 end

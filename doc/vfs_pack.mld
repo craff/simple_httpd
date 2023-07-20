@@ -58,15 +58,20 @@ There are three ways to insert ocaml code:
   [Prelude] and global sections (just below) are opened too.
 
 - Some [<script type="ml/prelude">...</script>] section can be added inside
-  the [<head>]. They are executed before any output is done to the
-  server and may shadow two values [headers :] {!Simple_httpd.Headers.t}
-  and [cookies :] {!Simple_httpd.Cookies.t}. The former is the
-  response headers and may contain an initial
-  {!Simple_httpd.Headers.Cache_Control} or {!Simple_httpd.Headers.ETag}. The
-  latter are the response cookies, initially empty. For instance, this allows
-  to read and modify cookies or start a {!Simple_httpd.Session}.  Values
-  defined in this section are part of a [Prelude] module which is opened in
-  the [<ml>...</ml>] sections.
+  the [<head>]. They are executed before any output is done to the server and
+  may shadow two values [headers :] {!Simple_httpd.Headers.t} and [cookies :]
+  {!Simple_httpd.Cookies.t}.
+
+  The former is the response headers and may contain an initial
+  {!Simple_httpd.Headers.Cache_Control} with "no-store". You may add headers
+  or change the {!Simple_httpd.Headers.Cache_Control}, for instance if your
+  chaml file is functional in the query, you could use
+  {!Simple_httpd.Headers.ETag} with some well chosen hash.
+
+  The latter are the response cookies, initially empty. For instance, this
+  allows to read and modify cookies or start a {!Simple_httpd.Session}.
+  Values defined in this section are part of a [Prelude] module which is
+  opened in the [<ml>...</ml>] sections.
 
 - Some [<script type="ml/global">...</script>] section can also be added
   inside inside the [<head>] tag, they are placed in a module at the top level

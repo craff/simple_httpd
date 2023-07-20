@@ -1,8 +1,4 @@
 (executable
-  (name gentags)
-  (modules gentags))
-
-(executable
   (name compile_headers_fun)
   (modules compile_headers_fun))
 

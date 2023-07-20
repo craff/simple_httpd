@@ -110,6 +110,14 @@ val add_route_handler_stream :
     This is useful when one wants to stream the body directly into a parser,
     json decoder (such as [Jsonm]) or into a file. *)
 
+val add_route_handler_chaml :
+  ?addresses:Address.t list ->
+  ?hostnames:string list ->
+  ?meth:Method.t ->
+  ?filter:Input.t Route.Filter.t ->
+  t -> ('a, Html.chaml) Route.t -> 'a ->
+  unit
+
 (** {1 Server-sent events}
 
     {b EXPERIMENTAL}: this API is not stable yet. *)
@@ -119,7 +127,7 @@ val add_route_handler_stream :
     See {{: https://html.spec.whatwg.org/multipage/server-sent-events.html} the w3c page}
     and {{: https://jvns.ca/blog/2021/01/12/day-36--server-sent-events-are-cool--and-a-fun-bug/}
     this blog post}.
-  *)
+ *)
 module type SERVER_SENT_GENERATOR = sig
   val set_headers : Headers.t -> unit
   (** Set headers of the response.

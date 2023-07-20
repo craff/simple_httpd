@@ -2,9 +2,6 @@ open Simple_httpd
 module D = Dir
 module Pf = Printf
 
-let send_status server _req =
-  Response.make_string (Html.to_string ~top:true (Status.html server))
-
 let parse_size s : int =
   try Scanf.sscanf s "%dM" (fun n -> n * 1_024 * 1_024)
   with _ ->
@@ -63,8 +60,8 @@ module Main = struct
   module Init(I:Init) = struct
     open I
     let _ = add_dir_path ~config ~prefix:"" !dir
-    let _ = add_route_handler Route.(exact "status" @/ return)
-                 (send_status server);
+    let _ = add_route_handler_chaml Route.(exact "status" @/ return)
+                 (Status.html server)
   end
 end
 

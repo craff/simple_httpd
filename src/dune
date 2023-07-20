@@ -6,13 +6,10 @@
   (flags :standard -safe-string -warn-error -a+8)
   (ocamlopt_flags -O3)
   (foreign_stubs (language c) (names stubs))
-  (private_modules headers_ html_)
+  (private_modules headers_)
+  (preprocess (per_module
+    ((action (run %{bin:chaml} %{input-file})) Status Dir)))
   (wrapped true))
-
-(rule
-  (targets Html_.ml)
-  (deps (:bin ./gen/gentags.exe))
-  (action (with-stdout-to %{targets} (run %{bin}))))
 
 (rule
   (targets Headers_.ml)

@@ -14,6 +14,11 @@ module type Init = sig
     ?filter:Input.t Route.Filter.t ->
     ('a, Input.t Request.t -> Response.t) Route.t -> 'a -> unit
 
+  val add_route_handler_chaml :
+    ?meth:Method.t ->
+    ?filter:Input.t Route.Filter.t ->
+    ('a, Html.chaml) Route.t -> 'a -> unit
+
   val add_dir_path :
     ?filter:Input.t Route.Filter.t ->
     ?prefix:string ->
@@ -70,6 +75,9 @@ let start_server parameters
 
           let add_route_handler_stream  ?meth ?filter route =
             add_route_handler_stream ~addresses ~hostnames ?meth ?filter server route
+
+          let add_route_handler_chaml  ?meth ?filter route =
+            add_route_handler_chaml ~addresses ~hostnames ?meth ?filter server route
 
           let add_dir_path ?filter ?prefix ?config dir =
             add_dir_path ~addresses ~hostnames ?filter ?prefix ?config ~dir server

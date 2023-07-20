@@ -121,32 +121,28 @@ let _ =
 (** Main pagen using the Html module (deprecated by vfs_pack and many other
     solutions *)
 let _ =
-  Server.add_route_handler server ~filter Route.return
-    (fun _req ->
-       let open Html in
-       let h = html [] [
-           head[][title[][txt "index of echo"]];
-           body[][
-             h3[] [txt "welcome!"];
-             p[] [b[] [txt "endpoints are:"]];
-             ul[] [
-               li[][pre[][txt "/hello/:name (GET)"]];
-               li[][pre[][a[A.href "/echo/"][txt "echo"]; txt " echo back query"]];
-               li[][pre[][txt "/upload/:path (PUT) to upload a file"]];
-               li[][pre[][txt "/zcat/:path (GET) to download a file (deflate transfer-encoding)"]];
-               li[][pre[][a[A.href "/stats/"][txt"/stats/"]; txt" (GET) to access statistics"]];
-               li[][pre[][a[A.href "/vfs/"][txt"/vfs"]; txt" (GET) to access a VFS embedded in the binary"]];
-             ]
-           ]
-         ] in
-       let s = to_string ~top:true h in
-       Response.make_string ~headers:[H.Content_Type, "text/html"] s)
-
-(** Output a message before starting the server *)
-let _ =
-  Array.iter (fun l ->
-    let open Address in
-    Printf.printf "listening on http://%s:%d\n%!" l.addr l.port) (Server.listens server)
+  Server.add_route_handler_chaml server ~filter Route.return
+    {chaml|
+     <!DOCTYPE html>
+     <html>
+       <head>
+         <title>index of echo</title>
+       </head>
+       <body>
+	 <h3>welcome</h3>
+	 <p><b>endpoints are</b></p>
+	 <ul>
+	   <li><pre>/ (GET)</pre> this file!</li>
+           <li><pre>/hello/:name (GET)</pre> echo message</li>
+           <li><pre><a href="/echo">echo</a></pre> echo back query</li>
+           <li><pre>/upload/:path (PUT)</pre> to upload a file</li>
+           <li><pre>/zcat/:path (GET)</pre> to download a file (deflate transfer-encoding)</li>
+           <li><pre><a href="/stats/">/stats (GET)</a></pre> to access statistics</li>
+           <li><pre><a href="/vfs/">/vfs (GET)</a></pre> to access a VFS
+             embedded in the binary</li>
+	 </ul>
+       </body>
+     </html>|chaml}
 
 (** Start the server *)
 let _ =
