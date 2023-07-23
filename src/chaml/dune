@@ -1,0 +1,12 @@
+(library
+  (name chaml_parser)
+  (public_name simple_httpd.chaml)
+  (libraries unix pacomb)
+  (flags :standard -safe-string -warn-error -a+8)
+  (preprocess (per_module ((pps pacomb.ppx) Parser)))
+  (wrapped false))
+
+(rule
+  (targets entities.ml)
+  (deps (:bin ../gen/compile_entities.exe) entities.json)
+  (action (with-stdout-to %{targets} (run %{bin} entities.json))))
