@@ -78,26 +78,20 @@ let emit ~perm ?max_size ?destination oc (l:entry list) : unit =
     | File (html, vfs_path, actual_path) ->
       log (fun k -> k  "add file %S = %S" vfs_path actual_path);
       begin
-        try
-          let content =
-            if html then
-              begin
-                let ch = open_in actual_path in
-                let filename = actual_path in
-                log (fun k -> k "parsing %s" filename);
-                let (ml, _, _) =
-                  Markup.channel ch |> Html5.parse_html ~dynamic:false ~filename
-                  |> Html5.trees_to_ocaml ~dynamic:false ~filename
-                in
-                ml
-              end
-            else
-              read_file actual_path
-          in
-          let mtime = (Unix.stat actual_path).Unix.st_mtime in
-          let mime =  Magic_mime.lookup actual_path in
-          add_vfs ~mtime ~mime vfs_path content
-        with Html5.Incomplete -> () (* no doctype *)
+        let content =
+          if html then
+            begin
+              let ch = open_in actual_path in
+              let filename = actual_path in
+              log (fun k -> k "parsing %s" filename);
+              Parser.document_parse ~filename ch
+            end
+          else
+            read_file actual_path
+        in
+        let mtime = (Unix.stat actual_path).Unix.st_mtime in
+        let mime =  Magic_mime.lookup actual_path in
+        add_vfs ~mtime ~mime vfs_path content
       end
 
     | Path (_html, vfs_path, actual_path, store_path) ->
@@ -105,7 +99,7 @@ let emit ~perm ?max_size ?destination oc (l:entry list) : unit =
        let disk_path = store_path // vfs_path in
        log (fun k -> k "add path %S = %S in %S" vfs_path actual_path disk_path);
        if disk_path <> actual_path then
-         if Sys.command (spf "cp \"%s\" \"%s\"" actual_path disk_path) <> 0
+         if Sys.command (spf "install -m %o \"%s\" \"%s\"" (perm land 0o666) actual_path disk_path) <> 0
          then failwith
                 (spf "vfs_pack: can not copy path %s to %s" actual_path disk_path);
        let stats = Unix.stat actual_path in
@@ -129,31 +123,26 @@ let emit ~perm ?max_size ?destination oc (l:entry list) : unit =
        let modulename =
          String.capitalize_ascii (Filename.chop_extension (Filename.basename filename))
        in
-       (try
-         let (ml, global, prelude) =
-           Markup.channel ch |> Html5.parse_html ~dynamic:true ~filename
-           |> Html5.trees_to_ocaml ~dynamic:true ~filename
-         in
-         fpf oc
-           "module %s = struct %s end \n  \
-            let () = (Dir.Embedded_fs.add_dynamic embedded_fs \n  \
+       let (ml, globals, prelude) = Parser.chaml_parse ~filename ch in
+       fpf oc
+         "module %s = struct %s end \n  \
+          let () = (Dir.Embedded_fs.add_dynamic embedded_fs \n  \
           ~path:%S ~headers:[Headers.Content_Type, \"text/html\"]
           (fun request headers ->
-             let module M = struct
-               open %s  [@@warning \"-33\"]
-               let [@warning \"-32\"] cookies = Cookies.empty
-               %s
-             end in let open [@warning \"-33\"] M in let open [@warning \"-33\"] %s in
-             let input =
-               Input.of_output (fun (module Output) ->
-                 let open Output [@warning \"-33\"] in
-                 let module M = struct %s end in
-                 ()) in
+          let module M = struct
+          open %s  [@@warning \"-33\"]
+          let [@warning \"-32\"] cookies = Cookies.empty
+          %s
+          end in let open [@warning \"-33\"] M in let open [@warning \"-33\"] %s in
+          let input =
+          Input.of_output (fun (module Out : Html.Output) ->
+          let open Out [@warning \"-33\"] in
+          let module M = struct %s end in
+          ()) in
             ( headers, cookies, input )))\n%!"
-           modulename global vfs_path
-           modulename prelude
-           modulename ml
-       with Html5.Incomplete -> () (* no doctype *))
+         modulename globals vfs_path
+         modulename prelude
+         modulename ml
 
     | Url (vfs_path, url) ->
       log (fun k -> k "add url %S = %S" vfs_path url);

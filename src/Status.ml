@@ -69,57 +69,28 @@ let html ?(log_size=100) self req headers =
         Printf.sprintf "%.2f%% CPU, %s Memory (%s resident, %.2f%%)"
                    cpu vsz rss pmem)
   in
-  let log_line i (date, client, rest) : Html.elt =
+  let log_line i (date, client, rest)  =
     let open Unix in
-    {html|<tr>
-                 <td class="scol">
-                   <ml>printf "%02d-%02d-%d %02d:%02d:%02d"
-                           (date.tm_year+1900) (date.tm_mon + 1) date.tm_mday
-                           date.tm_hour date.tm_min date.tm_sec;;
-                   </ml></td>
-                 <td class="scol"><ml>echo (string_of_int i);;</ml></td>
-                 <td class="scol"><ml>echo (string_of_int client);;</ml></td>
-                 <td class="info"><div><pre><ml>echo rest;;</ml></pre></div></td>
-                </tr>|html}
-  in
-  let logs =
-    {html|
-       <table>
-         <thead>
-           <tr>
-	     <th>date
-               <span onclick="sort('table',0,false,false);">▼</span>
-               <span onclick="sort('table',0,false,true);">▲</span>
-	     </th>
-             <th>domain
-               <span onclick="sort('table',1,true,false);">▼</span>
-               <span onclick="sort('table',1,true,true);">▲</span>
-	     </th>
-             <th>client
-               <span onclick="sort('table',2,true,false);">▼</span>
-               <span onclick="sort('table',2,true,true);">▲</span>
-	     </th>
-	     <th>information</th>
-	   </tr>
-	 </thead>
-         <tbody id="table">
-           <ml>
-	     let _ = for i = 0 to num_threads do
-	       let l = get_log i log_size in (* TODO print in get_log i *)
-	       List.iteri (fun x y -> log_line x y output) l
-	     done;;
-	   </ml>
-         </tbody>
-       </table>
-     |html}
+    {funml|
+     <tr>
+     <td></td>
+     <td class="scol">
+          <?= Printf.sprintf "%02d-%02d-%d %02d:%02d:%02d"
+           (date.tm_year+1900) (date.tm_mon + 1) date.tm_mday
+           date.tm_hour date.tm_min date.tm_sec
+           ?></td>
+        <td class="scol"><?= string_of_int i ?> coucou </td>
+        <td class="scol"><?= string_of_int client ?> coucou  </td>
+        <td class="info"><?= (rest) ?> ici </td>
+      </tr>|funml}
   in
   {chaml|
    <!DOCTYPE html>
    <html>
        <head>
-	 <meta charset="UTF-8"/>
+         <meta charset="UTF-8"/>
          <title>server status</title>
-	 <style>
+         <style>
            table, th, td { border: 1px solid black;
                            border-collapse: collapse; }
            table { margin-left: auto; margin-right: auto; }
@@ -133,13 +104,13 @@ let html ?(log_size=100) self req headers =
            .info div {
                    max-width: 75vw;
                    overflow: scroll; }
-	 </style>
+         </style>
          <script>
-	     function sort(tableId,index,num,asc) {
-  	       var tbody = document.getElementById(tableId);
-	       var rows = Array.from(tbody.rows);
+             function sort(tableId,index,num,asc) {
+               var tbody = document.getElementById(tableId);
+               var rows = Array.from(tbody.rows);
 
-  	       rows.sort(function(left, right) {
+               rows.sort(function(left, right) {
                  var l = left.children[index].innerHTML;
                  var r = right.children[index].innerHTML;
                  if (asc) {
@@ -150,33 +121,58 @@ let html ?(log_size=100) self req headers =
                    else return(r < l ? -1 : l < r ? 1 : 0);
                  }
                });
-
                // Put them back in the tbody
                tbody.innerHTML='';
                for(var i = 0; i < rows.length; i++) {
                  tbody.appendChild(rows[i]);
                }
-	     };
+             };
          </script>
        </head>
        <body onload="sort('table',0,false);">
-           <h1><ml>printf "Server status %d+1 threads - %s" num_threads ps;;</ml></h1>
-           <ol><ml>
-	     for i = 0 to num_threads do
+           <h1><?ml printf "Server status %d+1 threads - %s" num_threads ps ?></h1>
+           <ol><?ml
+             for i = 0 to num_threads do
                if i = 0 then
-	         echo (<li><ml>^(Printf.sprintf "Thread %d: accepting clients" i)^</ml></li>)
-	       else
-		  begin
-		    let did = status.domain_ids.(i-1) in
-		    let pps = Async.all_domain_info.((did :> int)).pendings in
-		    echo (<li><ml>^(
-		      Printf.sprintf "Thread %d: %d=%d-1 connections (%d)" i
-				   (Atomic.get (status.nb_connections.(i-1)))
-				   (Hashtbl.length pps) (did :> int))^</ml></li>)
+                 echo {html|<li>Thread <?= string_of_int i ?> accepting clients</li>|html}
+               else
+                  begin
+                    let did = status.domain_ids.(i-1) in
+                    let pps = Async.all_domain_info.((did :> int)).pendings in
+                    echo {html|<li><?=
+                      Printf.sprintf "Thread %d: %d=%d-1 connections (%d)" i
+                                   (Atomic.get (status.nb_connections.(i-1)))
+                                   (Hashtbl.length pps) (did :> int) ?></li>|html}
                   end
               done
-	   </ml></ol>
+           ?></ol>
            <h2>Logs</h2>
-           <ml>logs output;;</ml>
+       <table>
+         <thead>
+           <tr>
+             <th>date
+               <span onclick="sort('table',0,false,false);">▼</span>
+               <span onclick="sort('table',0,false,true);">▲</span>
+             </th>
+             <th>domain
+               <span onclick="sort('table',1,true,false);">▼</span>
+               <span onclick="sort('table',1,true,true);">▲</span>
+             </th>
+             <th>client
+               <span onclick="sort('table',2,true,false);">▼</span>
+               <span onclick="sort('table',2,true,true);">▲</span>
+             </th>
+             <th>information</th>
+           </tr>
+         </thead>
+         <tbody id="table">
+           <?ml
+             let _ = for i = 0 to num_threads do
+               let l = get_log i log_size in (* TODO print in get_log i *)
+               List.iteri (fun x y -> log_line x y output) l
+             done
+           ?>
+         </tbody>
+       </table>
        </body>
-    </html>|chaml} req headers
+   </html>|chaml} req headers

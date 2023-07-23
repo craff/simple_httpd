@@ -1,38 +1,31 @@
 <!DOCTYPE html>
+<?global type Session.session_data += Count of int?>
 <html>
   <head>
-    <script type="ml/global">
-      type Session.session_data += Count of int
-    </script>
-    <script type="ml/prelude">
-      let cookies, session = Session.check ~init:(fun _ -> Count 0) request
-      let count =
-	match Session.get_session_data session with
-	| Count n -> n
-	| _ -> -12
-        | exception Not_found -> -100
-      let _ = Session.set_session_data session (Count (count+1))
-    </script>
+    <?prelude let cookies, session = Session.check ~init:(fun _ -> Count 0) request
+         let count =
+	   match Session.get_session_data session with
+           | Count n -> n
+           | _ -> -12
+           | exception Not_found -> -100
+         let _ = Session.set_session_data session (Count (count+1))?>
   </head>
   <body>
     <h1>dynamic hello!</h1>
     <ul>
-      <li> item 1 </li>
-      <li> item 2 </li>
-      <li> item 3 </li>
-      <li> item 4 </li>
-      <li> views: <ml>
-	  let _ = echo (string_of_int count);;
-	  let _ = echo (if count mod 2 = 0 then
- 	                  <p>even (<ml> ^ string_of_int count ^ </ml>)</p>
-	                else <p>odd</p>)
-	</ml>
+      <li>item 1%</li>
+      <li>item 2%</li>
+      <li>item 3%</li>
+      <li>item 4%</li>
+      <li>views: <?= string_of_int count ?>
+	         <?= if count mod 2 = 0 then
+ 	               {html|<p>even (<?= string_of_int count ?>)</p>|html}
+                     else {html|<p>odd</p>|html} ?>
+	?>
       </li>
     </ul>
     <a href="."> escape from this file </a>
     <br/>
-    request: <script type="ml">
-      let _ = printf "%a" Request.pp request
-    </script>
+    request: <?ml let _ = printf "%a" Request.pp request ?>
   </body>
 </html>

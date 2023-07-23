@@ -17,3 +17,8 @@
 (executable
   (name compile_status_mli)
   (modules compile_status_mli))
+
+(executable
+  (name compile_entities)
+  (libraries yojson)
+  (modules compile_entities))

@@ -383,7 +383,8 @@ module Io = struct
   include IoTmp
 
   let close (s:t) =
-    Unix.(shutdown s.sock SHUTDOWN_ALL)
+    (try Unix.(shutdown s.sock SHUTDOWN_ALL); with _ -> ());
+    Unix.close s.sock
 
   let register (r : t) =
     let i = (Domain.self () :> int) in
@@ -548,7 +549,8 @@ let loop id st listens pipe timeout handler () =
         Unix.shutdown (Ssl.file_descr_of_socket s) SHUTDOWN_ALL
       in
       let gn s =
-        Unix.shutdown s SHUTDOWN_ALL
+        (try Unix.shutdown s SHUTDOWN_ALL with _ -> ());
+        Unix.close s
       in
       try apply c gn fn with Unix.Unix_error _ -> ()
     end;

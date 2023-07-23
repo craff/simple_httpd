@@ -114,22 +114,23 @@ let vfs_of_dir (top:string) : vfs =
 let html_list_dir (module VFS:VFS) ~prefix ~parent d : Html.chaml =
   let entries = VFS.list_dir d in
   Array.sort String.compare entries;
-  let open Html in
 
   (* TODO: breadcrumbs for the path, each element a link to the given ancestor dir *)
   let head =
-    {html|<ml>printf <title>list directory %S</title> VFS.descr;;</ml>
-      <meta charset="utf-8"/>
-     |html}
+    {html|<head>
+            <title>list directory "<?=VFS.descr?>"</title>
+            <meta charset="utf-8"/>
+          </head>
+    |html}
   in
   let n_hidden = ref 0 in
   Array.iter (fun f -> if is_hidden f then incr n_hidden) entries;
 
-  let file_to_elt f : elt =
+  let file_to_elt f : string =
     if not @@ contains_dot_dot (d // f) then (
       let fpath = d // f in
       if not @@ VFS.contains fpath then (
-        {html|<li><ml>printf "%s [invalid file]" f;;</ml></li>|html}
+        {html|<li><?= f ?> [invalid file]</li>|html}
       ) else (
         let size =
           try
@@ -138,31 +139,30 @@ let html_list_dir (module VFS:VFS) ~prefix ~parent d : Html.chaml =
             | _ -> ""
           with _ -> ""
         in
-        {html|<li><a href="$encode_path ({|/|} // prefix // fpath)">
-            <ml>echo f;;</ml></a>
-            <ml>if VFS.is_directory fpath then echo " dir";;</ml>
-            <ml>echo size;;</ml></li>|html}
+        {html|<li><a href=<?=encode_path ({|/|} // prefix // fpath)?> >
+                  <?= f ?></a>
+            <?= if VFS.is_directory fpath then " dir" else ""?>
+            <?= size ?></li>|html}
       )
-    ) else {html||html}
+    ) else ""
   in
   {chaml|<!DOCTYPE html>
-   <html><head><script type="ml">head (module Output);;</script></head>
+   <html><?=head?>
     <body>
-      <h2><ml>printf "Index of %S" (prefix // d);;</ml></h2>
-      <ml>begin match parent with
+      <h2>Index of "<?= prefix // d ?>"</h2>
+      <?ml begin match parent with
          | None -> ()
-         | Some p -> echo <a href="$encode_path ({|/|} // p)">parent directory</a>
+         | Some p -> echo {html|<a href=<?= encode_path ({|/|} // p) ?>>parent directory</a>|html}
           end;;
-      </ml>
-      <ul>
-        <ml>if !n_hidden>0 then
-            echo (<details><ml>^Printf.sprintf "(%d hidden files)" !n_hidden^ </ml></details>);;
-          Array.iter (fun f -> if is_hidden f then file_to_elt f (module Output))
-            entries;;
-          Array.iter (fun f -> if not (is_hidden f) then file_to_elt f (module
-                                      Output))
-            entries;;
-        </ml>
+      ?>
+     <ul>
+       <?ml if !n_hidden>0 then
+             {funml|<details>(<?= string_of_int !n_hidden ?> hidden files)
+                 <?ml Array.iter (fun f -> if is_hidden f then echo (file_to_elt f))
+                   entries?>
+                 </details>|funml} output;
+             Array.iter (fun f -> if not (is_hidden f) then echo (file_to_elt f))
+               entries ?>
       </ul>
     </body></html>|chaml}
 

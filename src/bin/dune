@@ -2,6 +2,7 @@
 (executable
   (name http_of_dir)
   (public_name http_of_dir)
+  (package simple_httpd)
   (modules http_of_dir)
   (flags :standard -warn-error -3)
   (ocamlopt_flags -O3)
@@ -11,22 +12,17 @@
   (name vfs_pack)
   (public_name simple-httpd-vfs-pack)
   (package simple_httpd)
-  (modules vfs_pack curly http html5)
-  (libraries result unix simple_httpd markup)
+  (modules vfs_pack curly http)
+  (libraries result unix simple_httpd markup simple_httpd.chaml)
   (flags :standard -warn-error -3)
   (ocamlopt_flags -O3))
-
-; avoid the rule for unique usage of ml file in executable
-(rule
-  (targets html52.ml)
-  (deps "html5.ml")
-  (action (with-stdout-to %{targets} (run cat html5.ml))))
 
 (executable
   (name chaml)
   (public_name chaml)
-  (modules chaml html52)
-  (libraries markup)
+  (package simple_httpd)
+  (modules chaml)
+  (libraries markup simple_httpd.chaml)
   (flags :standard -warn-error -3)
   (ocamlopt_flags -O3))
 

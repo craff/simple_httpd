@@ -6,6 +6,6 @@ echo:
  path="/echo/?a=b&c=d"; body=""; path_components=["echo"];
  query=["c","d";"a","b"]}
 (query: "c" = "d";"a" = "b")
-<!DOCTYPE html><html><head><title>list directory "Embedded_fs"</title><meta charset="utf-8"></meta></head><body><h2>Index of "vfs/"</h2><a href="/.">parent directory</a><ul><li><a href="/vfs/a.txt">a.txt</a> (12b)</li><li><a href="/vfs/bar.html">bar.html</a></li><li><a href="/vfs/big">big</a> (1.48M)</li><li><a href="/vfs/foo.html">foo.html</a> (161b)</li><li><a href="/vfs/sub">sub</a> dir</li><li><a href="/vfs/test_out.txt">test_out.txt</a> (208b)</li><li><a href="/vfs/tyr.html">tyr.html</a></li></ul></body></html>hello
+<!DOCTYPE html><html><head><title>list directory "Embedded_fs"</title><meta charset="utf-8"/></head><body><h2>Index of "vfs/"</h2><a href="/.">parent directory</a><ul><li><a href="/vfs/a.txt">a.txt</a> (12b)</li><li><a href="/vfs/bar.html">bar.html</a></li><li><a href="/vfs/big">big</a> (1.48M)</li><li><a href="/vfs/foo.html">foo.html</a> (187b)</li><li><a href="/vfs/sub">sub</a> dir</li><li><a href="/vfs/test_out.txt">test_out.txt</a> (208b)</li><li><a href="/vfs/tyr.html">tyr.html</a></li></ul></body></html>hello
 world
-<html><head></head><body><h2>funky:</h2><ul><li><a href="../">go up!!</a></li><li><a href="../foo.html">up/foo</a></li></ul></body></html>
+<!DOCTYPE html><html><head></head><body><h2>funky:</h2><ul><li><a href="../">go up!!</a></li><li><a href="../foo.html">up/foo</a></li></ul></body></html>

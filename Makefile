@@ -18,6 +18,10 @@ remove:
 clean: remove
 	@dune clean
 
+.PHONY: entity
+entity:
+	curl https://html.spec.whatwg.org/entities.json -o src/chaml/entities.json
+
 .PHONY: doc
 doc:
 	@dune build @doc
