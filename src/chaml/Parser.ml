@@ -6,7 +6,20 @@
 open Pacomb
 open Chaml
 
+let file_path = ref ""
+let do_with_filename filename fn =
+  Printf.eprintf "%S\n%!" filename;
+  let save = !file_path in
+  file_path := Filename.dirname filename;
+  try
+    let r = fn () in file_path := save; r
+  with e -> file_path := save; raise e
+
 let blank = Blank.from_charset Charset.empty
+
+let mismatch name name' =
+  let msg = Printf.sprintf "mismatched tags %S and %S" name name' in
+  Lex.give_up ~msg ()
 
 type mode = { cls : string option (* waiting for a closing tag |html} of |chaml} *)
             ; top : bool (* allows for <?ml ... ?> and <?prelude ... ?>*)
@@ -14,18 +27,25 @@ type mode = { cls : string option (* waiting for a closing tag |html} of |chaml}
             ; glb : bool (* allows for <?global ... ?> *)
             }
 
+let mkMode =
+  let tbl = Hashtbl.create 128 in
+  (fun ~cls ~top ~str ~glb ->
+    let mode = { cls; top; str; glb } in
+    try Hashtbl.find tbl mode with
+    | Not_found -> Hashtbl.add tbl mode mode; mode)
+
 let is_control code = (0x0000 <= code && code <= 0x001F) ||
                      (0x007F <= code && code <= 0x009F)
 
 let is_space code = (code = 0x0009 || code = 0x000A || code = 0x000C || code = 0x000D
                   || code = 0x0020)
 
-let%parser space =
-    ' '  => ()
-  ; '\t' => ()
-  ; '\n' => ()
-  ; '\r' => ()
-  ; '\t' => ()
+let%parser spaces =
+    ()   => ()
+  ; RE"[ \n\r\t]+" => ()
+
+let%parser one_spaces =
+    RE"[ \n\r\t]+" => ()
 
 let%parser attribute_name_char =
   (c::UTF8) =>
@@ -61,12 +81,12 @@ let%parser attribute_value =
      if contains_ambiguous_ampersand str then
        Lex.give_up ~msg:"ambiguous ampersand in attribute value" ();
      Unquoted str)
-  ; '\'' (cs :: ~+ single_attribute_char) '\'' =>
+  ; '\'' (cs :: ~* single_attribute_char) '\'' =>
     (let str = String.concat "" cs in
      if contains_ambiguous_ampersand str then
        Lex.give_up ~msg:"ambiguous ampersand in attribute value" ();
      Single str)
-  ; '"'  (cs :: ~+ double_attribute_char) '"'  =>
+  ; '"'  (cs :: ~* double_attribute_char) '"'  =>
     (let str = String.concat "" cs in
      if contains_ambiguous_ampersand str then
        Lex.give_up ~msg:"ambiguous ampersand in attribute value" ();
@@ -75,33 +95,45 @@ let%parser attribute_value =
 let%parser tag_name = (n :: RE("[a-zA-Z0-9]+")) => String.lowercase_ascii n
 
 let comment_re =
-  {|\([^-<]\|\(-[^-]\)\|\(--[^>!]\)\|\(--![^>]\)\|\(<![^-]\)\|\(<!-[^-]\)\)+|}
+  {|\([^-<]\|\(-[^-]\)\|\(--[^>!]\)\|\(--![^>]\)\|\(<[^!]\)\|\(<![^-]\)\|\(<!-[^-]\)\)+|}
 
-let%parser rec comment =
+let%parser [@cache] comment =
   "<!--" (c:: RE comment_re) "-->" =>
     if String.starts_with ~prefix:">" c || String.starts_with ~prefix:"->" c
        || String.ends_with ~suffix:"<!-" c
     then Lex.give_up ~msg:"Illegal comment" ()
 
-let%parser [@warning -39] rec value mode =
+let%parser [@warning -39] [@cache] rec value mode =
     (v :: attribute_value) => v
   ; (mode.str = true) "<?=" (ocaml::ocaml false) "?>" => (OCaml (ocaml_pos, ocaml) : value)
 
-
-and attributes mode =
-    (~* space) => []
-  ; (~+ space) (name::attribute_name) (~* space)
-      (value :: ~? [Empty] ('=' (~* space) (v::value mode)=>v))
+and [@cache] attributes mode =
+    spaces => []
+  ; one_spaces (name::attribute_name)
+      (value :: ~? [Empty] (spaces '=' spaces (v::value mode)=>v))
       (attrs::attributes mode)
     => (name, value) :: attrs
 
-and tag mode =
+and [@cache] tag mode =
   "<" (name::tag_name) (attrs::attributes mode) ">" =>
-    (if List.mem name void_element then Lex.give_up ();
-     if List.mem name raw_element then Lex.give_up ();  (name, attrs))
+    (if is_void name || is_raw name then Lex.give_up ();
+     (name, attrs))
 
-and raw_tag tag mode =
-  "<" (STR tag) (attrs::attributes mode) ">" =>  (tag, attrs)
+and [@cache] closing name =
+  let re = re_from_string name in
+    "</" (__::RE re) ">" => ()
+
+and [@cache] any_closing =
+    "</" (name::tag_name) ">" => String.lowercase_ascii name
+
+and [@cache] void_tag ml =
+  '<' (name::tag_name) (attrs::attributes ml) (sl :: ~? '/') '>' =>
+    (if sl == None && not (is_void name) then Lex.give_up ();
+     (String.lowercase_ascii name, attrs))
+
+and [@cache] raw_tag mode =
+  "<" (name::RE raw_re_tag) (attrs::attributes mode) ">" =>
+    (name, (String.lowercase_ascii name, attrs))
 
 and raw_re tag =
   let r = ref {|\([^<]\|\(<[^/?]\)|} in
@@ -110,37 +142,30 @@ and raw_re tag =
   done;
   !r ^ Printf.sprintf {|\|\(</%s[^ \n\t\r\f/>]\)\)+|} tag
 
-and raw_content mode tag =
-    () => ""
-  ; (text::RE (raw_re tag)) (c::raw_content) => Text(text)::c
-  ; (mode.str = true) "<?=" (ocaml:: ocaml false) "?>" => OCaml(ocaml_pos,Str,ocaml)
+and [@cache] raw_content mode tag =
+    () => []
+  ; (text::RE (raw_re tag)) (c::raw_content mode tag) => Text(text)::c
+  ; (mode.str = true) "<?=" (ocaml:: ocaml false) "?>" (c::raw_content mode tag) => OCaml(ocaml_pos,Str,ocaml)::c
 
 and doctype_legacy_string =
-  "SYSTEM" (~* space) ("\"about:legacy-compat\"" => ()
-                     ; "'about:legacy-compat'" => ()) (~* space) => ()
+    "SYSTEM" spaces ("\"about:legacy-compat\"" => ()
+                ; "'about:legacy-compat'" => ()) spaces => ()
+  ; "PUBLIC" spaces (__::RE{|"[^"]*"|}) spaces => ()
+
 and doctype =
-  "<!DOCTYPE" (~* space) (RE{|[hH][tT][mM][lL]|})
-     (~* space) (~? doctype_legacy_string) '>' => Doctype
-
-and closing =
-  "</" (name::tag_name) ">" => name
-
-and void_tag ml =
-  '<' (name::tag_name) (attrs::attributes ml) (sl :: ~? '/') '>' =>
-    (if sl == None && not (List.mem name void_element) then Lex.give_up ();
-     (name, attrs))
-
+  "<!DOCTYPE" spaces (RE{|[hH][tT][mM][lL]|})
+     spaces (~? doctype_legacy_string) '>' => Doctype
 
 and inner_html tag =
-  let mode = { cls = Some tag; top = false; str = true; glb = false } in
+  let mode = mkMode ~cls:(Some tag) ~top:false ~str:true ~glb:false in
   (content :: content mode) (__::STR("|"^tag^"}")) => content
 
 and inner_funml tag =
-  let mode = { cls = Some tag; top = true; str = true; glb = false } in
+  let mode = mkMode ~cls:(Some tag) ~top:true ~str:true ~glb:false in
   (content :: content mode) (__::STR("|"^tag^"}")) => content
 
 and inner_document tag =
-  let mode = { cls = Some tag; top = true; str = true; glb = false } in
+  let mode = mkMode ~cls:(Some tag) ~top:true ~str:true ~glb:false in
   (doc :: document mode) (__::STR("|"^tag^"}")) => doc
 
 and ocaml_lexer top s n =
@@ -289,61 +314,78 @@ and ocaml_lexer top s n =
   output [] r;
   (Buffer.contents out,s,n)
 
-and ocaml top = (* ocaml definition *)
+and [@cache] ocaml top = (* ocaml definition *)
   () => ""
   ; (ocaml :: Grammar.term (Lex.{ n = "OCAML"
                                 ; c = Charset.full
                                 ; a = custom (ocaml_lexer top)
                                 ; f = (ocaml_lexer top) })) => ocaml
 
-and element mode : html Grammar.t =
-  ((name,attrs) :: tag mode) (content::content mode) (name'::closing) =>
-    (if name <> name' then Lex.give_up ~msg:"mismatched tags" ();
-     Element(name, attrs, content))
-  ; ((name,attrs) :: raw_tag "script" mode) (content::raw_content "script") (name'::closing) =>
-    (if name <> name' then Lex.give_up ~msg:"mismatched tags" ();
-     Element(name, attrs, [Text content]))
-  ; ((name,attrs) :: raw_tag "style" mode) (content::raw_content "style") (name'::closing) =>
-    (if name <> name' then Lex.give_up ~msg:"mismatched tags" ();
-     Element(name, attrs, [Text content]))
-  ; ((name,attrs) :: raw_tag "textarea" mode) (content::raw_content "textarea") (name'::closing) =>
-    (if name <> name' then Lex.give_up ~msg:"mismatched tags" ();
-     Element(name, attrs, [Text content]))
-  ; ((name,attrs) :: raw_tag "title" mode) (content::raw_content "title") (name'::closing) =>
-    (if name <> name' then Lex.give_up ~msg:"mismatched tags" ();
-     Element(name, attrs, [Text content]))
-  ; ((n,a)::void_tag mode) => SElement(n,a)
-  ; (mode.top = true) "<?ml" (ocaml:: ocaml false) "?>" => OCaml(ocaml_pos,Top,ocaml)
+and [@cache] ocaml_elt mode =
+    (mode.top = true) "<?ml" (ocaml:: ocaml false) "?>" =>
+      OCaml(ocaml_pos,Top,ocaml)
   ; (mode.top = true) "<?prelude" (ocaml:: ocaml false) "?>" => OCaml(ocaml_pos,Prelude,ocaml)
   ; (mode.glb = true) "<?global" (ocaml:: ocaml false) "?>" => OCaml(ocaml_pos,Global,ocaml)
   ; (mode.str = true) "<?=" (ocaml:: ocaml false) "?>" => OCaml(ocaml_pos,Str,ocaml)
-  ; (mode.cls = None) (text::RE{|[^<]+|}) => Text(text)
+
+and [@cache] text_elt mode =
+    (mode.cls = None) (text::RE{|[^<]+|}) => Text(text)
   ; (mode.cls <> None) (text::RE{|\([^<|]\|\(\(|[a-z]+\)+[^}<]\)\)+|}) => Text(text)
   ; (mode.cls <> None) "|" (text::RE"[a-z]+") "}" =>
       (if mode.cls = Some text then Lex.give_up () else Text("|" ^ text ^ "}"))
 
-and content mode =
-    () => []
-  ; (e::element mode) (c::content mode) => e::c
+and [@cache] elements mode =
+    () => [("", [], [])]
+  ; (stack::elements mode) comment => stack
+  ; (stack::elements mode) ((name,attrs) :: tag mode) =>
+      (if is_void name || is_raw name then Lex.give_up ();
+       (name,attrs,[]) :: stack)
+  ; (stack::elements mode) (name::any_closing) =>
+      (if is_void name || is_raw name then Lex.give_up ();
+       pop name stack)
+  ; (stack::elements mode) ((oname,(name,attrs)) >: raw_tag mode)
+      (content::raw_content mode oname) (closing oname) =>
+     push (Element(name, attrs, content)) stack
+  ; (stack::elements mode) ((n,a)::void_tag mode) =>
+      push (SElement(n,a)) stack
+  ; (stack::elements mode) (ocaml:: ocaml_elt mode) =>
+      push ocaml stack
+  ; (stack::elements mode) (text:: text_elt mode) =>
+      push text stack
+  ; (mode.str = true) (stack::elements mode) (d::include_ mode) =>
+      List.fold_left (fun stack elt -> push elt stack) stack d
 
-and document mode = (~* space) (dt::doctype) (e::content mode) =>
+and [@cache] content mode =
+    (stack::elements mode) => pop_all stack
+
+and document mode = spaces (dt::doctype) (e::content mode) =>
                     if mode.top then
                       Chaml.top_to_string (dt::e)
                     else
                       let (r, _) = Chaml.html_to_string (dt::e) in
                       (r, "", "")
 
+and [@cache] include_ mode = (* very important to cache here! *)
+  "<?include" spaces '"' (name::RE{|[^"]*"|}) spaces "?>" =>
+    let name = Scanf.unescaped (String.sub name 0 (String.length name - 1)) in
+    let name = Filename.concat !file_path name ^ ".htinc" in
+    do_with_filename name (fun () ->
+        Grammar.parse_file (content mode) blank name)
+
 let ocaml_parse ~filename ch =
-  Pos.handle_exception (Grammar.parse_channel ~filename (ocaml true) blank) ch
+  do_with_filename filename (fun () ->
+      Pos.handle_exception (Grammar.parse_channel ~filename (ocaml true) blank) ch)
 
 let document_parse ~filename ch =
-  let mode = { cls = None; top = false; str = false; glb = false } in
-  let (r,_,_) =
-    Pos.handle_exception (Grammar.parse_channel ~filename
-                            (document mode) blank) ch
-  in
-  r
+  do_with_filename filename (fun () ->
+      let mode = mkMode ~cls:None ~top:false ~str:false ~glb:false in
+      let (r,_,_) =
+        Pos.handle_exception (Grammar.parse_channel ~filename
+                                (document mode) blank) ch
+      in
+      r)
 
 let chaml_parse ~filename ch =
-  let mode = { cls = None; top = true; str = true; glb = true } in
-  Pos.handle_exception (Grammar.parse_channel ~filename (document mode) blank) ch
+  do_with_filename filename (fun () ->
+      let mode = mkMode ~cls:None ~top:true ~str:true ~glb:true in
+      Pos.handle_exception (Grammar.parse_channel ~filename (document mode) blank) ch)

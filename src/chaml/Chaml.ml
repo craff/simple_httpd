@@ -17,11 +17,171 @@ type html =
   | Text of string
   | OCaml of Pos.pos * ocaml_type * string
 
+type stack = (string * attributes * html list) list
+
+let metadata = ["base"; "link"; "meta"; "noscript"; "script"; "style"; "template";
+                "title" ]
+
+let flow = ["a"; "abbr"; "address"; "area" (*if it is a descendant of a map element*)
+           ; "article"; "aside"; "audio"; "b"; "bdi"; "bdo"; "blockquote"; "br"
+           ; "button"; "canvas"; "cite"; "code"; "data"; "datalist"; "del"; "details"
+           ; "dfn"; "dialog"; "div"; "dl"; "em"; "embed"; "field"; "set"; "figure"
+           ; "footer"; "form"; "h1"; "h2"; "h3"; "h4"; "h5"; "h6"; "header"; "hgroup"
+           ; "hr"; "i"; "iframe"; "img"; "input"; "ins"; "kbd"; "label"
+           ; "link" (*if it is allowed in the body*)
+           ; "main" (*if it is a hierarchically correct main element*)
+           ; "map"; "mark"; "mathml"; "math"; "menu"
+           ; "meta" (*if the itemprop attribute is present*)
+           ; "meter"; "nav"; "noscript"; "object"; "ol"; "output"; "p"; "picture"
+           ; "pre"; "progress"; "q"; "ruby"; "s"; "samp"; "script"; "search"
+           ; "section"; "select"; "slot"; "small"; "span"; "strong"; "sub"; "sup"
+           ; "svg"; "svgtable"; "table"; "template"; "textarea"; "time"; "u"; "ul"; "var"
+           ; "video"; "wbr" ]
+
+let sectioning = ["article"; "aside"; "nav"; "section"]
+
+let heading = ["h1"; "h2"; "h3"; "h4"; "h5"; "h6"
+              ; "hgroup" (*if it has a descendant h1 to h6 element*) ]
+
+let phrasing = ["a"; "abbr"; "area" (*if it is a descendant of a map element*)
+               ; "audio"; "b"; "bdi"; "bdo"; "br"; "button"; "canvas"; "cite"; "code"
+               ; "data"; "datalist"; "del"; "dfn"; "em"; "embed"; "i"; "iframe"
+               ; "img"; "input"; "ins"; "kbd"; "label"
+               ; "link" (*if it is allowed in the body*)
+               ; "map"; "mark"; "mathml"; "math"
+               ; "meta" (*if the itemprop attribute is present*)
+               ; "meter"; "noscript"; "object"; "output"; "picture"; "progress"
+               ; "qruby"; "s"; "samp" ; "script"; "select"; "slot"; "small"; "span"
+               ; "strong"; "sub"; "sup"; "svg"; "template"; "textarea"; "time"; "uvar"
+               ; "video"; "wbr" ]
+
+let address =
+  List.filter
+    (fun x -> not (List.mem x (sectioning @ heading @ ["header"; "footer"])))
+    flow
+
+let rec accepted_in elt name =
+  match elt with
+  | Element(name',_,_) | SElement(name',_) ->
+     List.mem name ["script"; "template"] ||
+     begin
+       let chk = List.mem name' in
+       match name with
+       | "" -> true
+       | "html" -> chk ["head"; "body"]
+       | "head" -> chk metadata
+       | "a" | "em" | "strong" | "small" | "s" | "cite" | "q" | "dfn" | "abbr"
+         | "rt" | "data" | "time" | "code" | "var" | "samp" | "kbd" | "sub" | "sup"
+         | "i" | "b" | "u" | "mark" | "bdi" | "bdo" | "span" | "br" | "wbr"
+         | "ins" | "del" | "object" | "map" | "label" | "button" | "output"
+         | "progress" | "meter" | "legend" | "summary" | "noscript" | "canvas"
+         -> chk phrasing
+       (* TODO: time attribute ?*)
+       (* TODO: check object *)
+       (* TODO: button: no interactive inside *)
+       | "body" | "td" | "th" | "article" | "section" | "nav"
+         | "aside" | "header" | "footer" | "blockquote" | "li" | "dd" | "dialog"
+         | "figcaption" | "main" | "search" | "div" | "form" | "caption"
+         -> chk flow (* TODO: form in form *)
+       | "h1" | "h2" | "h3" | "h4" | "h5" | "h6" | "p" | "pre"
+         -> chk phrasing
+       | "hgroup" -> chk ["h1"; "h2"; "h3"; "h4"; "h5"; "h6"; "p" ]
+       | "address" -> chk address
+       | "ul" | "ol" | "menu" -> chk ["li"]
+       | "dl" -> chk ["dt";"dd";"div"] (* TODO: div should be restricted *)
+       | "figure" -> chk ("figcaption" :: flow)
+       | "ruby" -> chk ("rt" :: "rp" :: phrasing) (* TODO *)
+       | "picture" -> chk ["source"; "img"]
+       | "video" | "audio"  -> chk ("source"::"track":: phrasing) (* CHECK *)
+       | "table" -> chk ["tbody"; "tr"; "thead"; "tfoot"; "caption"; "colgroup" ]
+       | "tbody" | "thead" | "tfoot" -> chk ["tr"]
+       | "colgroup" -> chk ["col"]
+       | "tr" | "rp" -> chk ["td"; "th" ]
+       | "select" -> chk ["option"; "optgroup"; "hr"]
+       | "optgroup" -> chk ["option"]
+       | "fieldset" -> chk ("legend" :: flow)
+       | "details" -> chk ("summary" :: flow)
+       | "col" | "hr" | "source" | "img" | "iframe" | "embed" | "track" | "area"
+         | "input" | "option" | "textarea" -> false
+       | _ -> true
+     end
+  | Text s -> String.trim s = "" || accept_text name
+  | _ -> true
+
+and accept_text name = accepted_in (Element("span",[],[])) name
+
+let allow_ommit name = match name with
+  | "head" | "body" | "html" | "li" | "dd" | "dt" | "p" | "rt" | "rp"
+    | "optgroup" | "option" | "colgroup" | "caption" | "thead"
+    | "tbody" | "tfoot" | "tr" | "td" | "th" -> true
+  | _ -> false
+
+let badelem elt =
+  let name = match elt with
+    | Text _ -> "text content"
+    | OCaml _ -> "ocaml"
+    | Element(name,_,_) | SElement(name,_) -> name
+    | Doctype -> "doctype"
+  in
+  let msg = Printf.sprintf "Bad element %S" name in
+  Lex.give_up ~msg ()
+
+let mismatch name =
+  let msg = Printf.sprintf "Tag mismatch for %S" name in
+  Lex.give_up ~msg ()
+
+let rec push elt (stack:stack) = match stack with
+  | (name, attrs, elts) :: stack as stack0 ->
+     if accepted_in elt name then
+       match elt with
+       | Text s when not (accept_text name) ->
+          assert (String.trim s = ""); stack0
+       | _ -> (name, attrs, (elt::elts)) :: stack
+     else if allow_ommit name then push elt (push (Element(name,attrs,List.rev elts)) stack)
+     else badelem elt
+  | [] -> badelem elt
+
+let rec pop name stack = match stack with
+  | (name', attrs, elts) :: stack when name = name' ->
+     push (Element(name,attrs,List.rev elts)) stack
+  | (name', attrs, elts) :: stack when allow_ommit name' ->
+     pop name (push (Element(name',attrs,List.rev elts)) stack)
+  | _ -> mismatch name
+
+let rec pop_all stack = match stack with
+  | ["", [], elts] -> List.rev elts
+  | (name', attrs, elts) :: stack when allow_ommit name' ->
+     pop_all (push (Element(name',attrs,List.rev elts)) stack)
+  | _ -> mismatch "?"
+
+let re_from_string name =
+  let buf = Buffer.create 16 in
+  Buffer.add_string buf {|\(|};
+  for i = 0 to String.length name - 1 do
+    let c = name.[i] in
+    let lc = Char.lowercase_ascii c and uc = Char.uppercase_ascii c in
+    if lc = uc then Buffer.add_char buf c else
+      Printf.bprintf buf "[%c%c]" lc uc
+    done;
+  Buffer.add_string buf {|\)|};
+  Buffer.contents buf
+
+let re_from_list l =
+  String.concat {|\||} (List.map re_from_string l)
+
 let void_element =
   [ "area"; "base"; "br"; "col"; "embed"; "hr"; "img"
   ; "input" ; "link" ; "meta" ; "source" ; "track" ; "wbr" ]
 
-let raw_element = [ "script"; "style"; "texarea"; "title" ]
+let is_void name = List.mem (String.lowercase_ascii name) void_element
+
+let void_re_tag = re_from_list void_element
+
+let raw_element = [ "script"; "style"; "textarea"; "title" ]
+
+let is_raw name = List.mem (String.lowercase_ascii name) raw_element
+
+let raw_re_tag = re_from_list raw_element
 
 let trim s =
   let s0 = String.trim s in
@@ -79,7 +239,7 @@ let html_to_string html =
     | Element(name,attrs,contents) ->
        print_tag buf args name attrs;
        List.iter (fn name) contents;
-       print_closing buf name
+       if not (allow_ommit name) then print_closing buf name
     | Doctype ->
        Buffer.add_string buf "<!DOCTYPE html>"
     | SElement(name,attrs) ->

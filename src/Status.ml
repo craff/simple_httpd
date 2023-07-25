@@ -42,6 +42,7 @@ let get_log i nb_lines =
       r
     in
     while !cont do r := fn () :: !r done;
+    Input.close ch;
     ignore (Process.wait pid);
     List.rev !r
   with e -> [Unix.gmtime 0.0, 0,
@@ -60,6 +61,27 @@ let html ?(log_size=100) self req headers =
   let buf = Buffer.create 128 in
   let _ = Input.read_line ~buf ch in
   let ps = Input.read_line ~buf ch in
+  Input.close ch;
+  ignore (Process.wait pid);
+  let (pid,out) =
+    Process.create "df" [| "df";"-h"; "."|]
+  in
+  let ch = Input.of_io out in
+  let buf = Buffer.create 128 in
+  let _ = Input.read_line ~buf ch in
+  let df = Input.read_line ~buf ch in
+  Input.close ch;
+  ignore (Process.wait pid);
+  let (pid,out) =
+    Process.create "ls" [| "ls"; "-w"; "1000000"; "-C"; "/proc/self/fd" |]
+  in
+  let ch = Input.of_io out in
+  let buf = Buffer.create 128 in
+  let line = Input.read_line ~buf ch in
+  let nfd =
+    List.length (List.filter (fun s -> s <> "") (String.split_on_char ' ' line))
+  in
+  Input.close ch;
   ignore (Process.wait pid);
   let ps =
     Scanf.sscanf ps " %f %d %d %f"
@@ -73,15 +95,14 @@ let html ?(log_size=100) self req headers =
     let open Unix in
     {funml|
      <tr>
-     <td></td>
      <td class="scol">
           <?= Printf.sprintf "%02d-%02d-%d %02d:%02d:%02d"
            (date.tm_year+1900) (date.tm_mon + 1) date.tm_mday
            date.tm_hour date.tm_min date.tm_sec
            ?></td>
-        <td class="scol"><?= string_of_int i ?> coucou </td>
-        <td class="scol"><?= string_of_int client ?> coucou  </td>
-        <td class="info"><?= (rest) ?> ici </td>
+        <td class="scol"><?= string_of_int i ?></td>
+        <td class="scol"><?= string_of_int client ?></td>
+        <td class="info"><?= (rest) ?></td>
       </tr>|funml}
   in
   {chaml|
@@ -130,20 +151,24 @@ let html ?(log_size=100) self req headers =
          </script>
        </head>
        <body onload="sort('table',0,false);">
-           <h1><?ml printf "Server status %d+1 threads - %s" num_threads ps ?></h1>
-           <ol><?ml
+           <h1><?ml printf "Server status %d+1 threads" num_threads?></h1>
+           <ol>
+           <li><?= ps ?></li>
+           <li><?= df ?></li>
+           <li><?= string_of_int nfd ?> opened file descriptors</li>
+           <?ml
              for i = 0 to num_threads do
                if i = 0 then
                  echo {html|<li>Thread <?= string_of_int i ?> accepting clients</li>|html}
                else
-                  begin
-                    let did = status.domain_ids.(i-1) in
-                    let pps = Async.all_domain_info.((did :> int)).pendings in
-                    echo {html|<li><?=
+                 begin
+                   let did = status.domain_ids.(i-1) in
+                   let pps = Async.all_domain_info.((did :> int)).pendings in
+                   echo {html|<li><?=
                       Printf.sprintf "Thread %d: %d=%d-1 connections (%d)" i
                                    (Atomic.get (status.nb_connections.(i-1)))
-                                   (Hashtbl.length pps) (did :> int) ?></li>|html}
-                  end
+                                   (Hashtbl.length pps) (did :> int) ?></li>|html};
+                 end
               done
            ?></ol>
            <h2>Logs</h2>

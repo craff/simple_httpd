@@ -204,7 +204,25 @@ module Log = struct
 
   let open_log i =
     let filename = fname i in
-    open_out_gen [Open_wronly; Open_append; Open_creat] !log_perm filename
+    let ch = open_out_gen [Open_wronly; Open_append; Open_creat] !log_perm filename in
+    let fd = Unix.descr_of_out_channel ch in
+    let size = (Unix.fstat fd).st_size in
+    if size <= 0 then
+      Printf.fprintf ch "%.6f %2d %10d Log0: log created\n%!"
+        (Unix.gettimeofday ()) i (-1);
+    ch
+
+  let get_log id =
+    let ch = !log_files.(id) in
+    (* reopen log file it no link: logrotate might delete it*)
+    if Unix.(fstat (Unix.descr_of_out_channel ch)).st_nlink < 1 then
+      begin
+        (try close_out ch with _ -> ());
+        let ch = open_log id in
+        !log_files.(id) <- ch;
+        ch
+      end
+    else ch
 
   let set_log_folder ?(basename="log") ?(perm=0o700) folder nb_dom =
     log_perm := perm;
@@ -216,19 +234,6 @@ module Log = struct
       let a = Array.init nb_dom (fun i -> open_log i) in
       log_files := a
     with e -> failwith ("set_log_folder: " ^ Printexc.to_string e)
-
-  let get_log id =
-    let ch = !log_files.(id)in
-    (* reopen log file it no link: logrotate might delete it*)
-    if Unix.(fstat (Unix.descr_of_out_channel ch)).st_nlink < 1 then
-      begin
-        let ch = open_log id in
-          Printf.fprintf ch "%.6f %2d %10d Log0: log created\n%!"
-            (Unix.gettimeofday ()) id (-1);
-        !log_files.(id) <- ch;
-        ch
-      end
-    else ch
 
   let f ty k =
     if do_log ty then (
@@ -546,7 +551,7 @@ let loop id st listens pipe timeout handler () =
     begin
       let fn s =
         (try Ssl.shutdown s with _ -> ());
-        Unix.shutdown (Ssl.file_descr_of_socket s) SHUTDOWN_ALL
+        Unix.close (Ssl.file_descr_of_socket s);
       in
       let gn s =
         (try Unix.shutdown s SHUTDOWN_ALL with _ -> ());

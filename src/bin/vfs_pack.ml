@@ -186,7 +186,7 @@ let emit ~perm ?max_size ?destination oc (l:entry list) : unit =
               if extension = ".chaml" then
                 let vpath = Filename.remove_extension vfs_path ^ ".html" in
                 add_entry (MlHtml (vpath, real_path))
-              else if extension <> ".zlib" then
+              else if extension <> ".zlib" && extension <> ".htinc" then
                 begin
                   let use_path =
                     match max_size with
