@@ -1,14 +1,31 @@
 open Server
 open Log
 
-let get_log i nb_lines =
+let log_line i (time, date, client, rest) output =
+  let frac_date = mod_float time 1.0 in
+  let frac_date = Printf.sprintf "%0.5f" frac_date in
+  let frac_date = String.sub frac_date 2 5 in
+  let frac_date = {html|<small><?=frac_date?></small>|html} in
+  let open Unix in
+  {funml|
+   <tr>
+     <td class="scol">
+       <?= Printf.sprintf "%02d-%02d-%d %02d:%02d:%02d.%s"
+           (date.tm_year+1900) (date.tm_mon + 1) date.tm_mday
+           date.tm_hour date.tm_min date.tm_sec frac_date
+           ?></td>
+        <td class="scol"><?= string_of_int i ?></td>
+        <td class="scol"><?= string_of_int client ?></td>
+        <td class="info"><?= (rest) ?></td>
+      </tr>|funml} output
+
+let get_log i nb_lines output =
   let filename = fname i in
   try
     let (pid, out) =
       Process.create "tail" [|"tail"; "-n"; string_of_int nb_lines; filename|]
     in
     let ch = Input.of_io out in
-    let r = ref [] in
     let b = Buffer.create 1024 in
     let buf = Buffer.create 128 in
     let cont = ref true in
@@ -37,20 +54,24 @@ let get_log i nb_lines =
       in
       (try gn () with Unix.(Unix_error(EPIPE,_,_)) | End_of_file -> cont := false);
       let date = Unix.gmtime time in
-      let r = (time, date, client, Buffer.contents b) in
-      Buffer.reset b;
-      r
+      log_line i (time, date, client, Buffer.contents b) output;
+      Buffer.reset b
     in
-    while !cont do r := fn () :: !r done;
+    while !cont do fn () done;
     Input.close ch;
     ignore (Process.wait pid);
-    List.rev !r
-  with e -> [0.0, Unix.gmtime 0.0, 0,
+  with e -> log_line i (0.0, Unix.gmtime 0.0, 0,
              Printf.sprintf "Can not read log file %s (exn: %s)\n%!"
-               filename (Printexc.to_string e)]
+               filename (Printexc.to_string e)) output
 
-let html ?(log_size=100) self req headers =
+let html ?log_size self req headers =
   let status = status self in
+  let log_size =
+    match log_size with
+    | Some nb -> nb
+    | None ->
+       try int_of_string (List.assoc "nb" (Request.query req)) with _ -> 100
+  in
   let num_threads = num_threads self in
   let mypid = Unix.getpid () in
   let (pid,out) =
@@ -90,24 +111,6 @@ let html ?(log_size=100) self req headers =
         let vsz = Util.to_human_int (vsz * 1024) in
         Printf.sprintf "%.2f%% CPU, %s Memory (%s resident, %.2f%%)"
                    cpu vsz rss pmem)
-  in
-  let log_line i (time, date, client, rest)  =
-    let frac_date = mod_float time 1.0 in
-    let frac_date = Printf.sprintf "%0.5f" frac_date in
-    let frac_date = String.sub frac_date 2 5 in
-    let frac_date = {html|<small><?=frac_date?></small>|html} in
-    let open Unix in
-    {funml|
-     <tr>
-     <td class="scol">
-          <?= Printf.sprintf "%02d-%02d-%d %02d:%02d:%02d.%s"
-           (date.tm_year+1900) (date.tm_mon + 1) date.tm_mday
-           date.tm_hour date.tm_min date.tm_sec frac_date
-           ?></td>
-        <td class="scol"><?= string_of_int i ?></td>
-        <td class="scol"><?= string_of_int client ?></td>
-        <td class="info"><?= (rest) ?></td>
-      </tr>|funml}
   in
   {chaml|
    <!DOCTYPE html>
@@ -175,7 +178,10 @@ let html ?(log_size=100) self req headers =
                  end
               done
            ?></ol>
-           <h2>Logs</h2>
+     <?ml
+     if !Log.log_folder <> "" then
+       {funml|
+       <h2>Logs</h2>
        <table>
          <thead>
            <tr>
@@ -194,14 +200,15 @@ let html ?(log_size=100) self req headers =
              <th>information</th>
            </tr>
          </thead>
-         <tbody id="table">
-           <?ml
-             let _ = for i = 0 to num_threads do
-               let l = get_log i log_size in (* TODO print in get_log i *)
-               List.iter (fun y -> log_line i y output) l
-             done
-           ?>
-         </tbody>
-       </table>
-       </body>
+             <tbody id="table">
+               <?ml
+                 let _ = for i = 0 to num_threads do
+                   get_log i log_size output;
+                 done
+               ?>
+             </tbody>
+         </table>
+       |funml} output
+     ?>
+      </body>
    </html>|chaml} req headers

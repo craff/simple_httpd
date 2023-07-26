@@ -1375,9 +1375,19 @@ end
 (** A module to get detail status about the server *)
 module Status : sig
   val html : ?log_size:int -> Server.t -> Html.chaml
-  (** Returns a detailed server status as html. If the server uses a
-      [log_folder], the given number of lines of the log is given for each
-      thread/domain.*)
+(** Returns a detailed server status as html, including
+
+    {ul {- number of actives connections (total and per threads)}
+        {- memory and cpu usage}
+        {- hd usage}
+        {- number of used file descriptor}}
+
+    We are planning to make this page extensible with your own date...
+
+    If the server uses a [log_folder], the given number of lines of the log is
+    given for each thread/domain. If [log_size] is not provider, the value of
+    the parameter ["nb"] of the query will be used, and if it not provided or
+    is not an integer, 100 is used.  *)
 end
 
 

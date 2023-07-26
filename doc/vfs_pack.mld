@@ -191,9 +191,9 @@ Next, you may insert html code inside ocaml code in three ways:
 
 - [{html| html_contents |html}] which produces a value of type [string]
 
-- [{funml| html_contents |funml}] which produces a value of type {!Simple_httpd.Html.elt}
-  [= (module Html.Output) -> unit]. You will have to give [(module Out)] as
-  argument to use it.
+- [{funml| html_contents |funml}] which produces a value of type
+  {!Simple_httpd.Html.elt} [= (module Html.Output) -> unit]. You will have to
+  give the provided value [output = (module Out)] as argument to use it.
 
 - [{chaml| html_document |chaml}] to be used with [chaml] preprocessor, but
   useless with [vfs_pack] which produces a value of type
