@@ -1,0 +1,23 @@
+opam-version: "2.0"
+version: "1.0-alpha1"
+authors: ["Simon Cruanes" "Christophe Rallalli"]
+maintainer: "christophe@raffalli.eu"
+license: "MIT"
+synopsis: "Simple HTTP server using ocaml 5 domains"
+build: [
+  ["dune" "build" "@install" "-p" name "-j" jobs]
+  ["dune" "build" "@doc" "-p" name "-j" jobs] {with-doc}
+  ["dune" "runtest" "-p" name "-j" jobs] {with-test}
+]
+depends: [
+  "pacomb"
+  "yojson" { build }
+]
+tags: [ "http" "domain" "server" "simple_httpd" "http_of_dir" "simplehttpserver" ]
+homepage: "https://github.com/craff/simple_httpd/"
+doc: "https://raffalli.eu/simple_httpd/simple_httpd"
+bug-reports: "https://github.com/craff/simple_httpd/issues"
+dev-repo: "git+https://github.com/craff/simple_httpd.git"
+post-messages: "simple http server, with non blocking IOs and domain. Also
+ships with a `http_of_dir` and `vfs_pack` program and a language equivalent to
+php."
