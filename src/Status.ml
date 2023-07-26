@@ -37,7 +37,7 @@ let get_log i nb_lines =
       in
       (try gn () with Unix.(Unix_error(EPIPE,_,_)) | End_of_file -> cont := false);
       let date = Unix.gmtime time in
-      let r = (date, client, Buffer.contents b) in
+      let r = (time, date, client, Buffer.contents b) in
       Buffer.reset b;
       r
     in
@@ -45,7 +45,7 @@ let get_log i nb_lines =
     Input.close ch;
     ignore (Process.wait pid);
     List.rev !r
-  with e -> [Unix.gmtime 0.0, 0,
+  with e -> [0.0, Unix.gmtime 0.0, 0,
              Printf.sprintf "Can not read log file %s (exn: %s)\n%!"
                filename (Printexc.to_string e)]
 
@@ -91,14 +91,18 @@ let html ?(log_size=100) self req headers =
         Printf.sprintf "%.2f%% CPU, %s Memory (%s resident, %.2f%%)"
                    cpu vsz rss pmem)
   in
-  let log_line i (date, client, rest)  =
+  let log_line i (time, date, client, rest)  =
+    let frac_date = mod_float time 1.0 in
+    let frac_date = Printf.sprintf "%0.5f" frac_date in
+    let frac_date = String.sub frac_date 2 5 in
+    let frac_date = {html|<small><?=frac_date?></small>|html} in
     let open Unix in
     {funml|
      <tr>
      <td class="scol">
-          <?= Printf.sprintf "%02d-%02d-%d %02d:%02d:%02d"
+          <?= Printf.sprintf "%02d-%02d-%d %02d:%02d:%02d.%s"
            (date.tm_year+1900) (date.tm_mon + 1) date.tm_mday
-           date.tm_hour date.tm_min date.tm_sec
+           date.tm_hour date.tm_min date.tm_sec frac_date
            ?></td>
         <td class="scol"><?= string_of_int i ?></td>
         <td class="scol"><?= string_of_int client ?></td>
@@ -194,7 +198,7 @@ let html ?(log_size=100) self req headers =
            <?ml
              let _ = for i = 0 to num_threads do
                let l = get_log i log_size in (* TODO print in get_log i *)
-               List.iteri (fun x y -> log_line x y output) l
+               List.iter (fun y -> log_line i y output) l
              done
            ?>
          </tbody>
