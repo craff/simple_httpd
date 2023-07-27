@@ -225,4 +225,4 @@ accepted in any context.  Attributes are also checked according to the
 specification and foreign attribute are allowed everywhere. The special cases
 marked by asterisk sign in the above mentioned tables are not implemented.
 
-The rule about unambiguous ampersand is supported by recognizing entities (the code is generated from {{:https://html.spec.whatwg.org/entities.json}this json file}.
+The rule about unambiguous ampersand is checked by recognizing entities (the code is generated from {{:https://html.spec.whatwg.org/entities.json}this json file}.

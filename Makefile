@@ -15,7 +15,7 @@ test:
 
 .PHONY: remove
 remove:
-	find . \( -name *~ -o -name \#* \) -print -exec rm \{\} \;
+	find . \( -name '*~' -o -name '\#*' \) -print -exec rm \{\} \;
 
 .PHONY: clean
 clean: remove

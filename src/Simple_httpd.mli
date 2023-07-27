@@ -397,7 +397,7 @@ module Headers : sig
     the necessary function to read and modify headers *)
 
   (** A module defining all the legal header names, generated from the
-      {{:hhttps://www.iana.org/assignments/http-fields/field-names.csv}csv at iana}.
+      {{:https://www.iana.org/assignments/http-fields/field-names.csv}csv at iana}.
    last update: 29.06.2023. Other headers are ignored! *)
 
   (** @inline *)
