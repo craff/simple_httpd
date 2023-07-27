@@ -1,0 +1,15 @@
+|Category|Elements|Elements with exceptions
+0|Metadatacontent|base;command;link;meta;noscript;script;style;title|—
+1|Flowcontent|a;abbr;address;article;aside;audio;b;bdi;bdo;blockquote;br;button;canvas;cite;code;command;datalist;del;details;dfn;div;dl;em;embed;fieldset;figure;footer;form;h1;h2;h3;h4;h5;h6;header;hgroup;hr;i;iframe;img;input;ins;kbd;keygen;label;map;mark;math;menu;meter;nav;noscript;object;ol;output;p;pre;progress;q;ruby;s;samp;script;section;select;small;span;strong;sub;sup;svg;table;textarea;time;u;ul;var;video;wbr;Text|area(ifitisadescendantofamapelement);style(ifthescopedattributeispresent)
+2|Sectioningcontent|article;aside;nav;section|—
+3|Headingcontent|h1;h2;h3;h4;h5;h6;hgroup|—
+4|Phrasingcontent|abbr;audio;b;bdi;bdo;br;button;canvas;cite;code;command;datalist;dfn;em;embed;i;iframe;img;input;kbd;keygen;label;mark;math;meter;noscript;object;output;progress;q;ruby;s;samp;script;select;small;span;strong;sub;sup;svg;textarea;time;u;var;video;wbr;Text|a(ifitcontainsonlyphrasingcontent);area(ifitisadescendantofamapelement);del(ifitcontainsonlyphrasingcontent);ins(ifitcontainsonlyphrasingcontent);map(ifitcontainsonlyphrasingcontent)
+5|Embeddedcontent|audiocanvasembediframeimgmathobjectsvgvideo|—
+6|Interactivecontent|a;button;details;embed;iframe;keygen;label;select;textarea;|audio(ifthecontrolsattributeispresent);img(iftheusemapattributeispresent);input(ifthetypeattributeisnotintheHiddenstate);menu(ifthetypeattributeisinthetoolbarstate);object(iftheusemapattributeispresent);video(ifthecontrolsattributeispresent)
+7|Sectioningroots|blockquote;body;details;fieldset;figure;td|—
+8|Form-associatedelements|button;fieldset;input;keygen;label;meter;object;output;progress;select;textarea|—
+9|Listedelements|button;fieldset;input;keygen;object;output;select;textarea|—
+10|Labelableelements|button;input;keygen;meter;output;progress;select;textarea|—
+11|Submittableelements|button;input;keygen;object;select;textarea|—
+12|Resettableelements|input;keygen;output;select;textarea|—
+13|formatBlockcandidates|section;nav;article;aside;h1;h2;h3;h4;h5;h6;hgroup;header;footer;address;p;pre;blockquote;div|—

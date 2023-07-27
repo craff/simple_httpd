@@ -10,3 +10,8 @@
   (targets entities.ml)
   (deps (:bin ../gen/compile_entities.exe) entities.json)
   (action (with-stdout-to %{targets} (run %{bin} entities.json))))
+
+(rule
+  (targets Html.ml Html.mli)
+  (deps (:bin ../gen/compile_html5.exe) table-1.csv table-3.csv table-4.csv table-5.csv)
+  (action (run %{bin})))

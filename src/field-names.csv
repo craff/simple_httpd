@@ -46,8 +46,8 @@ CDN-Loop,,permanent,[RFC 8586: Loop Detection in Content Delivery Networks (CDNs
 Cert-Not-After,,permanent,"[RFC 8739, Section 3.3: Support for Short-Term, Automatically Renewed (STAR) Certificates in the Automated Certificate Management Environment (ACME)]",
 Cert-Not-Before,,permanent,"[RFC 8739, Section 3.3: Support for Short-Term, Automatically Renewed (STAR) Certificates in the Automated Certificate Management Environment (ACME)]",
 Clear-Site-Data,,permanent,[Clear Site Data],
-Client-Cert,,permanent,"[RFC-ietf-httpbis-client-cert-field-06, Section 2]",
-Client-Cert-Chain,,permanent,"[RFC-ietf-httpbis-client-cert-field-06, Section 2]",
+Client-Cert,,permanent,"[RFC9440, Section 2: Client-Cert HTTP Header Field]",
+Client-Cert-Chain,,permanent,"[RFC9440, Section 2: Client-Cert HTTP Header Field]",
 Close,,permanent,"[RFC9112, Section 9.6: HTTP/1.1]",(reserved)
 Configuration-Context,,provisional,[OSLC Configuration Management Version 1.0. Part 3: Configuration Specification],
 Connection,,permanent,"[RFC9110, Section 7.6.1: HTTP Semantics]",

@@ -17,9 +17,26 @@ let do_with_filename filename fn =
 
 let blank = Blank.from_charset Charset.empty
 
-let mismatch name name' =
-  let msg = Printf.sprintf "mismatched tags %S and %S" name name' in
+let bad_attr name name' =
+  let msg = Printf.sprintf "Bad attribute %S for tag %S"
+              (Html.attr_to_string name') (Html.tag_to_string name)
+  in
   Lex.give_up ~msg ()
+
+let check_attributes tag attrs =
+  let open Html in
+  match tag with
+  | Foreign _ -> ()
+  | _ ->
+     let fn = function
+       | (ForeignAttr _, _) -> ()
+       | (name, _) ->
+          match Hashtbl.find attr_tbl name with
+          | exception Not_found -> bad_attr tag name
+          | Any -> ()
+          | Some l -> if not (List.mem tag l) then bad_attr tag name
+     in
+     List.iter fn attrs
 
 type mode = { cls : string option (* waiting for a closing tag |html} of |chaml} *)
             ; top : bool (* allows for <?ml ... ?> and <?prelude ... ?>*)
@@ -112,11 +129,13 @@ and [@cache] attributes mode =
   ; one_spaces (name::attribute_name)
       (value :: ~? [Empty] (spaces '=' spaces (v::value mode)=>v))
       (attrs::attributes mode)
-    => (name, value) :: attrs
+    => (Html.attr_of_string name, value) :: attrs
 
 and [@cache] tag mode =
   "<" (name::tag_name) (attrs::attributes mode) ">" =>
-    (if is_void name || is_raw name then Lex.give_up ();
+    (let name = Html.tag_of_string name in
+     if is_void name || is_raw name then Lex.give_up ();
+     check_attributes name attrs;
      (name, attrs))
 
 and [@cache] closing name =
@@ -124,16 +143,20 @@ and [@cache] closing name =
     "</" (__::RE re) ">" => ()
 
 and [@cache] any_closing =
-    "</" (name::tag_name) ">" => String.lowercase_ascii name
+    "</" (name::tag_name) ">" => Html.tag_of_string name
 
 and [@cache] void_tag ml =
   '<' (name::tag_name) (attrs::attributes ml) (sl :: ~? '/') '>' =>
-    (if sl == None && not (is_void name) then Lex.give_up ();
-     (String.lowercase_ascii name, attrs))
+    (let name = Html.tag_of_string name in
+     if sl == None && not (is_void name) then Lex.give_up ();
+     check_attributes name attrs;
+     (name, attrs))
 
 and [@cache] raw_tag mode =
   "<" (name::RE raw_re_tag) (attrs::attributes mode) ">" =>
-    (name, (String.lowercase_ascii name, attrs))
+    (let tag = Html.tag_of_string name in
+     check_attributes tag attrs;
+     (name, (tag, attrs)))
 
 and raw_re tag =
   let r = ref {|\([^<]\|\(<[^/?]\)|} in
@@ -335,7 +358,7 @@ and [@cache] text_elt mode =
       (if mode.cls = Some text then Lex.give_up () else Text("|" ^ text ^ "}"))
 
 and [@cache] elements mode =
-    () => [("", [], [])]
+    () => [(root, [], [])]
   ; (stack::elements mode) comment => stack
   ; (stack::elements mode) ((name,attrs) :: tag mode) =>
       (if is_void name || is_raw name then Lex.give_up ();

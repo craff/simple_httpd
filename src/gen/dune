@@ -19,6 +19,10 @@
   (modules compile_status_mli))
 
 (executable
+  (name compile_html5)
+  (modules compile_html5))
+
+(executable
   (name compile_entities)
   (libraries yojson)
   (modules compile_entities))

@@ -1,9 +1,12 @@
 
+TAGTABLES=./src/chaml/table-1.csv ./src/chaml/table-2.csv ./src/chaml/table-3.csv\
+          ./src/chaml/table-4.csv ./src/chaml/table-5.csv ./src/chaml/table-6.csv
+
 .PHONY: all
 all: build test
 
 .PHONY: build
-build:
+build: ./src/field-names.csv ./src/chaml/entities.json ${TAGTABLES}
 	@dune build
 
 .PHONY: test
@@ -18,9 +21,14 @@ remove:
 clean: remove
 	@dune clean
 
-.PHONY: entity
-entity:
-	curl https://html.spec.whatwg.org/entities.json -o src/chaml/entities.json
+./src/field-names.csv:
+	curl https://www.iana.org/assignments/http-fields/field-names.csv -o src/field-names.csv
+
+./src/chaml/entities.json:
+	curl https://html.spec.whatwg.org/entities.json -o $>
+
+${TAGTABLES}:
+	cd src/chaml; python3 ../gen/tags.py "https://dev.w3.org/html5/spec-LC/index.html"
 
 .PHONY: doc
 doc:

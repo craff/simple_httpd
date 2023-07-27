@@ -396,8 +396,8 @@ module Headers : sig
     Headers are metadata associated with a request or response. This module provide
     the necessary function to read and modify headers *)
 
-  (** A module defining all the legal header names, generated from the csv at
-      {{:https://www.iana.org/assignments/http-fields/http-fields.xhtml} iana}.
+  (** A module defining all the legal header names, generated from the
+      {{:hhttps://www.iana.org/assignments/http-fields/field-names.csv}csv at iana}.
    last update: 29.06.2023. Other headers are ignored! *)
 
   (** @inline *)
