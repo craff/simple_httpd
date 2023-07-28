@@ -1,0 +1,153 @@
+1690543373.306817  1         -1 Log0: log created
+1690543376.744480  1          0 Req0: From 127.0.0.1: GET, path "/status?nb=100"
+1690543377.079260  1          0 Req0: response sent after 334.784985ms
+1690543385.428063  1          0 Req0: From 127.0.0.1: GET, path "/"
+1690543385.428362  1          0 Req0: response sent after 0.312805ms
+1690544086.329999  1          0 Req0: From 127.0.0.1: GET, path "/"
+1690544086.330282  1          0 Req0: response sent after 0.297070ms
+1690544103.073672  1          0 Req0: From 127.0.0.1: GET, path "/"
+1690544103.073978  1          0 Req0: response sent after 0.316858ms
+1690544266.961644  1          0 Req0: From 127.0.0.1: GET, path "/"
+1690544266.961969  1          0 Req0: response sent after 0.339031ms
+1690544268.340521  1          0 Req0: From 127.0.0.1: GET, path "/stats"
+1690544268.340759  1          0 Req0: response sent after 0.253916ms
+1690544271.214701  1          0 Req0: From 127.0.0.1: GET, path "/stats"
+1690544271.215180  1          0 Req0: response sent after 0.513077ms
+1690544272.414482  1          0 Req0: From 127.0.0.1: GET, path "/"
+1690544272.414746  1          0 Req0: response sent after 0.277996ms
+1690544274.376986  1          0 Req0: From 127.0.0.1: GET, path "/stats"
+1690544274.377210  1          0 Req0: response sent after 0.234127ms
+1690544278.240507  1          0 Req0: From 127.0.0.1: GET, path "/"
+1690544278.240883  1          0 Req0: response sent after 0.391006ms
+1690544281.526489  1          0 Req0: From 127.0.0.1: GET, path "/"
+1690544281.526784  1          0 Req0: response sent after 0.311136ms
+1690544284.699660  1          0 Req0: From 127.0.0.1: GET, path "/"
+1690544284.699906  1          0 Req0: response sent after 0.260115ms
+1690544334.661912  1          0 Req0: From 127.0.0.1: GET, path "/"
+1690544334.662203  1          0 Req0: response sent after 0.304222ms
+1690544336.466964  1          0 Req0: From 127.0.0.1: GET, path "/stats"
+1690544336.467302  1          0 Req0: response sent after 0.350952ms
+1690544340.311357  1          0 Req0: From 127.0.0.1: GET, path "/"
+1690544340.311640  1          0 Req0: response sent after 0.295162ms
+1690544341.220972  1          0 Req0: From 127.0.0.1: GET, path "/"
+1690544341.221348  1          0 Req0: response sent after 0.386000ms
+1690544344.833550  1          0 Req0: From 127.0.0.1: GET, path "/"
+1690544344.833826  1          0 Req0: response sent after 0.291109ms
+1690544346.233420  1          0 Req0: From 127.0.0.1: GET, path "/stats"
+1690544346.233648  1          0 Req0: response sent after 0.237942ms
+1690544356.971280  1          0 Req0: From 127.0.0.1: GET, path "/stats"
+1690544356.971582  1          0 Req0: response sent after 0.312805ms
+1690544357.870351  1          0 Req0: From 127.0.0.1: GET, path "/stats"
+1690544357.870602  1          0 Req0: response sent after 0.265121ms
+1690544359.640718  1          0 Req0: From 127.0.0.1: GET, path "/stats"
+1690544359.640937  1          0 Req0: response sent after 0.229120ms
+1690544359.875755  1          0 Req0: From 127.0.0.1: GET, path "/stats"
+1690544359.876088  1          0 Req0: response sent after 0.360966ms
+1690545782.242458  1          0 Req0: From 127.0.0.1: GET, path "/stats"
+1690545782.243040  1          0 Req0: response sent after 0.592947ms
+1690545785.095971  1          0 Req0: From 127.0.0.1: GET, path "/stats"
+1690545785.096655  1          0 Req0: response sent after 0.717163ms
+1690545786.439459  1          0 Req0: From 127.0.0.1: GET, path "/stats"
+1690545786.439913  1          0 Req0: response sent after 0.478029ms
+1690545787.452537  1          0 Req0: From 127.0.0.1: GET, path "/stats"
+1690545787.452950  1          0 Req0: response sent after 0.421047ms
+1690545789.551611  1          0 Req0: From 127.0.0.1: GET, path "/stats"
+1690545789.552021  1          0 Req0: response sent after 0.424862ms
+1690545790.137834  1          0 Req0: From 127.0.0.1: GET, path "/stats"
+1690545790.138169  1          0 Req0: response sent after 0.349045ms
+1690545790.445693  1          0 Req0: From 127.0.0.1: GET, path "/stats"
+1690545790.446092  1          0 Req0: response sent after 0.413179ms
+1690545790.801363  1          0 Req0: From 127.0.0.1: GET, path "/stats"
+1690545790.801739  1          0 Req0: response sent after 0.391960ms
+1690545851.782016  1          0 Req0: From 127.0.0.1: GET, path "/stats"
+1690545851.782725  1          0 Req0: response sent after 0.716925ms
+1690545863.524909  1          0 Req0: From 127.0.0.1: GET, path "/"
+1690545863.525637  1          0 Req0: response sent after 0.735998ms
+1690545866.880524  1          0 Req0: From 127.0.0.1: GET, path "/"
+1690545866.880883  1          0 Req0: response sent after 0.371933ms
+1690545869.697450  1          0 Req0: From 127.0.0.1: GET, path "/"
+1690545869.697835  1          0 Req0: response sent after 0.398874ms
+1690545871.475044  1          0 Req0: From 127.0.0.1: GET, path "/status?nb=100"
+1690545871.809134  1          0 Req0: response sent after 334.100962ms
+1690545876.237758  1          0 Req0: From 127.0.0.1: GET, path "/"
+1690545876.238156  1          0 Req0: response sent after 0.411987ms
+1690545880.366944  1          0 Req0: From 127.0.0.1: GET, path "/stats"
+1690545880.367345  1          0 Req0: response sent after 0.411987ms
+1690546154.177422  1          0 Req0: From 127.0.0.1: GET, path "/stats"
+1690546154.177933  1          0 Req0: response sent after 0.521898ms
+1690546161.643851  1          0 Req0: From 127.0.0.1: GET, path "/"
+1690546161.644202  1          0 Req0: response sent after 0.364780ms
+1690546163.837784  1          0 Req0: From 127.0.0.1: GET, path "/status?nb=100"
+1690546164.178206  1          0 Req0: response sent after 340.433121ms
+1690546169.699376  1          0 Req0: From 127.0.0.1: GET, path "/"
+1690546169.699742  1          0 Req0: response sent after 0.394821ms
+1690546173.640912  1          0 Req0: From 127.0.0.1: GET, path "/"
+1690546173.641322  1          0 Req0: response sent after 0.423908ms
+1690546180.341003  1          0 Req0: From 127.0.0.1: GET, path "/"
+1690546180.341462  1          0 Req0: response sent after 0.470877ms
+1690546182.143204  1          0 Req0: From 127.0.0.1: GET, path "/stats"
+1690546182.143591  1          0 Req0: response sent after 0.421047ms
+1690546334.457044  1          0 Req0: From 127.0.0.1: GET, path "/stats"
+1690546334.457531  1          0 Req0: response sent after 0.497818ms
+1690546335.329493  1          0 Req0: From 127.0.0.1: GET, path "/stats"
+1690546335.329919  1          0 Req0: response sent after 0.493050ms
+1690546339.714389  1          0 Req0: From 127.0.0.1: GET, path "/"
+1690546339.714757  1          0 Req0: response sent after 0.380993ms
+1690546342.557565  1          0 Req0: From 127.0.0.1: GET, path "/"
+1690546342.557854  1          0 Req0: response sent after 0.301123ms
+1690546344.545237  1          0 Req0: From 127.0.0.1: GET, path "/stats"
+1690546344.545649  1          0 Req0: response sent after 0.443935ms
+1690546349.978488  1          0 Req0: From 127.0.0.1: GET, path "/"
+1690546349.978821  1          0 Req0: response sent after 0.344992ms
+1690546352.972537  1          0 Req0: From 127.0.0.1: GET, path "/"
+1690546352.973335  1          0 Req0: response sent after 0.826836ms
+1690546355.319423  1          0 Req0: From 127.0.0.1: GET, path "/"
+1690546355.319750  1          0 Req0: response sent after 0.340939ms
+1690546356.745902  1          0 Req0: From 127.0.0.1: GET, path "/stats"
+1690546356.746515  1          0 Req0: response sent after 0.627041ms
+1690546363.153967  1          0 Req0: From 127.0.0.1: GET, path "/"
+1690546363.154367  1          0 Req0: response sent after 0.414848ms
+1690546364.752625  1          0 Req0: From 127.0.0.1: GET, path "/status?nb=100"
+1690546365.087243  1          0 Req0: response sent after 334.630966ms
+1690546598.505454  1          0 Req0: From 127.0.0.1: GET, path "/status?nb=100"
+1690546598.841446  1          0 Req0: response sent after 336.002827ms
+1690546602.894450  1          0 Req0: From 127.0.0.1: GET, path "/status?nb=100"
+1690546603.232770  1          0 Req0: response sent after 338.330030ms
+1690546605.162958  1          0 Req0: From 127.0.0.1: GET, path "/"
+1690546605.163377  1          0 Req0: response sent after 0.432968ms
+1690546608.054077  1          0 Req0: From 127.0.0.1: GET, path "/"
+1690546608.054382  1          0 Req0: response sent after 0.318050ms
+1690546612.394640  1          0 Req0: From 127.0.0.1: GET, path "/"
+1690546612.395030  1          0 Req0: response sent after 0.407934ms
+1690546621.246650  1          0 Req0: From 127.0.0.1: GET, path "/"
+1690546621.247005  1          0 Req0: response sent after 0.366926ms
+1690546622.864029  1          0 Req0: From 127.0.0.1: GET, path "/status?nb=15"
+1690546623.200731  1          0 Req0: response sent after 336.714983ms
+1690546625.058417  1          0 Req0: From 127.0.0.1: GET, path "/"
+1690546625.058770  1          0 Req0: response sent after 0.365973ms
+1690546626.564980  1          0 Req0: From 127.0.0.1: GET, path "/stats"
+1690546626.565511  1          0 Req0: response sent after 0.560999ms
+1690546629.165634  1          0 Req0: From 127.0.0.1: GET, path "/stats"
+1690546629.166069  1          0 Req0: response sent after 0.447989ms
+1690546630.853271  1          0 Req0: From 127.0.0.1: GET, path "/stats"
+1690546630.853706  1          0 Req0: response sent after 0.450134ms
+1690547253.044297  1          0 Req0: From 127.0.0.1: GET, path "/"
+1690547253.050689  1          0 Req0: response sent after 6.394863ms
+1690547278.662637  1          0 Req0: From 127.0.0.1: GET, path "/"
+1690547278.662992  1          0 Req0: response sent after 0.367880ms
+1690547281.515317  1          0 Req0: From 127.0.0.1: GET, path "/stats"
+1690547281.515757  1          0 Req0: response sent after 0.453949ms
+1690547321.880231  1          0 Req0: From 127.0.0.1: GET, path "/"
+1690547321.880842  1          0 Req0: response sent after 0.619888ms
+1690547323.443821  1          0 Req0: From 127.0.0.1: GET, path "/"
+1690547323.444162  1          0 Req0: response sent after 0.355005ms
+1690547351.859886  1          0 Req0: From 127.0.0.1: GET, path "/index.html?"
+1690547351.860421  1          0 Req0: response sent after 0.545025ms
+1690547353.652498  1          0 Req0: From 127.0.0.1: GET, path "/bar.html"
+1690547353.652824  1          0 Req0: response sent after 0.335932ms
+1690547357.315403  1          0 Req0: From 127.0.0.1: GET, path "/index.html?"
+1690547357.315855  1          0 Req0: response sent after 0.467062ms
+1690547359.024191  1          0 Req0: From 127.0.0.1: GET, path "/foo.html"
+1690547359.024448  1          0 Req0: response sent after 0.271082ms
+1690547373.954788  1          0 Req0: From 127.0.0.1: GET, path "/index.html?"
+1690547373.955291  1          0 Req0: response sent after 0.515938ms

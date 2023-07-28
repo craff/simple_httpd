@@ -37,7 +37,11 @@ Through a bunch of modules, described here {!Simple_httpd}, we provide:
   files compared to nginx and apache. The 99% quantile is very, meaning that
   {!Simple_httpd} handles very quickly most request.
 
-First, here is a plot of the latency obtained using
+A good start is the template folder of the distribution, documented
+{{:./template.html}[here]}. It contains the squeletton for a server serving
+two sites with status report and statistics.
+
+As we sait, Simple_httpd is fast. Here is a plot of the latency obtained using
 {{:https://github.com/tsenart/vegeta} [vegeta]} with 1000 requests per seconds
 for 15s, on a small static file.  Simple_httpd uses
 {!Simple_httpd.Dir.add_vfs} using {{:./vfs_pack.html}[vfs_pack]} from the

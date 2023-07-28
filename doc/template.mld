@@ -1,0 +1,35 @@
+{0 An empty template to start creating sites and servers}
+
+The folder [template] contains an almost empty site exposing a lot of feature
+of simple_httpd while remaining small (main file is 160 lines).
+
+Note: the dune file should be modified a bit to be compiled outside of the
+source tree of simple_httpd.
+
+This template serves two sites/applications, both in http and https if a
+certificate are provided. It is possible to redirect http towards https.
+
+The first site has two urls:
+
+- [http://localhost:3080] (value of the server option --port + 1000)
+- [http://site1.org:2080]
+
+The second site too:
+
+- [http://localhost:4080] (value of the server option --port + 2000)
+- [http://site2.org:2080]
+
+The code of the server is in one file [server.ml] plus one folder per sites.
+[server.ml] uses the [chaml] preprocessor included with simple_httpd to embed
+html inside OCaml and both sites use [chaml] and [vfs_pack] to embed ocaml
+inside html and compile the folder [site1] and [site2] into two ml modules
+[site1.ml] and [site2.ml]. If they were large files, they could be copied by
+[vfs_pack] into a separate folder.
+
+The first site also serves a dynamic folder [site1_dyn] (not statically
+compiled) which is superposed with the static parts (path can share
+prefixes).
+
+A root page at localhost:2080 gives access to both sites and two pages with the
+status of the server and statistics of access. These pages are build using
+{!Simple_httpd.Status} and {!Simple_httpd.Stats}, which are modules written using [chaml].

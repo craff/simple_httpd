@@ -167,7 +167,7 @@ let html_list_dir (module VFS:VFS) ~prefix ~parent d : Html.chaml =
     </body></html>|chaml}
 
 (* @param on_fs: if true, we assume the file exists on the FS *)
-let add_vfs_ ?addresses ?hostnames ?(filter=(fun x -> (x, fun r -> r)))
+let add_vfs_ ?addresses ?(filter=(fun x -> (x, fun r -> r)))
                ?(config=default_config ())
                ?(prefix="") ~vfs:((module VFS:VFS) as vfs) server : unit=
   let route () =
@@ -183,7 +183,7 @@ let add_vfs_ ?addresses ?hostnames ?(filter=(fun x -> (x, fun r -> r)))
     path
   in
   if config.delete then (
-    Server.add_route_handler ?addresses ?hostnames ~filter ~meth:DELETE
+    Server.add_route_handler ?addresses ~filter ~meth:DELETE
       server (route())
       (fun path -> let path = check true "delete" path in fun _req ->
            Response.make_string
@@ -197,13 +197,13 @@ let add_vfs_ ?addresses ?hostnames ?(filter=(fun x -> (x, fun r -> r)))
                   "delete fails: %s (%s)" path (Async.printexn e))
       ))
     else (
-      Server.add_route_handler ?addresses ?hostnames ~filter ~meth:DELETE server (route())
+      Server.add_route_handler ?addresses ~filter ~meth:DELETE server (route())
         (fun _ _  ->
           Response.fail_raise ~code:method_not_allowed "delete not allowed");
     );
 
   if config.upload then (
-    Server.add_route_handler_stream ?addresses ?hostnames ~meth:PUT server (route())
+    Server.add_route_handler_stream ?addresses ~meth:PUT server (route())
       ~filter:(fun req ->
           match Request.get_header_int req Headers.Content_Length with
           | Some n when n > config.max_upload_size ->
@@ -229,13 +229,13 @@ let add_vfs_ ?addresses ?hostnames ?(filter=(fun x -> (x, fun r -> r)))
          Response.make_raw ~code:created "upload successful"
       )
   ) else (
-    Server.add_route_handler ?addresses ?hostnames ~filter ~meth:PUT server (route())
+    Server.add_route_handler ?addresses ~filter ~meth:PUT server (route())
       (fun _ _  -> Response.make_raw ~code:method_not_allowed
                      "upload not allowed");
   );
 
   if config.download then (
-    Server.add_route_handler ?addresses ?hostnames ~filter ~meth:GET server (route())
+    Server.add_route_handler ?addresses ~filter ~meth:GET server (route())
       (fun path -> let path = check true "download" path in fun req ->
         let FI info = VFS.read_file path in
         let mtime =  match info.mtime with
@@ -320,16 +320,16 @@ let add_vfs_ ?addresses ?hostnames ?(filter=(fun x -> (x, fun r -> r)))
         )
       )
   ) else (
-    Server.add_route_handler ?addresses ?hostnames ~filter ~meth:GET server (route())
+    Server.add_route_handler ?addresses ~filter ~meth:GET server (route())
       (fun _ _  -> Response.make_raw ~code:method_not_allowed "download not allowed");
   );
   ()
 
-let add_vfs ?addresses ?hostnames ?filter ?prefix ?config ~vfs server : unit =
-  add_vfs_ ?addresses ?hostnames ?filter ?prefix ?config ~vfs server
+let add_vfs ?addresses ?filter ?prefix ?config ~vfs server : unit =
+  add_vfs_ ?addresses ?filter ?prefix ?config ~vfs server
 
-let add_dir_path ?addresses ?hostnames ?filter ?prefix ?config ~dir server : unit =
-  add_vfs_ ?addresses ?hostnames ?filter ?prefix ?config ~vfs:(vfs_of_dir dir) server
+let add_dir_path ?addresses ?filter ?prefix ?config ~dir server : unit =
+  add_vfs_ ?addresses ?filter ?prefix ?config ~vfs:(vfs_of_dir dir) server
 
 module Embedded_fs = struct
 

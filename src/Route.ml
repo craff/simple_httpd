@@ -202,7 +202,7 @@ type handlers = handler array
    @param tr_req wraps the actual concrete function returned by the route
    and makes it into a handler. *)
 let add_route_handler
-      ?addresses ?hostnames ?meth
+      ?addresses ?meth
       ?(filter=(fun x -> (x, fun x -> x) : Input.t Filter.t))
       ~(tr_req : 'a treatment) (handlers : handlers) route f =
   let fn route =
@@ -221,9 +221,9 @@ let add_route_handler
        insert HEAD route t fn;
        insert POST route t fn
   in
-  let kn (default, specific) = match hostnames with
-    | None | Some [] -> gn default
-    | Some l ->
+  let kn hosts (default, specific) = match hosts with
+    | [] -> gn default
+    | l  ->
        List.iter (fun h ->
            let tree =
              try Hashtbl.find specific h
@@ -236,9 +236,9 @@ let add_route_handler
   in
 
   match addresses with
-  | None -> Array.iter kn handlers
+  | None -> Array.iter (kn []) handlers
   | Some l ->
-     List.iter (fun a -> kn handlers.((Address.index a :> int))) l
+     List.iter Address.(fun a -> kn a.hosts handlers.((index a :> int))) l
 
 let empty_handler _ = (empty_tree (), Hashtbl.create 16)
 

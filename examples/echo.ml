@@ -82,11 +82,8 @@ let _ =
 
 (** Access to the statistics *)
 let _ =
-  Server.add_route_handler server ~filter Route.(exact "stats" @/ return)
-    (fun _req ->
-       let stats = get_stats() in
-       Response.make_string stats
-    )
+  Server.add_route_handler_chaml server ~filter Route.(exact "stats" @/ return)
+    get_stats
 
 (** Add a virtual file system VFS, produced by [simple-httpd-vfs-pack] from
     an actual folger *)

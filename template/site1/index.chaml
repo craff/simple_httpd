@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<?global type Session.session_data += Count of int?>
+<?prelude let cookies, session = Session.check ~init:(fun _ -> Count 0) request
+  let count =
+    match Session.get_session_data session with
+    | Count n -> n
+    | _ -> -12
+    | exception Not_found -> -100
+  let _ = Session.set_session_data session (Count (count+1))?>
+<html>
+  <body>
+    <h1>A first web site</h1>
+
+    <p>A counter with session data on the server: <?=string_of_int count?>
+      (reset when the session expires)
+
+    <ul>
+      <li>This url is compiled within the server
+	<a href="foo.html"><code>foo.html</code></a>
+      <li>This url is served from a folder, all change will be visible
+	<a href="bar.html"><code>bar.html</code></a>
+    </ul>
+
+  </body>
+</html>

@@ -65,7 +65,6 @@ val max_connections : t -> int
 
 val add_route_handler :
   ?addresses:Address.t list ->
-  ?hostnames:string list ->
   ?meth:Method.t ->
   ?filter:Input.t Route.Filter.t ->
   t ->
@@ -99,7 +98,6 @@ val add_route_handler :
 
 val add_route_handler_stream :
   ?addresses:Address.t list ->
-  ?hostnames:string list ->
   ?meth:Method.t ->
   ?filter:Input.t Route.Filter.t ->
   t ->
@@ -112,7 +110,6 @@ val add_route_handler_stream :
 
 val add_route_handler_chaml :
   ?addresses:Address.t list ->
-  ?hostnames:string list ->
   ?meth:Method.t ->
   ?filter:Input.t Route.Filter.t ->
   t -> ('a, Html.chaml) Route.t -> 'a ->
@@ -153,7 +150,6 @@ type server_sent_generator = (module SERVER_SENT_GENERATOR)
 
 val add_route_server_sent_handler :
   ?addresses:Address.t list ->
-  ?hostnames:string list ->
   ?filter:Input.t Route.Filter.t ->
   t ->
   ('a, string Request.t -> server_sent_generator -> unit) Route.t -> 'a ->

@@ -1,0 +1,23 @@
+
+(executable
+  (name server)
+  (modules server site1 site2)
+  (preprocess
+    (action (run %{bin:chaml} %{input-file})))
+  (libraries simple_httpd))
+
+; produce an embedded FS for site1
+(rule
+  (targets site1.ml)
+  (deps (:bin ../src/bin/vfs_pack.exe) (source_tree site1))
+  (action (run %{bin} -o %{targets}
+	       --destination=./store1 --mirror=./site1
+               )))
+
+; produce an embedded FS for site2
+(rule
+  (targets site2.ml)
+  (deps (:bin ../src/bin/vfs_pack.exe) (source_tree site2))
+  (action (run %{bin} -o %{targets}
+	       --destination=./store2 --mirror=./site2
+               )))

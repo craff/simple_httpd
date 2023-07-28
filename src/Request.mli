@@ -67,7 +67,10 @@ val meth : _ t -> Method.t
 (** Method for the request. *)
 
 val path : _ t -> string
-(** Request path. *)
+(** Request path (including query). *)
+
+val path_components : _ t -> string list
+(** Request path components without query *)
 
 val client : _ t -> Async.client
 (** Request client *)

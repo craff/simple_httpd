@@ -7,9 +7,12 @@ type index = private int
 type t = private
   { addr : string  (** The actual address in formal "0.0.0.0" *)
   ; port : int     (** The port *)
+  ; hosts: string list (** The host we accept: any if the list is empty,
+                           only those listed otherwise *)
   ; ssl  : Ssl.context Atomic.t option (** An optional ssl context *)
   ; reuse : bool   (** Can we reuse the socket *)
-  ; mutable index : index (** The index used to refer to the address *)
+  ; mutable index : index ref (** The index used to refer to the address, shared by
+                                  all addresses with the same IP and port*)
   }
 
 type ssl_info =
@@ -19,8 +22,13 @@ type ssl_info =
   }
 
 (** An helper to build the above type *)
-val make : ?addr:string -> ?port:int -> ?ssl:ssl_info ->
+val make : ?addr:string -> ?port:int -> ?hosts:string list -> ?ssl:ssl_info ->
            ?reuse:bool -> unit -> t
+
+(** Functions to reuse the same address and ssl certificate with a different
+    port or hosts. *)
+val change_hosts : string list -> t -> t
+val change_port  : int -> t -> t
 
 (** set the period in second at which all ssl certificates are checked for
     renewal *)
@@ -33,3 +41,4 @@ val forward_log
     : ((((string -> string -> string -> unit, out_channel, unit, unit) format4 ->
          string -> string -> string -> unit) -> unit) -> unit) ref
 val dummy : t
+val set_index_ref : t -> index ref -> unit

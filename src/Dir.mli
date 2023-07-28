@@ -65,7 +65,6 @@ val config :
     using the given configuration [config]. *)
 val add_dir_path :
   ?addresses: Address.t list ->
-  ?hostnames: string list ->
   ?filter:Input.t Route.Filter.t ->
   ?prefix:string ->
   ?config:config ->
@@ -129,7 +128,6 @@ val vfs_of_dir : string -> (module VFS)
 
 val add_vfs :
   ?addresses: Address.t list ->
-  ?hostnames: string list ->
   ?filter:Input.t Route.Filter.t ->
   ?prefix:string ->
   ?config:config ->

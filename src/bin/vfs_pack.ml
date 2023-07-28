@@ -128,7 +128,7 @@ let emit ~perm ?max_size ?destination oc (l:entry list) : unit =
          "module %s = struct %s end \n  \
           let () = (Dir.Embedded_fs.add_dynamic embedded_fs \n  \
           ~path:%S ~headers:[Headers.Content_Type, \"text/html\"]
-          (fun request headers ->
+          (fun [@warning \"-27\"] request headers ->
           let module M = struct
           open %s  [@@warning \"-33\"]
           let [@warning \"-32\"] cookies = Cookies.empty

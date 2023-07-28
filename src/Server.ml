@@ -39,20 +39,20 @@ let num_threads self = self.num_threads
 
 let max_connections self = self.max_connections
 
-let add_route_handler ?addresses ?hostnames ?meth ?filter
+let add_route_handler ?addresses ?meth ?filter
     self route f : unit =
   let tr_req _oc req ~resp f =
     resp (f (Request.read_body_full ~buf:(Request.client req).buf req))
   in
-  Route.add_route_handler ?filter ?addresses ?hostnames ?meth
+  Route.add_route_handler ?filter ?addresses ?meth
     self.handlers route ~tr_req f
 
-let add_route_handler_stream ?addresses ?hostnames ?meth ?filter self route f =
+let add_route_handler_stream ?addresses ?meth ?filter self route f =
   let tr_req _oc req ~resp f = resp (f req) in
-  Route.add_route_handler ?filter ?addresses ?hostnames ?meth
+  Route.add_route_handler ?filter ?addresses ?meth
     self.handlers route ~tr_req f
 
-let add_route_handler_chaml ?addresses ?hostnames ?meth ?filter self route f =
+let add_route_handler_chaml ?addresses ?meth ?filter self route f =
   let headers = [Headers.Cache_Control, "no-store"] in
   let tr_req _oc req ~resp f  =
     let req = Request.read_body_full ~buf:(Request.client req).buf req in
@@ -60,14 +60,14 @@ let add_route_handler_chaml ?addresses ?hostnames ?meth ?filter self route f =
     let r = Response.make_stream ~headers ~cookies stream in
     resp r
   in
-  Route.add_route_handler ?filter ?addresses ?hostnames ?meth
+  Route.add_route_handler ?filter ?addresses ?meth
     self.handlers route ~tr_req f
 
 let[@inline] _opt_iter ~f o = match o with
   | None -> ()
   | Some x -> f x
 
-let add_route_server_sent_handler ?addresses ?hostnames ?filter self route f =
+let add_route_server_sent_handler ?addresses ?filter self route f =
   let tr_req oc req ~resp f =
     let buf = (Request.client req).buf in
     let req = Request.read_body_full ~buf req in
@@ -106,7 +106,7 @@ let add_route_server_sent_handler ?addresses ?hostnames ?filter self route f =
     try f req (module SSG : SERVER_SENT_GENERATOR);
     with Exit -> Output.close oc
   in
-  Route.add_route_handler ?filter ?addresses ?hostnames
+  Route.add_route_handler ?filter ?addresses
     ~meth:GET self.handlers route ~tr_req f
 
 module type Parameters = sig

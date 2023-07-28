@@ -24,6 +24,7 @@ let cookies self = self.cookies
 let host self = self.host
 let meth self = self.meth
 let path self = self.path
+let path_components self = self.path_components
 let body self = self.body
 let client self = self.client
 let start_time self = self.start_time

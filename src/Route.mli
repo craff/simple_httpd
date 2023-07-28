@@ -86,7 +86,6 @@ type 'a treatment = Output.t ->
 
 val add_route_handler :
   ?addresses:Address.t list ->
-  ?hostnames:string list ->
   ?meth:Method.t ->
   ?filter:Input.t Filter.t ->
   tr_req:('a -> unit) treatment ->

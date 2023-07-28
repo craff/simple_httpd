@@ -1,0 +1,15 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <?prelude
+      let count = try Request.get_cookie_int request "count"
+                  with Not_found -> 0
+      let cookies = Cookies.(create ~max_age:3600L ~same_site:`Strict
+                               ~name:"count"  (string_of_int (count+1)) empty)
+     ?>
+  </head>
+  <body>
+    <h1>A second web site</h1>
+
+    <p>A counter with a cookie: <?=string_of_int count?>
+</html>

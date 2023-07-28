@@ -34,7 +34,6 @@ end
 
 module type Host = sig
   val addresses : Address.t list
-  val hostnames : string list
 
   module Init(_:Init) : sig end
 end
@@ -57,6 +56,7 @@ let collect_addresses (hosts : (module Host) list) : Address.t list =
       end;
       if addr.reuse <> addr'.reuse then
         failwith "addresses with incompatible reuse option";
+      Address.set_index_ref addr addr'.index (* share ref ! *)
     with Not_found -> res := addr :: !res
   in
   List.iter (fun (module Host:Host) -> List.iter add Host.addresses) hosts;
@@ -71,19 +71,19 @@ let start_server parameters
           open Host
           let server = server
           let add_route_handler ?meth ?filter route fn =
-            add_route_handler ~addresses ~hostnames ?meth ?filter server route fn
+            add_route_handler ~addresses ?meth ?filter server route fn
 
           let add_route_handler_stream  ?meth ?filter route =
-            add_route_handler_stream ~addresses ~hostnames ?meth ?filter server route
+            add_route_handler_stream ~addresses ?meth ?filter server route
 
           let add_route_handler_chaml  ?meth ?filter route =
-            add_route_handler_chaml ~addresses ~hostnames ?meth ?filter server route
+            add_route_handler_chaml ~addresses ?meth ?filter server route
 
           let add_dir_path ?filter ?prefix ?config dir =
-            add_dir_path ~addresses ~hostnames ?filter ?prefix ?config ~dir server
+            add_dir_path ~addresses ?filter ?prefix ?config ~dir server
 
           let add_vfs ?filter ?prefix ?config vfs =
-            add_vfs ~addresses ~hostnames ?filter ?prefix ?config ~vfs server
+            add_vfs ~addresses ?filter ?prefix ?config ~vfs server
       end in
       let module _ = Host.Init(I) in
       ()) hosts;

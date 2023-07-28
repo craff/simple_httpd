@@ -6,9 +6,11 @@ let unset_index = -1
 type t =
   { addr : string
   ; port : int
+  ; hosts : string list
   ; ssl  : Ssl.context Atomic.t option
   ; reuse : bool
-  ; mutable index : index
+  ; mutable index : index ref
+    (* shared ref for all adresses using the same ip and port  *)
   }
 
 type ssl =
@@ -65,11 +67,13 @@ type ssl_info =
 let init_ssl = ref false
 
 let dummy =
-  { addr = ""; port = 0; ssl = None
-    ; reuse = false; index = -1 }
+  { addr = ""; port = 0; hosts = []; ssl = None
+    ; reuse = false; index = ref (-1) }
 
+let change_hosts hosts addr = { addr with hosts }
+let change_port port addr = { addr with port ; index = ref unset_index }
 
-let make ?(addr="0.0.0.0") ?(port=8080) ?ssl ?(reuse=true) () =
+let make ?(addr="0.0.0.0") ?(port=8080) ?(hosts=[]) ?ssl ?(reuse=true) () =
   let ctx, fill =
     match ssl with
     | None -> (None, fun _ -> ())
@@ -94,15 +98,17 @@ let make ?(addr="0.0.0.0") ?(port=8080) ?ssl ?(reuse=true) () =
                        cert priv (Printexc.to_string e));
          raise e
   in
-  let addr = { addr ; port ; ssl = ctx; reuse; index = unset_index } in
+  let addr = { addr ; port ; hosts; ssl = ctx; reuse; index = ref unset_index } in
   fill addr; addr
 
 let register fn addrs =
   let a = Array.of_list addrs in
-  (a, Array.mapi (fun i x -> x.index <- i; fn x) a)
+  (a, Array.mapi (fun i x -> x.index := i; fn x) a)
 
 let index addr =
-  let res = addr.index in
-  if addr.index < 0 then
+  let res = !(addr.index) in
+  if res < 0 then
     invalid_arg "add_route: the server is not listening to that adress";
   res
+
+let set_index_ref addr i = addr.index <- i

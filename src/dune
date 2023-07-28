@@ -8,7 +8,7 @@
   (foreign_stubs (language c) (names stubs))
   (private_modules headers_)
   (preprocess (per_module
-    ((action (run %{bin:chaml} %{input-file})) Status Dir)))
+    ((action (run %{bin:chaml} %{input-file})) Status Stats Dir)))
   (wrapped true))
 
 (rule

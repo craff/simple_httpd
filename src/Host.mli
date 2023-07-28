@@ -34,7 +34,6 @@ end
 
 module type Host = sig
   val addresses : Address.t list
-  val hostnames : string list
 
   module Init(_:Init) : sig end
 end

@@ -49,9 +49,13 @@ module Address : sig
     private
       { addr : string  (** The actual address in format "0.0.0.0" *)
       ; port : int     (** The port *)
+      ; hosts: string list (** The host we accept: any if the list is empty,
+                               only those listed otherwise *)
       ; ssl  : Ssl.context Atomic.t option (** An optional ssl context *)
       ; reuse : bool   (** Can we reuse the socket *)
-      ; mutable index : index (** The index used to refer to the address *)
+      ; mutable index : index ref (** The index used to refer to the address,
+                                      shared by all addresses with the same IP
+                                      and port*)
       }
 
   (** type givent the relevant information for a ssl certificate *)
@@ -62,8 +66,13 @@ module Address : sig
     }
 
   (** The constructor to build an address *)
-  val make : ?addr:string -> ?port:int -> ?ssl:ssl_info ->
+  val make : ?addr:string -> ?port:int -> ?hosts:string list -> ?ssl:ssl_info ->
              ?reuse:bool -> unit -> t
+
+  (** Functions to reuse the same address and ssl certificate with a different
+      port or hosts. *)
+  val change_hosts : string list -> t -> t
+  val change_port  : int -> t -> t
 
   (** set the period in seconds at which all ssl certificates are checked for
       renewal (default 1 day) *)
@@ -537,7 +546,10 @@ module Request : sig
   (** Method for the request. *)
 
   val path : _ t -> string
-  (** Request path. *)
+  (** Request path (including query). *)
+
+  val path_components : _ t -> string list
+  (** Request path components without query *)
 
   val client : _ t -> Async.client
   (** Request client *)
@@ -801,21 +813,6 @@ module Camlzip : sig
 
 end
 
-(** provide a filter giving very simple statistics. We can do much better
-    but be carefull on how to do it *)
-module Stats : sig
-
-(** This a filter to acquire statistics.
-    [let (filter, get) = Stats.filter ()]
-    will give you a [Filter.t] and a function [get] returning the statistics
-    as a string
-    ["N requests (average response time: Tms = T1ms (read) + T2ms (build))"]
- *)
-val filter : unit -> 'a Filter.t * (unit -> string)
-
-(** Note: currently we can not measure the time to write the response. *)
-end
-
 (** Module to handle session data *)
 module Session : sig
   (** This module allows to manage sessions which are common to several clients
@@ -1052,7 +1049,6 @@ module Server : sig
 
   val add_route_handler :
     ?addresses:Address.t list ->
-    ?hostnames:string list ->
     ?meth:Method.t ->
     ?filter:Input.t Filter.t ->
     t ->
@@ -1077,8 +1073,6 @@ module Server : sig
         address and port. Will raise
         [Invalid_argument "add_route: the server is not listening to that adress"]
         if the server is not listenning to that adresse and port.
-      @param hostnames if provided, only accept requests from the given
-        hosts as seen in the [Host] header field. No dns check is performed.
       @param meth if provided, only accept requests with the given method.
         Typically one could react to [`GET] or [`PUT].
       @param filter can be used to modify the request and response and also
@@ -1088,7 +1082,6 @@ module Server : sig
 
   val add_route_handler_stream :
     ?addresses:Address.t list ->
-    ?hostnames:string list ->
     ?meth:Method.t ->
     ?filter:Input.t Filter.t ->
     t ->
@@ -1101,7 +1094,6 @@ module Server : sig
 
   val add_route_handler_chaml :
     ?addresses:Address.t list ->
-    ?hostnames:string list ->
     ?meth:Method.t ->
     ?filter:Input.t Filter.t ->
     t -> ('a, Html.chaml) Route.t -> 'a -> unit
@@ -1141,7 +1133,6 @@ module Server : sig
 
   val add_route_server_sent_handler :
     ?addresses:Address.t list ->
-    ?hostnames:string list ->
     ?filter:Input.t Filter.t ->
     t ->
     ('a, string Request.t -> server_sent_generator -> unit) Route.t -> 'a ->
@@ -1230,7 +1221,6 @@ module Dir : sig
 
   val add_dir_path :
     ?addresses: Address.t list ->
-    ?hostnames: string list ->
     ?filter:Input.t Filter.t ->
     ?prefix:string ->
     ?config:config ->
@@ -1240,7 +1230,6 @@ module Dir : sig
       [server] to serve static files in [dir] when url starts with [prefix],
       using the given configuration [config]. Method is always [GET].
     @param addresses like for {!Server.add_route_handler}
-    @param hostnames like for {!Server.add_route_handler}
     @param filter like for {!Server.add_route_handler}
    *)
 
@@ -1314,7 +1303,6 @@ module Dir : sig
 
   val add_vfs :
     ?addresses: Address.t list ->
-    ?hostnames: string list ->
     ?filter:Input.t Filter.t ->
     ?prefix:string ->
     ?config:config ->
@@ -1390,6 +1378,20 @@ module Status : sig
     is not an integer, 100 is used.  *)
 end
 
+(** provide a filter giving very simple statistics. We can do much better
+    but be carefull on how to do it *)
+module Stats : sig
+
+(** This a filter to acquire statistics.
+    [let (filter, get) = Stats.filter ()]
+    will give you a [Filter.t] and a function [get] returning the statistics
+    as a string
+    ["N requests (average response time: Tms = T1ms (read) + T2ms (build))"]
+ *)
+val filter : unit -> 'a Filter.t * Html.chaml
+
+(** Note: currently we can not measure the time to write the response. *)
+end
 
 (** Hight level module to write server handling multiple hosts/addresses *)
 module Host : sig
@@ -1441,10 +1443,6 @@ module Host : sig
   module type Host = sig
     val addresses : Address.t list
     (** accept only request from this addresses (or any address if the list is
-        empty *)
-
-    val hostnames : string list
-    (** accept only request from this hostnames (or any hostname if the list is
         empty *)
 
     module Init(_:Init) : sig end

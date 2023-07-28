@@ -1,0 +1,17 @@
+1690543373.306885  3         -1 Log0: log created
+1690544283.263473  3          6 Req0: From 127.0.0.1: GET, path "/index.html?"
+1690544283.263771  3          6 Req0: response sent after 0.313044ms
+1690545868.148979  3          2 Req0: From 127.0.0.1: GET, path "/index.html?"
+1690545868.149438  3          2 Req0: response sent after 0.471115ms
+1690546171.766584  3          4 Req0: From 127.0.0.1: GET, path "/index.html?"
+1690546171.767114  3          4 Req0: response sent after 0.557184ms
+1690546351.867283  3          3 Req0: From 127.0.0.1: GET, path "/index.html?"
+1690546351.867859  3          3 Req0: response sent after 0.597000ms
+1690546608.999234  3          2 Req0: From 127.0.0.1: GET, path "/index.html?"
+1690546608.999694  3          2 Req0: response sent after 0.473022ms
+1690546610.875515  3          2 Req0: From 127.0.0.1: GET, path "/index.html?"
+1690546610.875895  3          2 Req0: response sent after 0.395060ms
+1690546611.206337  3          2 Req0: From 127.0.0.1: GET, path "/index.html?"
+1690546611.206694  3          2 Req0: response sent after 0.371933ms
+1690546611.417063  3          2 Req0: From 127.0.0.1: GET, path "/index.html?"
+1690546611.417448  3          2 Req0: response sent after 0.396967ms
