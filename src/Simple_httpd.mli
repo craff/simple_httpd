@@ -627,9 +627,17 @@ module Response : sig
   val set_code : Response_code.t -> t -> t
   (** Set the response code. *)
 
+  val set_post : (unit -> unit) -> t -> t
+  (** Set the post function, run after sending the response *)
+
+  val get_post : t -> (unit -> unit)
+  (** Get the post function, run after sending the response, typically to compse it
+      with a new one. *)
+
   val make_raw :
     ?cookies:Cookies.t ->
     ?headers:Headers.t ->
+    ?post:(unit -> unit) ->
     code:Response_code.t ->
     string ->
     t
@@ -639,6 +647,7 @@ module Response : sig
   val make_raw_stream :
     ?cookies:Cookies.t ->
     ?headers:Headers.t ->
+    ?post:(unit -> unit) ->
     code:Response_code.t ->
     Input.t ->
   t
@@ -648,6 +657,7 @@ module Response : sig
   val make_raw_file :
     ?cookies:Cookies.t ->
     ?headers:Headers.t ->
+    ?post:(unit -> unit) ->
     code:Response_code.t ->
     close:bool ->
     int -> Unix.file_descr ->
@@ -661,6 +671,7 @@ module Response : sig
   val make :
     ?cookies:Cookies.t ->
     ?headers:Headers.t ->
+    ?post:(unit -> unit) ->
     body -> t
   (** [make r] turns a body into a response.
 
@@ -672,29 +683,36 @@ module Response : sig
   val make_void :
     ?cookies:Cookies.t ->
     ?headers:Headers.t ->
+    ?post:(unit -> unit) ->
     code:Response_code.t -> unit -> t
 
   val make_string :
     ?cookies:Cookies.t ->
     ?headers:Headers.t ->
+    ?post:(unit -> unit) ->
     string -> t
   (** Same as {!make} but with a string body. *)
 
   val make_stream :
     ?cookies:Cookies.t ->
     ?headers:Headers.t ->
+    ?post:(unit -> unit) ->
     Input.t -> t
   (** Same as {!make} but with a stream body. *)
 
   val make_file :
     ?cookies:Cookies.t ->
-    ?headers:Headers.t -> close:bool ->
+    ?headers:Headers.t ->
+    ?post:(unit -> unit) ->
+    close:bool ->
     int -> Unix.file_descr -> t
   (** Same as {!make} but with a file_descr body. *)
 
   val fail :
     ?cookies:Cookies.t ->
-    ?headers:Headers.t -> code:Response_code.t ->
+    ?headers:Headers.t ->
+    ?post:(unit -> unit) ->
+    code:Response_code.t ->
     ('a, unit, string, t) format4 -> 'a
   (** Make the current request fail with the given code and message.
       Example: [fail ~code:404 "oh noes, %s not found" "waldo"].
@@ -751,18 +769,6 @@ module Route : sig
   val to_string : _ t -> string
   (** Print the route. 0.7 *)
 
-  (** {1 Filters} *)
-
-  (** Type of request filters. These filters may transform both the request and
-      the response. Several method may share filter passed as optional parameters
-      to function like {!Server.add_route_handler}.
-
-      The transformation of the response may depend on the request, Hence the
-      type. For instance the filter provided by the optional module
-      {{:../../simple_httpd_caml*zip/Simple_httpd_camlzip/index.html}Simple_httpd_camlzip} uses this to compress the
-      response only if [deflate] is allowed using the header named
-    {!Headers.Accept_Encoding}. *)
-
   val pass : unit -> 'a
   (** This function may be called in a handler to try the next request.
       It must be raised after reading only the path, not the request.
@@ -771,6 +777,17 @@ module Route : sig
    *)
 end
 
+(** {1 Filters} *)
+
+(** Type of request filters. These filters may transform both the request and
+    the response. Several method may share filter passed as optional parameters
+    to function like {!Server.add_route_handler}.
+
+    The transformation of the response may depend on the request, Hence the
+    type. For instance the filter provided by the optional module
+    {{:../../simple_httpd_caml*zip/Simple_httpd_camlzip/index.html}Simple_httpd_camlzip}
+    uses this to compress the response only if [deflate] is allowed using the
+    header named {!Headers.Accept_Encoding}. *)
 module Filter : sig
   type 'a t = 'a Request.t -> 'a Request.t * (Response.t -> Response.t)
 
@@ -1385,12 +1402,12 @@ module Stats : sig
 (** This a filter to acquire statistics.
     [let (filter, get) = Stats.filter ()]
     will give you a [Filter.t] and a function [get] returning the statistics
-    as a string
-    ["N requests (average response time: Tms = T1ms (read) + T2ms (build))"]
+    as a html page
+    ["N requests (average response time:
+         Tms = T1ms (read) + T2ms (build) + T3ms (send))"]
  *)
 val filter : unit -> 'a Filter.t * Html.chaml
 
-(** Note: currently we can not measure the time to write the response. *)
 end
 
 (** Hight level module to write server handling multiple hosts/addresses *)

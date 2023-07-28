@@ -18,6 +18,7 @@ type t = {
     code: Response_code.t;
     headers: Headers.t;
     body: body;
+    post: unit -> unit;
   }
 
 let body self = self.body
@@ -27,46 +28,50 @@ let headers self = self.headers
 let update_headers f self = {self with headers=f self.headers}
 let set_header k v self = {self with headers = Headers.set k v self.headers}
 let set_code code self = {self with code}
+let set_post post self = {self with post}
+let get_post self = self.post
 
-let make_raw ?(cookies=[]) ?(headers=[]) ~code body : t =
+let make_raw ?(cookies=[]) ?(headers=[]) ?(post=fun () -> ()) ~code body : t =
   (* add content length to response *)
   let headers = Headers.set_cookies cookies headers in
   let body = if body = "" then Void else String body in
-  { code; headers; body; }
+  { code; headers; body; post }
 
-let make_raw_stream ?(cookies=[]) ?(headers=[]) ~code body : t =
+let make_raw_stream ?(cookies=[]) ?(headers=[]) ?(post=fun () -> ())
+      ~code body : t =
   (* do not add content length to response *)
   let headers = Headers.set Headers.Transfer_Encoding "chunked" headers in
   let headers = Headers.set_cookies cookies headers in
-  { code; headers; body=Stream body; }
+  { code; headers; body=Stream body; post }
 
-let make_raw_file ?(cookies=[]) ?(headers=[]) ~code ~close size body : t =
+let make_raw_file ?(cookies=[]) ?(headers=[]) ?(post=fun () -> ())
+      ~code ~close size body : t =
   (* add content length to response *)
   let headers = Headers.set_cookies cookies headers in
-  { code; headers; body=File{size; fd=body; close}; }
+  { code; headers; body=File{size; fd=body; close}; post }
 
-let make_void ?(cookies=[]) ?(headers=[]) ~code () : t =
+let make_void ?(cookies=[]) ?(headers=[]) ?(post=fun () -> ()) ~code () : t =
   let headers = Headers.set_cookies cookies headers in
-  { code; headers; body=Void; }
+  { code; headers; body=Void; post }
 
-let make_string ?cookies ?headers body =
-  make_raw ?cookies ?headers ~code:ok body
+let make_string ?cookies ?headers ?post body =
+  make_raw ?cookies ?headers ?post ~code:ok body
 
-let make_stream ?cookies ?headers body =
-  make_raw_stream ?cookies ?headers ~code:ok body
+let make_stream ?cookies ?headers ?post body =
+  make_raw_stream ?cookies ?headers ?post ~code:ok body
 
-let make_file ?cookies ?headers ~close n body =
-  make_raw_file ?cookies ?headers ~code:ok ~close n body
+let make_file ?cookies ?headers ?post ~close n body =
+  make_raw_file ?cookies ?headers ?post ~code:ok ~close n body
 
-let make ?cookies ?headers r : t = match r with
+let make ?cookies ?headers ?post r : t = match r with
   | String body -> make_raw ?cookies ?headers ~code:ok body
   | Stream body -> make_raw_stream ?cookies ?headers ~code:ok body
   | File{size;fd=body;close}->
-     make_raw_file ?cookies ?headers ~code:ok ~close size body
+     make_raw_file ?cookies ?headers ?post ~code:ok ~close size body
   | Void -> make_void ?cookies ?headers ~code:ok ()
 
-let fail ?cookies ?headers ~code fmt =
-  Printf.ksprintf (fun msg -> make_raw ?cookies ?headers ~code msg) fmt
+let fail ?cookies ?headers ?post ~code fmt =
+  Printf.ksprintf (fun msg -> make_raw ?cookies ?headers ?post ~code msg) fmt
 
 let pp out self : unit =
   let pp_body out = function
@@ -121,4 +126,5 @@ let output_ (oc:Output.t) (self:t) : unit =
         Input.close str;
       with e -> Input.close str; raise e)
   end;
-  Output.flush oc
+  Output.flush oc;
+  self.post ()

@@ -9,8 +9,8 @@ let addr = ref "0.0.0.0"
 let port = ref 2080
 let ssl_port = ref 8443
 
-(** the store used by vfs_pack for file too large to reside in memory *)
-let top_dir = ref None
+(** the store used to store all files for all sites *)
+let global_top_dir = ref "."
 
 (** ssl certificate, if we have only one IP and one port, we can only have one
     certificate for all site/hostnames, which is not ideal. If you have
@@ -30,7 +30,7 @@ let _ =
       "--ssl-port", Arg.Set_int ssl_port, " set ssl port";
       "--ssl", Tuple[Set_string ssl_cert; Set_string ssl_priv], " give ssl certificate and private key";
       "-p", Arg.Set_int port, " set port";
-      "--dir", Arg.String (fun s -> top_dir := Some s), " set the top dir for file path";
+      "--dir", Arg.String (fun s -> global_top_dir := s), " set the top dir for file path";
     ] @ args)) (fun _ -> raise (Arg.Bad "")) "echo [option]*"
 
 (** Initialize ssla, if needed *)
@@ -94,12 +94,13 @@ module Common = struct
            <li> <a href="stats">Statistics of the server</a>
          </ul>|chaml}
 
-
-    (** a folder to receive let's encrypt challenge *)
+    (** a folder to receive let's encrypt challenge, with the prefix that
+        certbot expects. *)
+    let top_dir = Filename.concat !global_top_dir "lets_encrypt"
     let _ = Init.add_dir_path ~filter
         ~config:(Dir.config ~download:true
                    ~dir_behavior:Dir.Index_or_lists ())
-        ~prefix:".well-known/acme-challenge" "./acme-challenge"
+        ~prefix:".well-known/acme-challenge" top_dir
   end
 end
 
@@ -112,22 +113,24 @@ module Site1 = struct
 
 
   module Init(Init:Host.Init) = struct
-    (** Add a virtual file system VFS, produced by [simple-httpd-vfs-pack] from
-      an actual folger *)
-    let top_dir = match !top_dir with
-      | None -> None
-      | Some d -> Some (Filename.concat d "store")
-
+    (** Add a virtual file system VFS, produced by [vfs_pack] from an actual
+        folger. The small file will reside in memory, big files will resize in
+        a dedicated top_dir. We append the store name of the site to a global
+        store name.  By default [vfs_pack] keep all files in memory.  use
+        [--max-size], [--perm] and [--destination] to populate the store with
+        big files.  *)
+    let top_dir = Filename.concat !global_top_dir "site1_store"
     let _ =
-      let vfs = Site1.make ?top_dir () in
+      let vfs = Site1.make ~top_dir () in
       Init.add_vfs ~filter ~config:(Dir.config ~download:true
                    ~dir_behavior:Dir.Index ()) vfs
 
+    (** Add a dynamic folder to be served. The path may have common prefix
+        with the above VFS. We also  *)
+    let top_dir = Filename.concat !global_top_dir "site2_store"
     let _ =
       Init.add_dir_path ~filter ~config:(Dir.config ~download:true
-                   ~dir_behavior:Dir.Index ()) "./site1_dyn"
-
-
+                   ~dir_behavior:Dir.Index ()) top_dir
   end
 end
 
@@ -138,16 +141,11 @@ module Site2 = struct
     List.map (fun a -> change_port (a.port + 2000) a) addresses @
     List.map (fun a -> change_hosts ["site2.org"; "www.site2.org"] a) addresses
 
-
   module Init(Init:Host.Init) = struct
-    (** Add a virtual file system VFS, produced by [simple-httpd-vfs-pack] from
-      an actual folger *)
-    let top_dir = match !top_dir with
-      | None -> None
-      | Some d -> Some (Filename.concat d "store")
-
+    (** Add a virtual file system VFS, produced by [vfs_pack] *)
+    let top_dir = Filename.concat !global_top_dir "site2_store"
     let _ =
-      let vfs = Site2.make ?top_dir () in
+      let vfs = Site2.make ~top_dir () in
       Init.add_vfs ~filter ~config:(Dir.config ~download:true
                    ~dir_behavior:Dir.Index ()) vfs
 
@@ -155,5 +153,4 @@ module Site2 = struct
 end
 
 (** Start the server *)
-let _ =
-  Host.start_server parameters [(module Common);(module Site1);(module Site2)]
+let _ = Host.start_server parameters [(module Common);(module Site1);(module Site2)]

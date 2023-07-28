@@ -19,6 +19,7 @@ type body = String of string
 type t = { code: Response_code.t (** HTTP response code. See {!Response_code}. *)
          ; headers: Headers.t    (** Headers of the reply. Some will be set by [Simple_httpd] automatically. *)
          ; body: body            (** Body of the response. Can be empty. *)
+         ; post: unit -> unit    (** A function called after sending the response. *)
          }
 (** A response to send back to a client. *)
 
@@ -43,9 +44,16 @@ val headers : t -> Headers.t
 val set_code : Response_code.t -> t -> t
 (** Set the response code. *)
 
+val set_post : (unit -> unit) -> t -> t
+(** Set the post function, run after sending the response *)
+
+val get_post : t -> (unit -> unit)
+(** Get the post function, run after sending the response *)
+
 val make_raw :
   ?cookies:Cookies.t ->
   ?headers:Headers.t ->
+  ?post:(unit -> unit) ->
   code:Response_code.t ->
   string ->
   t
@@ -55,6 +63,7 @@ val make_raw :
 val make_raw_stream :
   ?cookies:Cookies.t ->
   ?headers:Headers.t ->
+  ?post:(unit -> unit) ->
   code:Response_code.t ->
   Input.t ->
   t
@@ -64,6 +73,7 @@ val make_raw_stream :
 val make_raw_file :
   ?cookies:Cookies.t ->
   ?headers:Headers.t ->
+  ?post:(unit -> unit) ->
   code:Response_code.t ->
   close:bool ->
   int -> Unix.file_descr ->
@@ -77,6 +87,7 @@ val make_raw_file :
 val make :
   ?cookies:Cookies.t ->
   ?headers:Headers.t ->
+  ?post:(unit -> unit) ->
   body -> t
 (** [make r] turns a body into a response.
 
@@ -88,29 +99,36 @@ val make :
 val make_void :
   ?cookies:Cookies.t ->
   ?headers:Headers.t ->
+  ?post:(unit -> unit) ->
   code:Response_code.t -> unit -> t
 
 val make_string :
   ?cookies:Cookies.t ->
   ?headers:Headers.t ->
+  ?post:(unit -> unit) ->
   string -> t
 (** Same as {!make} but with a string body. *)
 
 val make_stream :
   ?cookies:Cookies.t ->
   ?headers:Headers.t ->
+  ?post:(unit -> unit) ->
   Input.t -> t
 (** Same as {!make} but with a stream body. *)
 
 val make_file :
   ?cookies:Cookies.t ->
-  ?headers:Headers.t -> close:bool ->
+  ?headers:Headers.t ->
+  ?post:(unit -> unit) ->
+   close:bool ->
   int -> Unix.file_descr -> t
 (** Same as {!make} but with a file_descr body. *)
 
 val fail :
   ?cookies:Cookies.t ->
-  ?headers:Headers.t -> code:Response_code.t ->
+  ?headers:Headers.t ->
+  ?post:(unit -> unit) ->
+  code:Response_code.t ->
   ('a, unit, string, t) format4 -> 'a
 (** Make the current request fail with the given code and message.
     Example: [fail ~code:404 "oh noes, %s not found" "waldo"].

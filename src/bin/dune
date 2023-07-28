@@ -10,7 +10,7 @@
 
 (executable
   (name vfs_pack)
-  (public_name simple-httpd-vfs-pack)
+  (public_name vfs_pack)
   (package simple_httpd)
   (modules vfs_pack curly http)
   (libraries result unix simple_httpd simple_httpd.chaml)
