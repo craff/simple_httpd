@@ -43,7 +43,7 @@ let rec fn ch filename = function
 let _ =
   try
     Arg.parse spec set_filename
-      "usage: %s [ocaml|html|chaml|inner|auto] [filename]\n%!";
+      "usage: %s [ocaml|html|chaml|inner|auto] input-file\n%!";
     let ch, filename =
       match !filename with
       | None -> failwith "No input file given"
