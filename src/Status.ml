@@ -188,26 +188,20 @@ let html ?log_size self req headers =
              <th>date
                <span onclick="sort('table',0,false,false);">▼</span>
                <span onclick="sort('table',0,false,true);">▲</span>
-             </th>
              <th>domain
                <span onclick="sort('table',1,true,false);">▼</span>
                <span onclick="sort('table',1,true,true);">▲</span>
-             </th>
              <th>client
                <span onclick="sort('table',2,true,false);">▼</span>
                <span onclick="sort('table',2,true,true);">▲</span>
-             </th>
-             <th>information</th>
-           </tr>
-         </thead>
-             <tbody id="table">
-               <?ml
-                 let _ = for i = 0 to num_threads do
-                   get_log i log_size output;
-                 done
-               ?>
-             </tbody>
-         </table>
+             <th>information
+         <tbody id="table">
+           <?ml
+             let _ = for i = 0 to num_threads do
+               get_log i log_size output;
+             done
+           ?>
+       </table>
        |funml} output
      ?>
       </body>

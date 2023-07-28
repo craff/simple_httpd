@@ -13,16 +13,15 @@
   <body>
     <h1>dynamic hello!</h1>
     <ul>
-      <li>item 1%</li>
-      <li>item 2%</li>
-      <li>item 3%</li>
-      <li>item 4%</li>
+      <li>item 1%
+      <li>item 2%
+      <li>item 3%
+      <li>item 4%
       <li>views: <?= string_of_int count ?>
 	         <?= if count mod 2 = 0 then
  	               {html|<p>even (<?= string_of_int count ?>)</p>|html}
                      else {html|<p>odd</p>|html} ?>
 	?>
-      </li>
     </ul>
     <a href="."> escape from this file </a>
     <br/>

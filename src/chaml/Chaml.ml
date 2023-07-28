@@ -7,16 +7,91 @@ type value = Empty
            | Single of string
            | Double of string
            | OCaml of Pos.pos * string
-type attributes = (Html.attr * value) list
+type attributes = (string option * Html.attr * value) list
 
 type html =
   | Doctype
   | Element of Html.tag * attributes * html list
   | SElement of Html.tag * attributes
   | Text of string
+  | CData of html list (* only allowed in foreign elements *)
   | OCaml of Pos.pos * ocaml_type * string
 
-type stack = (Html.tag * attributes * html list) list
+type stack = (Pos.pos * bool * Html.tag * attributes * html list) list
+
+type closed = (Pos.pos * Html.tag) list
+
+let red fmt =
+  "\027[31m" ^^ fmt ^^ "\027[0m%!"
+
+let pr_closed fmt closed =
+  let open Format in
+  let open Pacomb.Pos in
+  List.iter
+    (fun (pos, tag) ->
+      fprintf fmt "%a: %s\n%!"
+        (print_pos ~style:OCaml ()) pos
+        (Html.tag_to_string tag)) closed
+
+let badElem elt pos closed =
+  let name = match elt with
+    | Text _ -> "text"
+    | CData _ -> "cdata"
+    | OCaml _ -> "ocaml"
+    | Element(name,_,_) | SElement(name,_) -> Html.tag_to_string name
+    | Doctype -> "doctype"
+  in
+  let open Pos in
+  let open Format in
+  let str = get_str_formatter () in
+  fprintf str (red "%a: bad element %S in\n%a%!")
+    (print_pos ~style:OCaml ()) pos name pr_closed closed;
+  let msg = flush_str_formatter () in
+  Lex.give_up ~msg ()
+
+let badAttr attr pos tag =
+  let open Pos in
+  let open Format in
+  let str = get_str_formatter () in
+  fprintf str (red "%a: bad attribute %S in %S\n%!")
+    (print_pos ~style:OCaml ()) pos
+    (Html.attr_to_string attr)
+    (Html.tag_to_string tag);
+  let msg = flush_str_formatter () in
+  Lex.give_up ~msg ()
+
+let missClosing closed =
+  let open Format in
+  let str = get_str_formatter () in
+  fprintf str (red "%amiss closing\n%!") pr_closed closed;
+  let msg = flush_str_formatter () in
+  Lex.give_up ~msg ()
+
+let missOpening tag pos closed =
+  let open Pos in
+  let open Format in
+  let str = get_str_formatter () in
+  fprintf str (red "%a: bad closing tag %S, the following tag(s) are not yet closed:\n%a%!")
+       (print_pos ~style:OCaml ()) pos
+       (Html.tag_to_string tag)
+       pr_closed closed;
+  let msg = flush_str_formatter () in
+  Lex.give_up ~msg ()
+
+let handle_exception f a =
+  let open Pacomb.Pos in
+  try f a with
+  | Parse_error(buf, pos, msgs) ->
+     let red fmt = "\027[31m" ^^ fmt ^^ "\027[0m%!" in
+     Format.eprintf (red "%a: parse error\n%!")
+       (print_buf_pos ~style:OCaml ()) (buf, pos);
+     if msgs <> [] then
+       begin
+         let open Format in
+         let prl ch l = List.iter (fprintf ch "%s") l in
+         eprintf "%a\n%!" prl msgs
+       end;
+     exit 1
 
 let may_children tagc infop =
   let open Html in
@@ -36,7 +111,7 @@ let accepted_in elt stack =
     | Foreign _ -> true
     | _ -> let rec fn = function
              | [] -> false
-             | (name,_,_) :: stack ->
+             | (_,_,name,_,_) :: stack ->
                 try
                   let infop = Hashtbl.find info_tbl name in
                   may_children name' infop ||
@@ -59,40 +134,81 @@ let allow_ommit name =
     | Tbody | Tfoot | Tr | Td | Th -> true
   | _ -> false
 
-let badelem elt =
-  let name = match elt with
-    | Text _ -> "text content"
-    | OCaml _ -> "ocaml"
-    | Element(name,_,_) | SElement(name,_) -> Html.tag_to_string name
-    | Doctype -> "doctype"
-  in
-  let msg = Printf.sprintf "Bad element %S" name in
-  Lex.give_up ~msg ()
+(* Element that enters the "foreign" mode, in which xml namespace,
+   arbitrary attribute and tags may be used. *)
+let allowed_foreign = ["math"; "svg"]
 
-let mismatch name =
-  let msg = Printf.sprintf "Tag mismatch for %S" (Html.tag_to_string name) in
-  Lex.give_up ~msg ()
+let is_allowed_foreign elt =
+  match elt with
+  | Html.Foreign name ->  List.mem name allowed_foreign
+  | _ -> false
 
-let rec push elt (stack:stack) = match stack with
-  | (name, attrs, elts) :: stack as stack0 ->
-     if accepted_in elt stack0 then (name, attrs, (elt::elts)) :: stack
-     else if allow_ommit name then push elt (push (Element(name,attrs,List.rev elts)) stack)
-     else badelem elt
-  | [] -> badelem elt
+let check_foreign ~loc elt foreign_ok =
+  match elt with
+  | Element((Foreign name),_,_) | SElement(Foreign name,_) ->
+     if not ( foreign_ok || List.mem name allowed_foreign)
+     then badElem elt loc [];
+     true
+  | CData _ ->
+     if not foreign_ok then badElem elt loc [];
+     true
+  | _ ->
+     foreign_ok
 
-let rec pop name stack = match stack with
-  | (name', attrs, elts) :: stack when name = name' ->
-     push (Element(name,attrs,List.rev elts)) stack
-  | (name', attrs, elts) :: stack when allow_ommit name' ->
-     pop name (push (Element(name',attrs,List.rev elts)) stack)
-  | _ -> mismatch name
+let check_attributes ~loc tag (attrs:attributes) foreign_ok =
+  let open Html in
+  if foreign_ok then () else
+    (* once in foreing land, we know nothing about attributes *)
+  match tag with
+  | Foreign _ -> ()
+  | _ ->
+     let fn = function
+       | (_, ForeignAttr _, _) -> ()
+       | (nsname, name, _) ->
+          (match Hashtbl.find attr_tbl name with
+           | exception Not_found -> badAttr name loc tag
+           | Any -> ()
+           | Some l ->
+              if not (List.mem tag l) then badAttr name loc tag);
+          if nsname <> None &&
+               nsname <> Some "xml" && name <> Html.Lang (*xml:lang is valid *)
+          then badAttr name loc tag
+     in
+     List.iter fn attrs
+
+let rec push ~loc ?(closed=[]) elt (stack:stack) = match stack with
+  | (loc2, frg, name, attrs, elts) :: stack as stack0 ->
+     let frg = check_foreign ~loc elt frg in
+     if accepted_in elt stack0 then (loc2, frg, name, attrs, (elt::elts)) :: stack
+     else if allow_ommit name then
+       push ~loc ~closed:((loc2,name)::closed) elt
+         (push ~loc:loc2 (Element(name,attrs,List.rev elts)) stack)
+     else badElem elt loc ((loc2,name)::closed)
+  | [] -> badElem elt loc closed
+
+let get_frg = function
+    (_, frg, _, _, _) :: _ -> frg
+  | [] -> assert false
+
+let rec pop ~(loc:Pos.pos) ?(closed=[]) name stack = match stack with
+  | (_, _, name', attrs, elts) :: stack when name = name' ->
+     push ~loc (Element(name,attrs,List.rev elts)) stack
+  | (loc2, _, name', attrs, elts) :: stack when allow_ommit name' ->
+     pop ~loc ~closed:((loc2,name')::closed) name
+       (push ~loc:loc2 (Element(name',attrs,List.rev elts)) stack)
+  | (loc, _, name, _, _)::_ ->
+     missOpening name loc ((loc,name)::closed)
+  | [] -> assert false
 
 let root = Html.Foreign "ROOT"
-let rec pop_all stack = match stack with
-  | [r, [], elts] -> assert (r == root); List.rev elts
-  | (name', attrs, elts) :: stack when allow_ommit name' ->
-     pop_all (push (Element(name',attrs,List.rev elts)) stack)
-  | _ -> mismatch root
+let rec pop_all ?(closed=[]) stack = match stack with
+  | [_, _, r, [], elts] -> assert (r == root); List.rev elts
+  | (loc2, _, name', attrs, elts) :: stack when allow_ommit name' ->
+     pop_all ~closed:((loc2,name')::closed)
+       (push ~loc:loc2 (Element(name',attrs,List.rev elts)) stack)
+  | (loc, _, name, _, _)::_ ->
+     missClosing ((loc,name)::closed)
+  | [] -> assert false
 
 let re_from_string name =
   let buf = Buffer.create 16 in
@@ -100,7 +216,9 @@ let re_from_string name =
   for i = 0 to String.length name - 1 do
     let c = name.[i] in
     let lc = Char.lowercase_ascii c and uc = Char.uppercase_ascii c in
-    if lc = uc then Buffer.add_char buf c else
+    if lc = uc then
+      Printf.bprintf buf "[%c]" lc
+    else
       Printf.bprintf buf "[%c%c]" lc uc
     done;
   Buffer.add_string buf {|\)|};
@@ -115,6 +233,12 @@ let is_void name =
     (Hashtbl.find info_tbl name).children = []
   with
     Not_found -> false
+
+let may_void name =
+  let open Html in
+  match name with
+  | Foreign _ -> true
+  | _ -> is_void name
 
 let void_element =
   let r = ref [] in
@@ -151,7 +275,7 @@ let prefix_pos pos str =
   let line = info.start_line in
   let col = info.start_col in
   let blanks = String.make col ' ' in
-  Printf.sprintf "\n#%d %S\n%s%s" line filename blanks str
+  Format.sprintf "\n#%d %S\n%s%s" line filename blanks str
 
 let double_percent str =
   let buf = Buffer.create (String.length str + 16) in
@@ -166,7 +290,7 @@ let pr_args fmt args =
 let print_tag buf args ?(self=false) name attributes =
   let attributes =
     attributes
-    |> List.map (fun (name, (value : value)) ->
+    |> List.map (fun (nmspace, name, (value : value)) ->
            let value = match (value : value) with
              | Empty -> ""
              | Unquoted s -> "="^s
@@ -174,7 +298,11 @@ let print_tag buf args ?(self=false) name attributes =
              | Double s -> "=\""^s^"\""
              | OCaml (pos,s) -> args := (pos, s) :: !args; "=\"\001s\""
            in
-           Printf.sprintf " %s%s" (Html.attr_to_string name) value)
+           let nmspace = match nmspace with
+             | None -> ""
+             | Some s -> s^":"
+           in
+           Format.sprintf " %s%s%s" nmspace (Html.attr_to_string name) value)
     |> String.concat ""
   in
   Printf.bprintf buf "<%s%s%s>" (Html.tag_to_string name) attributes
@@ -190,6 +318,10 @@ let html_to_string html =
     | OCaml(pos,Str,s) -> args := (pos,s) :: !args; Buffer.add_string buf "\001s"
     | OCaml(_,_,_) -> assert false
     | Text s -> Buffer.add_string buf (if upper <> Html.Pre then trim s else s)
+    | CData contents ->
+       Buffer.add_string buf "<![CDATA[";
+       List.iter (fn (Html.Foreign "CDATA")) contents;
+       Buffer.add_string buf "]]>";
     | Element(name,attrs,contents) ->
        print_tag buf args name attrs;
        List.iter (fn name) contents;
@@ -236,6 +368,10 @@ let top_to_string html =
     | OCaml(pos,Global,s) ->
        globals := (prefix_pos pos s) :: !globals
     | Text s -> Buffer.add_string cbuf (if upper <> Html.Pre then trim s else s)
+    | CData contents ->
+       Buffer.add_string cbuf "<![CDATA[";
+       List.iter (fn (Html.Foreign "CDATA")) contents;
+       Buffer.add_string cbuf "]]>";
     | Element(name,attrs,contents) ->
        print_tag cbuf args name attrs;
        List.iter (fn name) contents;

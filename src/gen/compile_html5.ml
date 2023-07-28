@@ -77,7 +77,7 @@ let attrs = List.map do_attr (load "table-3.csv")
             @ List.map do_attr (load "table-4.csv")
 
 let tag_type ch =
-  Printf.fprintf ch "type tag = Foreign of string | Text\n";
+  Printf.fprintf ch "type tag = Foreign of string | Main | Text | Template | Picture\n";
   let fn (tag, _descr, _cat, _parents, _children, _attributes, _interface) =
     Printf.fprintf ch "  | %s\n" (to_upper tag);
   in
@@ -92,7 +92,7 @@ let tag_to_string ch =
     Printf.fprintf ch "  | %s -> %S\n" (to_upper tag) tag;
   in
   List.iter fn tags;
-  Printf.fprintf ch "  | Text -> \"text\" | Foreign s -> s\n\n"
+  Printf.fprintf ch "  | Main -> \"main\" | Text -> \"text\" | Template -> \"template\" | Picture -> \"picture\" | Foreign s -> s\n\n"
 
 let _ = tag_to_string ml; Printf.fprintf mli "val tag_to_string : tag -> string\n"
 
@@ -102,7 +102,7 @@ let tag_of_string ch =
     Printf.fprintf ch "  | %S -> %s\n" tag (to_upper tag);
   in
   List.iter fn tags;
-  Printf.fprintf ch "  | s -> Foreign s\n\n"
+  Printf.fprintf ch "  | \"template\" -> Template | \"main\" -> Main | \"picture\" -> Picture | s -> Foreign s\n\n"
 
 let _ = tag_of_string ml; Printf.fprintf mli "val tag_of_string : string -> tag\n"
 
@@ -265,7 +265,13 @@ let info_tbl ch =
       parents (pp true false) children;
   in
   List.iter fn tags;
-  Printf.fprintf ch "\n"
+  (* template using the same rule as script CHECK for attribute ?*)
+  Printf.fprintf ch "let _ = Hashtbl.add info_tbl Template (Hashtbl.find info_tbl Script)\n";
+  (* picture *)
+  Printf.fprintf ch "let _ = Hashtbl.add info_tbl Picture
+                     { (Hashtbl.find info_tbl Video) with children = [Tag(Source); Tag(Img)] }\n";
+  (* main *)
+  Printf.fprintf ch "let _ = Hashtbl.add info_tbl Main (Hashtbl.find info_tbl Div)\n\n"
 
 let _ = info_tbl ml
 
