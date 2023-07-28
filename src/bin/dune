@@ -13,7 +13,7 @@
   (public_name simple-httpd-vfs-pack)
   (package simple_httpd)
   (modules vfs_pack curly http)
-  (libraries result unix simple_httpd markup simple_httpd.chaml)
+  (libraries result unix simple_httpd simple_httpd.chaml)
   (flags :standard -warn-error -3)
   (ocamlopt_flags -O3))
 
@@ -22,7 +22,7 @@
   (public_name chaml)
   (package simple_httpd)
   (modules chaml)
-  (libraries markup simple_httpd.chaml)
+  (libraries simple_httpd.chaml)
   (flags :standard -warn-error -3)
   (ocamlopt_flags -O3))
 
