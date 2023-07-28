@@ -4,7 +4,10 @@ The folder [template] contains an almost empty site exposing a lot of feature
 of simple_httpd while remaining small (main file is 160 lines).
 
 Note: the dune file should be modified a bit to be compiled outside of the
-source tree of simple_httpd.
+source tree of simple_httpd. To start the server within simple_httpd source tree, juste enter
+{[
+dune exec -- ./server.exe --log-folder ./log
+]}
 
 This template serves two sites/applications, both in http and https if a
 certificate are provided. It is possible to redirect http towards https.
