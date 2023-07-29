@@ -105,3 +105,8 @@ val parse_req_start :  client:Async.client -> buf:Buffer.t ->
 val parse_body_ : tr_stream:(Input.t -> Input.t) ->
                   buf:Buffer.t -> Input.t t -> Input.t t
 val parse_body : buf:Buffer.t -> Input.t t -> Input.t t
+
+(** Check a password from the query, for a lignt protection of pages like
+    status page or statistics. Password in url is really bad. At least use
+    private navigation window. *)
+val check_md5_pass : Digest.t option -> 'a t -> unit

@@ -570,6 +570,11 @@ module Request : sig
 
   val read_body_full : buf:Buffer.t -> Input.t t -> string t
   (** Read the whole body into a string. *)
+
+  (** Check a password from the query, for a lignt protection of pages like
+      status page or statistics. Password in url is really bad. At least use
+      private navigation window. *)
+  val check_md5_pass : Digest.t option -> 'a t -> unit
 end
 
 (** Module defining HTML response codes *)
@@ -1379,7 +1384,7 @@ end
 
 (** A module to get detail status about the server *)
 module Status : sig
-  val html : ?log_size:int -> Server.t -> Html.chaml
+  val html : ?log_size:int -> ?md5_pass:Digest.t -> Server.t -> Html.chaml
 (** Returns a detailed server status as html, including
 
     {ul {- number of actives connections (total and per threads)}
@@ -1392,7 +1397,13 @@ module Status : sig
     If the server uses a [log_folder], the given number of lines of the log is
     given for each thread/domain. If [log_size] is not provider, the value of
     the parameter ["nb"] of the query will be used, and if it not provided or
-    is not an integer, 100 is used.  *)
+    is not an integer, 100 is used.
+
+    A light protection via a password in the url, like:
+      [http://host/?secret=my_hard_password]
+    is possible if you provide the md5 digest of the password (do not put
+    the clear password in your code).
+ *)
 end
 
 (** provide a filter giving very simple statistics. We can do much better
@@ -1406,7 +1417,7 @@ module Stats : sig
     ["N requests (average response time:
          Tms = T1ms (read) + T2ms (build) + T3ms (send))"]
  *)
-val filter : unit -> 'a Filter.t * Html.chaml
+val filter : unit -> 'a Filter.t * (?md5_pass:Digest.t -> Html.chaml)
 
 end
 

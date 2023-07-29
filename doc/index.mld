@@ -1,7 +1,9 @@
 {0 Simple_httpd library to write web server and application}
 
+{1 Introduction}
+
 This library implements a HTTP/1.1 server for Linux using domains and
-algebraic effect. It uses [epoll] and [eventfd] to schedule the treatment of
+algebraic effects. It uses [epoll] and [eventfd] to schedule the treatment of
 clients efficiently, with one domain used to accept request and several
 domains to handle these requests. [Simple_httpd] can listen to several
 addresses and ports and use this information together with the headers [Host]
@@ -23,25 +25,24 @@ Through a bunch of modules, described here {!Simple_httpd}, we provide:
 - Support for ssl using {{:https://github.com/savonet/ocaml-ssl}ocaml-ssl}.
 
 - A {!Simple_httpd.Host} module dedicated to write single server handling
-  several sites.
+  several sites or applications.
 
 - A {{:./vfs_pack.html}web site compiler vfs_pack}, the will cache small files
-  in memory and bigger files in a separate store, allowing not to store the
+  in memory and bigger files in a separate store. This allows not to store the
   source of your websites on the server. Files in store or memory may be
-  pre-compressed with zlip (a.k.a. deflate).
+  pre-compressed with zlip (a.k.a. deflate, gzip is planned).
 
-- {{:./vfs_pack.html}vfs_pack} includes an equivalent of php files that are
-  compiled to OCaml, but much faster than php (and also probably safer).
+- {{:./vfs_pack.html}vfs_pack} includes an equivalent of php files name
+  [chaml] that are compiled to OCaml, but much faster than php (and also
+  probably safer).
 
 - It is pretty fast: Here are some curves showing the performance on static
-  files compared to nginx and apache. The 99% quantile is very, meaning that
+  files compared to nginx and apache. Our 99% quantile is very good, meaning that
   {!Simple_httpd} handles very quickly most request.
 
-A good start is the template folder of the distribution, documented
-{{:./template.html}[here]}. It contains the squeletton for a server serving
-two sites with status report and statistics.
+{1 Benchmarks}
 
-As we sait, Simple_httpd is fast. Here is a plot of the latency obtained using
+As we said, Simple_httpd is fast. Here is a plot of the latency obtained using
 {{:https://github.com/tsenart/vegeta} [vegeta]} with 1000 requests per seconds
 for 15s, on a small static file.  Simple_httpd uses
 {!Simple_httpd.Dir.add_vfs} using {{:./vfs_pack.html}[vfs_pack]} from the
@@ -64,12 +65,19 @@ configuration on debian 12 except for accepting more connections than the
 default. There is a (reproducible) problem with nginx and php without ssl with
 a few extreme value that impact the mean.
 
-Here is a similar graph showing the difference between [.php] and [.chaml] on a
-similar file. It shows that simple_httpd can serve more than 5 times more requests.
+Here is a similar graph showing the difference between [.php] and [.chaml] on
+a similar file. It shows that simple_httpd can serve at least than 5 times
+more requests.
 
 {%html: <p align="center"><img src="https://raffalli.eu/simple_httpd/bench/bench_chaml_bar.html.svg" alt="comparison chaml versus php"/></p>%}
 
-See [examples/echo.ml] below, that demonstrates some of the features by
+{1 Quick start}
+
+A good start is the template folder of the distribution, documented
+{{:./template.html}[here]}. It contains the squeletton for a server serving
+two sites with status report and statistics.
+
+See also [examples/echo.ml] below, that demonstrates some of the features by
 declaring a few endpoints, including one for uploading files and a virtual
 file system.
 
@@ -114,9 +122,9 @@ let ssl =
 let listens = [Address.make ~addr:!addr ~port:!port ?ssl ()]
 let server = Server.create parameters ~listens
 
-(** Compose a simple stat filter with the compression filter
+(** Compose the above filter with the compression filter
     provided by [Simple_httpd.Camlzip], than will compress output
-    when [deflate] if accepted *)
+    when [deflate] is accepted *)
 let filter, get_stats =
   let filter_stat, get_stats = Stats.filter () in
   let filter_zip =
@@ -160,11 +168,8 @@ let _ =
 
 (** Access to the statistics *)
 let _ =
-  Server.add_route_handler server ~filter Route.(exact "stats" @/ return)
-    (fun _req ->
-       let stats = get_stats() in
-       Response.make_string stats
-    )
+  Server.add_route_handler_chaml server ~filter Route.(exact "stats" @/ return)
+    get_stats
 
 (** Add a virtual file system VFS, produced by [simple-httpd-vfs-pack] from
     an actual folger *)
@@ -196,28 +201,31 @@ let _ =
         Response.make_stream ~headers:mime_type str
       )
 
-(** Main pagen using the Html module *)
+(** Main pagen using the Html module (deprecated by vfs_pack and many other
+    solutions *)
 let _ =
-  Server.add_route_handler server ~filter Route.return
-    (fun _req ->
-       let open Html in
-       let h = html [] [
-           head[][title[][txt "index of echo"]];
-           body[][
-             h3[] [txt "welcome!"];
-             p[] [b[] [txt "endpoints are:"]];
-             ul[] [
-               li[][pre[][txt "/hello/:name (GET)"]];
-               li[][pre[][a[A.href "/echo/"][txt "echo"]; txt " echo back query"]];
-               li[][pre[][txt "/upload/:path (PUT) to upload a file"]];
-               li[][pre[][txt "/zcat/:path (GET) to download a file (deflate transfer-encoding)"]];
-               li[][pre[][a[A.href "/stats/"][txt"/stats/"]; txt" (GET) to access statistics"]];
-               li[][pre[][a[A.href "/vfs/"][txt"/vfs"]; txt" (GET) to access a VFS embedded in the binary"]];
-             ]
-           ]
-         ] in
-       let s = to_string ~top:true h in
-       Response.make_string ~headers:[H.Content_Type, "text/html"] s)
+  Server.add_route_handler_chaml server ~filter Route.return
+    {chaml|
+     <!DOCTYPE html>
+     <html>
+       <head>
+         <title>index of echo</title>
+       </head>
+       <body>
+	 <h3>welcome</h3>
+	 <p><b>endpoints are</b></p>
+	 <ul>
+	   <li><pre>/ (GET)</pre> this file!</li>
+           <li><pre>/hello/:name (GET)</pre> echo message</li>
+           <li><pre><a href="/echo">echo</a></pre> echo back query</li>
+           <li><pre>/upload/:path (PUT)</pre> to upload a file</li>
+           <li><pre>/zcat/:path (GET)</pre> to download a file (deflate transfer-encoding)</li>
+           <li><pre><a href="/stats/">/stats (GET)</a></pre> to access statistics</li>
+           <li><pre><a href="/vfs/">/vfs (GET)</a></pre> to access a VFS
+             embedded in the binary</li>
+	 </ul>
+       </body>
+     </html>|chaml}
 
 (** Start the server *)
 let _ =

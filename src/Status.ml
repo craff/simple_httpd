@@ -64,7 +64,8 @@ let get_log i nb_lines output =
              Printf.sprintf "Can not read log file %s (exn: %s)\n%!"
                filename (Printexc.to_string e)) output
 
-let html ?log_size self req headers =
+let html ?log_size ?md5_pass self req headers =
+  Request.check_md5_pass md5_pass req;
   let status = status self in
   let log_size =
     match log_size with
@@ -134,19 +135,19 @@ let html ?log_size self req headers =
                    overflow: scroll; }
          </style>
          <script>
-             function sort(tableId,index,num,asc) {
+             function sort(tableId,index,num,desc) {
                var tbody = document.getElementById(tableId);
                var rows = Array.from(tbody.rows);
 
                rows.sort(function(left, right) {
                  var l = left.children[index].innerHTML;
                  var r = right.children[index].innerHTML;
-                 if (asc) {
-                   if (num) return (Number(l) - Number(r));
-                   else return(l < r ? -1 : r < l ? 1 : 0);
-                 } else {
+                 if (desc) {
                    if (num) return (Number(r) - Number(l));
                    else return(r < l ? -1 : l < r ? 1 : 0);
+                 } else {
+                   if (num) return (Number(l) - Number(r));
+                   else return(l < r ? -1 : r < l ? 1 : 0);
                  }
                });
                // Put them back in the tbody
@@ -157,7 +158,7 @@ let html ?log_size self req headers =
              };
          </script>
        </head>
-       <body onload="sort('table',0,false);">
+       <body onload="sort('table',0,false,false);">
            <h1><?ml printf "Server status %d+1 threads" num_threads?></h1>
            <ol>
            <li><?= ps ?></li>
@@ -186,14 +187,14 @@ let html ?log_size self req headers =
          <thead>
            <tr>
              <th>date
-               <span onclick="sort('table',0,false,false);">▼</span>
-               <span onclick="sort('table',0,false,true);">▲</span>
+               <button onclick="sort('table',0,false,false);">▼</button>
+               <button onclick="sort('table',0,false,true);">▲</button>
              <th>domain
-               <span onclick="sort('table',1,true,false);">▼</span>
-               <span onclick="sort('table',1,true,true);">▲</span>
+               <button onclick="sort('table',1,true,false);">▼</button>
+               <button onclick="sort('table',1,true,true);">▲</button>
              <th>client
-               <span onclick="sort('table',2,true,false);">▼</span>
-               <span onclick="sort('table',2,true,true);">▲</span>
+               <button onclick="sort('table',2,true,false);">▼</button>
+               <button onclick="sort('table',2,true,true);">▲</button>
              <th>information
          <tbody id="table">
            <?ml

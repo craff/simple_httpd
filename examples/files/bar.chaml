@@ -15,11 +15,11 @@
       <li> item 2 </li>
       <li> item 3 </li>
       <li> item 4 </li>
-      <li> views: <?ml
-	  let _ = echo (string_of_int count)
+      <li> views: <?=string_of_int count?>
+	<?ml
 	  let _ = echo (if count mod 2 = 0 then
  	                  {html|<p>even (<?= string_of_int count ?>)</p>|html}
-	                else {html|<p>odd</p>|html})
+	                else {html|<p>odd (<?= string_of_int count ?>)</p>|html})
 	?>
       </li>
     </ul>

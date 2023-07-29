@@ -8,4 +8,4 @@
     ["N requests (average response time:
          Tms = T1ms (read) + T2ms (build) + T3ms (send))"]
  *)
-val filter : unit -> 'a Route.Filter.t * Html.chaml
+val filter : unit -> 'a Route.Filter.t * (?md5_pass:Digest.t -> Html.chaml)

@@ -1,16 +1,16 @@
 {0 A template to start creating sites and servers}
 
 The folder [template] contains an almost empty site exposing the main features
-of simple_httpd while remaining small (main file is 160 lines, for SSL
-support, dual sites, server status and statistics, ...).
+of simple_httpd while remaining small (main file is 160 lines with comments,
+for SSL support, dual sites, server status and statistics, ...).
 
-Note: you must remove the the extension of the provided file [dune.ext] and
+Note: you must remove the extension of the provided file [dune.ext] and
 [dune-project.ext] to compile this template outside of the source tree of
 simple_httpd. To start the server within simple_httpd source tree, juste enter
-{[ dune exec -- ./server.exe --log-folder ./log ]}
+{[ cd template && dune exec -- ./server.exe --log-folder ./log ]}
 
 This template serves two sites/applications, both in http and https if a
-certificate are provided. It is possible to redirect http towards https.
+certificate is provided. It is easy to redirect http towards https.
 
 The first site has two urls:
 
@@ -23,20 +23,22 @@ The second site too:
 - [http://site2.org:2080]
 
 The code of the server is in one file [server.ml] plus one folder per sites.
-[server.ml] uses the [chaml] preprocessor included with simple_httpd to embed
-html inside OCaml and both sites use [chaml] and [vfs_pack] to embed ocaml
+The file [server.ml] uses the {{:./vfs_pack.html}chaml} preprocessor included
+with simple_httpd to embed html inside OCaml and both sites use
+{{:./vfs_pack.html}chaml} and {{:./vfs_pack.html}vfs_pack} to embed ocaml
 inside html and compile the folder [site1] and [site2] into two ml modules
 [site1.ml] and [site2.ml]. If they were large files, they could be copied by
-[vfs_pack] into a separate folder.
+[vfs_pack] into a separate folder. Moreover, files are pre compressed.
 
 The first site also serves a dynamic folder [site1_dyn] (not statically
-compiled) which is superposed with the static parts (path can share
+compiled) which is superposed with the static parts (the paths can share
 prefixes).
 
-A root page at localhost:2080 gives access to both sites and two pages with
-the status of the server and statistics of access. These pages are build using
-{!Simple_httpd.Status} and {!Simple_httpd.Stats}, which are modules written
-using [chaml] that you may take as good exemaples or personnalize.
+A root page at [http://localhost:2080] gives access to both sites and two
+pages with the status of the server and statistics of accesses. These pages
+are build using {!Simple_httpd.Status} and {!Simple_httpd.Stats}, which are
+modules written using [chaml] that you may take as good exemaples or
+personnalize.
 
 Note: statistics will use a bit of CPU. You could compute some stats from the
 log file too.

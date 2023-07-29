@@ -242,6 +242,16 @@ let read_body_full ~buf (self:Input.t t) : string t =
   with
   | e -> fail_raise ~code:bad_request "failed to read body: %s" (Async.printexn e)
 
+let check_md5_pass pass req =
+  match pass with
+  | None -> ()
+  | Some pass ->
+     try
+       let pass' = List.assoc "secret" (query req) in
+       if Digest.string pass' <> pass then raise Not_found
+     with Not_found ->
+       Response.fail_raise ~code:Response_code.not_found "not found"
+
 (*$R
   let module Request = Simple_httpd__Request in
   let module Async   = Simple_httpd__Async in

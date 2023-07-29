@@ -40,7 +40,7 @@ let per_path = Hashtbl.create 128
 
 (** [Simple_httpd] provides filter for request, that can be used to collecting
     statistics. Currently, we can not count the time to output the response. *)
-let filter () : 'a Route.Filter.t * Html.chaml =
+let filter () : 'a Route.Filter.t * (?md5_pass:Digest.t -> Html.chaml) =
 
   let measure req =
     let host = match Request.get_header req Headers.Host with
@@ -76,27 +76,103 @@ let filter () : 'a Route.Filter.t * Html.chaml =
           (fun () -> Response.get_post response (); post ())
           response)
   in
-  let stat r output =
-    let nb = Atomic.get r.nbreq in
-    {funml|<code>
-             <?ml Out.printf "%d requests (average response time: %.3fms " nb (Atomic.get r.total /. float nb *. 1e3)?>
-             <small><?ml Out.printf "%.3fms (parse) + %.3fms (build)) + %.3fms (send)"
-                    (Atomic.get r.parse /. float nb *. 1e3)
-                    (Atomic.get r.build /. float nb *. 1e3)
-                    (Atomic.get r.send  /. float nb *. 1e3)?>
-             </small>
-           </code>
+  let stat output path r =
+     let nb = Atomic.get r.nbreq in let n = float nb in
+     let f x = Atomic.get x *. 1e3 /. n in
+     {funml|<tr><td><?= path?>
+                <td class="scol"><?= string_of_int nb?>
+		<td class="scol"><?= Printf.sprintf "%.3f" (f r.total)?>
+		<td class="scol"><?= Printf.sprintf "%.3f" (f r.parse)?>
+		<td class="scol"><?= Printf.sprintf "%.3f" (f r.build)?>
+		<td class="scol"><?= Printf.sprintf "%.3f" (f r.send)?>
+	     </tr>
      |funml} output
   in
-  let get_stat = {chaml|
+  let get_stat ?md5_pass req =
+    Request.check_md5_pass md5_pass req;
+    {chaml|
     <!DOCTYPE html>
-    <h1>Statistics of the server</h1>
-    <dl><dt>global
-	<dd><?ml stat global output ?>
-	<?ml Hashtbl.iter (fun path r ->
-	       {funml|<dt><?= path?>
-                      <dd><?ml stat r output?>
-               |funml} output) per_path ?>
-    </dl>|chaml}
+    <head>
+      <meta charset="UTF-8"/>
+      <title>server status</title>
+      <style>
+           table, th, td { border: 1px solid black;
+                           border-collapse: collapse; }
+           table { margin-left: auto; margin-right: auto; }
+           .scol { text-align: right;
+                   vertical-align: top;
+                   padding: 3px;
+                   white-space: nowrap; }
+           .info { text-align; left;
+                   vertical-align: top;
+                   padding: 3px; }
+           .info div {
+                   max-width: 75vw;
+                   overflow: scroll; }
+      </style>
+      <script>
+             function sort(tableId,index,num,desc) {
+               var tbody = document.getElementById(tableId);
+               var rows = Array.from(tbody.rows);
+
+               rows.sort(function(left, right) {
+                 var l = left.children[index].innerHTML;
+                 var r = right.children[index].innerHTML;
+                 if (desc) {
+                   if (num) return (Number(r) - Number(l));
+                   else return(r < l ? -1 : l < r ? 1 : 0);
+                 } else {
+                   if (num) return (Number(l) - Number(r));
+                   else return(l < r ? -1 : r < l ? 1 : 0);
+                 }
+               });
+               // Put them back in the tbody
+               tbody.innerHTML='';
+               for(var i = 0; i < rows.length; i++) {
+                 tbody.appendChild(rows[i]);
+               }
+             };
+      </script>
+    </head>
+    <body onload="sort('table',1,true,true);">
+      <h1>Statistics of the server</h1>
+
+      <details><summary>Note about timings</summary>
+	All timings are average time in milliseconds. Parsing time does not take
+	in account parsing the body of the request if it is read as a stream, in
+	which case parsing time is included in building time. Similarly,
+	building time of the body of the response is included in send time
+	if it is a stream. Actually, if your request is build as a stream
+	processer, parsing will only include the parsing of the request
+	headers, build will only include the building of the response headers,
+	and all the stream processing will be included in the send time.
+      </details>
+      <table>
+        <thead><tr>
+	  <th>path
+	    <button onclick="sort('table',0,false,false);">▼</button>
+            <button onclick="sort('table',0,false,true);">▲</button>
+          <th>nb req.
+            <button onclick="sort('table',1,true,false);">▼</button>
+            <button onclick="sort('table',1,true,true);">▲</button>
+	  <th>total
+            <button onclick="sort('table',2,true,false);">▼</button>
+            <button onclick="sort('table',2,true,true);">▲</button>
+	  <th>parsing
+            <button onclick="sort('table',3,true,false);">▼</button>
+            <button onclick="sort('table',3,true,true);">▲</button>
+	  <th>build
+            <button onclick="sort('table',4,true,false);">▼</button>
+            <button onclick="sort('table',4,true,true);">▲</button>
+	  <th>send
+            <button onclick="sort('table',5,true,false);">▼</button>
+            <button onclick="sort('table',5,true,true);">▲</button>
+	  </tr>
+	  <?ml stat output "global" global ?>
+	</thead>
+	<tbody id="table">
+	  <?ml Hashtbl.iter (stat output) per_path ?>
+	</tbody>
+      </table></body>|chaml} req
   in
   (measure, get_stat)

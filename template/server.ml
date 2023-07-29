@@ -60,7 +60,6 @@ let addresses = match ssl with
 (** First a module common to all web site *)
 module Common = struct
   let addresses = addresses
-  let hostnames = [] (* accept any hostname *)
 
   module Init(Init:Host.Init) = struct
     (** a status page accessible as /status *)
@@ -87,7 +86,7 @@ module Common = struct
               let url2 = Printf.sprintf "http://%s:%d/" hostname (!port + 2000)
          ?>
            <li> <a href=<?=url1?>>First site on <code><?=url1?></code></a>
-           <li> <a href=<?=url2?>>First site on <code><?=url2?></code></a>
+           <li> <a href=<?=url2?>>Second site on <code><?=url2?></code></a>
            <li> <a href="status?nb=15">Status of the server</a> This is a bit slow
                 (it reads the log files) and should be password protected on a
                 real site.
@@ -127,7 +126,7 @@ module Site1 = struct
 
     (** Add a dynamic folder to be served. The path may have common prefix
         with the above VFS. We also  *)
-    let top_dir = Filename.concat !global_top_dir "site2_store"
+    let top_dir = Filename.concat !global_top_dir "site1_dyn"
     let _ =
       Init.add_dir_path ~filter ~config:(Dir.config ~download:true
                    ~dir_behavior:Dir.Index ()) top_dir
