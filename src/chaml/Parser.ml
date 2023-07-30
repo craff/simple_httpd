@@ -321,6 +321,13 @@ and ocaml_lexer top s n =
     | (`SOp(l,p) , _   , '|'     ) ->
        let tag = String.concat "" (List.rev_map (fun c -> String.make 1 c) l) in
        begin
+         let set_pos () =
+           let (s,n) = !position in
+           let (infos, byte_pos) = Input.spos s n in
+           let pos_info = Pos.(pos_info (mk_pos byte_pos byte_pos infos)) in
+           let linenum = pos_info.start_line in
+           Printf.bprintf out "\n#%d %S\n" linenum pos_info.file_name
+         in
          match tag with
          | "html" ->
             output stack 6;
@@ -335,6 +342,7 @@ and ocaml_lexer top s n =
             else
               Printf.bprintf out "(Printf.sprintf %S %a : string)"
                 (double_percent ml) pr_args args;
+            set_pos ();
             fn `Ini stack
          | "funml" ->
             output stack 7;
@@ -345,6 +353,7 @@ and ocaml_lexer top s n =
             let (ml, _, _) = top_to_string e in
               Printf.bprintf out "(function (module Out : Html.Output) ->
                                   let module _ = struct %s end in ())" ml;
+            set_pos ();
             fn `Ini stack
          | "chaml" when top ->
             output stack 7;
@@ -362,6 +371,7 @@ and ocaml_lexer top s n =
                   %s
                 end in
                 let open [@warning \"-33\"] M in
+                let headers = (Headers.Content_Type, \"text/html\")::headers in
                 let input =
                   Input.of_output (fun [@warning \"-26..27\"]
                     ((module Out) as output) ->
@@ -369,8 +379,9 @@ and ocaml_lexer top s n =
                       let module M = struct %s end in
                       ())
                 in
-                ( headers, cookies, input ))\n%!"
+                ( headers, cookies, input ))"
               prelude ml;
+            set_pos ();
             fn `Ini stack
        | _ ->
           fn (`SIn(List.rev l,p)) stack

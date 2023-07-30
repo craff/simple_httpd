@@ -1,9 +1,11 @@
 open Response_code
 
 type t = Async.session
+type data = Util.data
+type 'a key = 'a Util.key
 
-type session_data = Async.session_data = ..
-type session_data += NoData = Async.NoData
+let new_key () = Util.new_key (fun _ -> ())
+let new_key_with_cleanup = Util.new_key
 
 module LinkedList = Util.LinkedList
 
@@ -30,7 +32,7 @@ let get_session, delete_session =
      with e ->
        Mutex.unlock mutex_list; raise e);
     (*List.iter Async.close session.clients;*)
-    session.cleanup (Atomic.get session.data)
+    Util.cleanup (Atomic.get session.data);
   in
   let refresh session =
     let now = Unix.gettimeofday () in
@@ -49,7 +51,7 @@ let get_session, delete_session =
       Mutex.unlock mutex_list;
       raise e
   in
-  let get_session ?(session_life_time=3600.0) client key cleanup init =
+  let get_session ?(session_life_time=3600.0) client key =
     Mutex.lock mutex_tbl;
     try
       match client.Async.session with
@@ -76,11 +78,11 @@ let get_session, delete_session =
             let addr = Util.addr_of_sock client.sock in
             let key = Digest.to_hex
                         (Digest.string (addr ^ string_of_int (Random.int 1_000_000_000))) in
-            let data = Atomic.make (init ()) in
+            let data = Atomic.make Util.empty in
             let now = Unix.gettimeofday () in
             let session_info =
               Async.({ addr; key; clients= Atomic.make [client]
-                       ; data; cleanup
+                       ; data
                        ; life_time = session_life_time
                        ; last_refresh = now })
             in
@@ -97,17 +99,20 @@ let get_session, delete_session =
   in
   (get_session, delete_session)
 
-let get_session_data (sess : Async.session) =
-  Atomic.get (LinkedList.get sess).data
+let get_session_data (sess : Async.session) key =
+  let l = Atomic.get (LinkedList.get sess).data in
+  Util.search key l
 
-let do_session_data : Async.session ->  (session_data -> 'a * session_data) -> 'a  =
+let do_session_data : Async.session -> (data -> 'a * data) -> 'a =
   fun (sess : Async.session) fn ->
     let session = LinkedList.get sess in
     Util.get_update_atomic session.data fn
 
-let set_session_data (sess : Async.session) data =
-  let session = LinkedList.get sess in
-  Atomic.set session.data data
+let set_session_data (sess : Async.session) key x =
+  do_session_data sess (fun l -> (), Util.add_replace key x l)
+
+let remove_session_data sess key =
+  do_session_data sess (fun l -> (), Util.remove key l)
 
 let mk_cookies (sess : Async.session) filter c =
   let session = LinkedList.get sess in
@@ -129,8 +134,6 @@ let mk_cookies (sess : Async.session) filter c =
 
 let check
       ?(session_life_time=3600.0)
-      ?(init=fun () -> (Async.NoData : session_data))
-      ?(finalise=fun _ -> ())
       ?(check=fun _ -> true)
       ?(filter=fun x -> Some x)
       ?(error=(bad_request, [])) req =
@@ -139,7 +142,7 @@ let check
   let key = Option.map Http_cookie.value
               (Request.get_cookie req "SESSION_KEY")
   in
-  let (sess, old) = get_session ~session_life_time client key finalise init in
+  let (sess, old) = get_session ~session_life_time client key in
   let session = LinkedList.get sess in
   try
     if not (check sess) then raise Exit;
@@ -173,12 +176,10 @@ let _check = check
 
 let filter
       ?(session_life_time=3600.0)
-      ?(init=fun () -> (Async.NoData : session_data))
-      ?(finalise=fun _ -> ())
       ?(check=fun _ -> true)
       ?(filter=fun x -> Some x)
       ?(error=(bad_request, [])) req =
-  let (cookies, _) = _check ~session_life_time ~init ~finalise ~check ~filter
+  let (cookies, _) = _check ~session_life_time ~check ~filter
                        ~error req in
   let gn = Response.update_headers
              (fun h -> Headers.set_cookies cookies h) in
@@ -191,7 +192,5 @@ let get_session req =
   let key = Option.map Http_cookie.value
               (Request.get_cookie req "SESSION_KEY")
   in
-  let init () = raise NoSession in
-  let finalise _ = assert false in
-  let (sess, _) = get_session client key finalise init in
+  let (sess, _) = get_session client key in
   sess

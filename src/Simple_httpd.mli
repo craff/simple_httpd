@@ -80,6 +80,23 @@ module Address : sig
 
 end
 
+(** Module allowing to retrive information about clients *)
+module Client : sig
+  type t
+
+  (** Is the client connected *)
+  val connected : t -> bool
+
+  (** Ip address of the peer *)
+  val peer : t -> string
+
+  (** Unix time of the client arrival*)
+  val start_time : t -> float
+
+  (** Is the client using ssl *)
+  val is_ssl : t -> bool
+end
+
 (** Module dealing with the asynchronous treatment of clients by each domain *)
 module Async : sig
   (** {1 Cooperative threading} *)
@@ -117,9 +134,6 @@ module Async : sig
       domain_ids : Domain.id array
     }
 
-  (** Record describing clients *)
-  type client
-
   val yield : unit -> unit
   (** let other threads run. Should be called for treatment that take time
       before sending results or reading data and when the other primitives
@@ -129,10 +143,10 @@ module Async : sig
   val sleep : float -> unit
   (** Same as above, but with a minimum sleeping time in second *)
 
-  val close : client -> unit
+  val close : Client.t -> unit
   (** Close the given client connection *)
 
-  val flush : client -> unit
+  val flush : Client.t -> unit
   (** Flushes clients output *)
 
   (** [schedule_io sock action] should be called when a non blocking read/write
@@ -203,7 +217,7 @@ module Input : sig
   val of_fd : ?buf_size:int -> Unix.file_descr -> t
   (** Make a buffered stream from the given file descriptor. *)
 
-  val of_client : ?buf_size:int -> Async.client -> t
+  val of_client : ?buf_size:int -> Client.t -> t
   (** Make a buffered stream from the given http client's socket. *)
 
   val of_io : ?buf_size:int -> Io.t -> t
@@ -551,7 +565,7 @@ module Request : sig
   val path_components : _ t -> string list
   (** Request path components without query *)
 
-  val client : _ t -> Async.client
+  val client : _ t -> Client.t
   (** Request client *)
 
   val query : _ t -> (string*string) list
@@ -562,7 +576,7 @@ module Request : sig
     the request *)
 
   val trailer : _ t -> (Headers.t * Cookies.t) option
-  (** trailer, read after a chunked body. Only maeningfull after the body stream
+  (** trailer, read after a chunked body. Only meaningfull after the body stream
       is fully read and closed *)
 
   val close_after_req : _ t -> bool
@@ -570,11 +584,6 @@ module Request : sig
 
   val read_body_full : buf:Buffer.t -> Input.t t -> string t
   (** Read the whole body into a string. *)
-
-  (** Check a password from the query, for a lignt protection of pages like
-      status page or statistics. Password in url is really bad. At least use
-      private navigation window. *)
-  val check_md5_pass : Digest.t option -> 'a t -> unit
 end
 
 (** Module defining HTML response codes *)
@@ -852,11 +861,12 @@ module Session : sig
   type t
   (** type for session *)
 
-  type session_data = ..
-  type session_data += NoData
-  (** This type is an extensible variant that you can extend to hold some data
-      which resides in the server memory.  These data will be lost if the
-      server reboots.
+  type data
+  type 'a key
+      (** session can hold several values of arbitrary type associated to a
+          key The type of key is an extensible variant that you can extend to
+          hold some data which resides in the server memory.  These data will
+          be lost if the server reboots.
 
       Possible uses are
       - data that you do not want to be on the client but that do not need
@@ -866,9 +876,15 @@ module Session : sig
       - {!Mutex.t} to protect the above.
    *)
 
+  (** [new_key ()] creates a new key, to associate data to.*)
+  val new_key : unit -> 'a key
+
+  (** same as above but with a cleanup function called on the associated data
+      when a session holding this data is closed. Typically to close a handle
+      to an external ressource *)
+  val new_key_with_cleanup : ('a -> unit) -> 'a key
+
   val check: ?session_life_time:float ->
-            ?init:(unit -> session_data) ->
-            ?finalise:(session_data -> unit) ->
             ?check:(t -> bool) ->
             ?filter:(Http_cookie.t -> Http_cookie.t option) ->
             ?error:(Response_code.t*Headers.t) ->
@@ -894,8 +910,6 @@ module Session : sig
         be used to redirect to a login or error page. *)
 
   val filter : ?session_life_time:float ->
-            ?init:(unit -> session_data) ->
-            ?finalise:(session_data -> unit) ->
             ?check:(t -> bool) ->
             ?filter:(Http_cookie.t -> Http_cookie.t option) ->
             ?error:(Response_code.t*Headers.t) ->
@@ -907,15 +921,15 @@ module Session : sig
   val get_session : 'a Request.t -> t
   exception NoSession
 
-  (** get the session data from a session *)
-  val get_session_data : t -> session_data
+  (** get the session data associated to the given key from a session.
+      raises [Not_found] if the key is not present *)
+  val get_session_data : t -> 'a key -> 'a
 
-  (** update the session data *)
-  val set_session_data : t -> session_data -> unit
+  (** update or add the session data associated to the givent key *)
+  val set_session_data : t -> 'a key -> 'a -> unit
 
-  (** update the session data and compute a new value at once *)
-  val do_session_data :
-    t -> (session_data -> 'a * session_data) -> 'a
+  (** remove the session data associated to the givent key *)
+  val remove_session_data : t -> 'a key -> unit
 
   (** remove all server side session information *)
   val delete_session : t -> unit
@@ -1382,9 +1396,25 @@ module Dir : sig
   end
 end
 
+module Admin : sig
+  module type Auth = sig
+    val password : Digest.t
+    val login_url : string
+  end
+
+  module Make(Auth:Auth) : sig
+    (* a basic default login page that you may associate to the given login_url*)
+    val login_page : Html.chaml
+
+    (* checking session *)
+    val check : 'a Request.t -> (Cookies.t * Session.t)
+  end
+end
+
 (** A module to get detail status about the server *)
 module Status : sig
-  val html : ?log_size:int -> ?md5_pass:Digest.t -> Server.t -> Html.chaml
+  val html : ?log_size:int -> ?check:(string Request.t -> Cookies.t * Session.t) ->
+             Server.t -> Html.chaml
 (** Returns a detailed server status as html, including
 
     {ul {- number of actives connections (total and per threads)}
@@ -1399,10 +1429,8 @@ module Status : sig
     the parameter ["nb"] of the query will be used, and if it not provided or
     is not an integer, 100 is used.
 
-    A light protection via a password in the url, like:
-      [http://host/?secret=my_hard_password]
-    is possible if you provide the md5 digest of the password (do not put
-    the clear password in your code).
+    You can protect this page by using the [check] parameter that may use
+    {!Session.check_session}
  *)
 end
 
@@ -1417,7 +1445,9 @@ module Stats : sig
     ["N requests (average response time:
          Tms = T1ms (read) + T2ms (build) + T3ms (send))"]
  *)
-val filter : unit -> 'a Filter.t * (?md5_pass:Digest.t -> Html.chaml)
+  val filter : unit -> 'a Filter.t *
+                         (?check:(string Request.t -> Cookies.t * Session.t)
+                          -> Html.chaml)
 
 end
 

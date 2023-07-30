@@ -1,14 +1,14 @@
 <!DOCTYPE html>
-<?global type Session.session_data += Count of int?>
+<?global let count_key : int Session.key = Session.new_key ()?>
 <html>
   <head>
-    <?prelude let cookies, session = Session.check ~init:(fun _ -> Count 0) request
+    <?prelude
+         let cookies, session = Session.check request
          let count =
-	   match Session.get_session_data session with
-           | Count n -> n
-           | _ -> -12
-           | exception Not_found -> -100
-         let _ = Session.set_session_data session (Count (count+1))?>
+	   match Session.get_session_data session count_key with
+           | n -> n
+           | exception Not_found -> 0
+         let _ = Session.set_session_data session count_key (count+1)?>
   </head>
   <body>
     <h1>dynamic hello!</h1>

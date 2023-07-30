@@ -64,8 +64,12 @@ let get_log i nb_lines output =
              Printf.sprintf "Can not read log file %s (exn: %s)\n%!"
                filename (Printexc.to_string e)) output
 
-let html ?log_size ?md5_pass self req headers =
-  Request.check_md5_pass md5_pass req;
+let html ?log_size ?check self req headers =
+  let sess_cookies =
+    match check with
+    | None -> Cookies.empty
+    | Some f -> fst (f req)
+  in
   let status = status self in
   let log_size =
     match log_size with
@@ -115,6 +119,7 @@ let html ?log_size ?md5_pass self req headers =
   in
   {chaml|
    <!DOCTYPE html>
+   <?prelude let cookies = sess_cookies ?>
    <html>
        <head>
          <meta charset="UTF-8"/>

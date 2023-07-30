@@ -1,12 +1,9 @@
 <!DOCTYPE html>
-<?global type Session.session_data += Count of int?>
-<?prelude let cookies, session = Session.check ~init:(fun _ -> Count 0) request
+<?global let count_key = Session.new_key () ?>
+<?prelude let cookies, session = Session.check request
   let count =
-    match Session.get_session_data session with
-    | Count n -> n
-    | _ -> -12
-    | exception Not_found -> -100
-  let _ = Session.set_session_data session (Count (count+1))?>
+    try Session.get_session_data session count_key with Not_found -> 0
+  let _ = Session.set_session_data session count_key (count+1) ?>
 <html>
   <body>
     <h1>A first web site</h1>

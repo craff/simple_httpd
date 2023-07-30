@@ -9,9 +9,6 @@ type status = {
 
 let max_domain = 16
 
-type session_data = ..
-type session_data += NoData
-
 let new_id =
   let c = ref 0 in
   fun () -> let x = !c in c := x + 1; x
@@ -59,12 +56,19 @@ and session_info =
   ; key : string
   ; life_time : float
   ; clients : client list Atomic.t
-  ; data : session_data Atomic.t
-  ; cleanup : session_data -> unit
+  ; data : Util.data Atomic.t
   ; mutable last_refresh : float (* protected by mutex_list in Session.ml *)
   }
 
 and session = session_info LL.cell
+
+module Client = struct
+  type t = client
+  let connected c = c.connected
+  let peer c = c.peer
+  let start_time c = c.start_time
+  let is_ssl c = c.ssl <> None
+end
 
 let fake_client =
     { sock = Unix.stdout;
@@ -660,8 +664,9 @@ let loop id st listens pipe timeout handler () =
       | Wait ->
          poll ()
       | Accept (index, sock, linfo) ->
+         let peer = Util.addr_of_sock sock in
          let client = { sock; ssl = None; id = new_id ()
-                      ; peer = Util.addr_of_sock sock
+                      ; peer
                       ; connected = true; session = None
                       ; start_time = now (); locks = []
                       ; acont = N; buf = Buffer.create 4_096

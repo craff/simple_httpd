@@ -73,3 +73,13 @@ val addr_of_sock : Unix.file_descr -> string
 
 val to_human : ?unit:string -> float -> string
 val to_human_int : ?unit:string -> int -> string
+
+type 'a key
+type data
+
+val new_key : 'a. ('a -> unit) -> 'a key
+val search : 'a key -> data -> 'a
+val add_replace : 'a key -> 'a -> data -> data
+val remove : 'a key -> data -> data
+val cleanup : data -> unit
+val empty : data

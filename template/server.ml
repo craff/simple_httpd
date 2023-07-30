@@ -61,15 +61,33 @@ let addresses = match ssl with
 module Common = struct
   let addresses = addresses
 
+  (** Some page are password protected *)
+  module Auth = struct
+    (** in production, use Digest.from_hex with only the encrypted
+        password! *)
+    let password = Digest.string "1234"
+
+    let login_url = "/login"
+  end
+
+  module Secure = Admin.Make(Auth)
+
+  let check = Secure.check
+
   module Init(Init:Host.Init) = struct
     (** a status page accessible as /status *)
     let _ = Init.add_route_handler_chaml ~filter Route.(exact "status" @/ return)
-              (Status.html Init.server)
+              (Status.html ~check Init.server)
 
     (** Access to the statistics computed by the filter*)
     let _ =
-      Init.add_route_handler_chaml ~filter Route.(exact "stats" @/ return)
-        get_stats
+      Init.add_route_handler_chaml ~filter
+        Route.(exact "stats" @/ return) (get_stats ~check)
+
+    (** Login page for the status and statistics *)
+    let _ =
+      Init.add_route_handler_chaml ~filter
+        Route.(exact "login" @/ return) Secure.login_page
 
     let _ =
       Init.add_route_handler_chaml ~filter Route.return
@@ -77,14 +95,14 @@ module Common = struct
          <!DOCTYPE html>
          <h1>Template entry point</h1>
          <ul>
-         <?ml let hostname = match Request.get_header request Headers.Host with
+           <?ml let hostname = match Request.get_header request Headers.Host with
               | None -> Response.fail_raise ~code:Response_code.bad_request
                         "No Host field in your request"
               | Some h -> h
               let hostname = List.hd (String.split_on_char ':' hostname)
               let url1 = Printf.sprintf "http://%s:%d/" hostname (!port + 1000)
               let url2 = Printf.sprintf "http://%s:%d/" hostname (!port + 2000)
-         ?>
+           ?>
            <li> <a href=<?=url1?>>First site on <code><?=url1?></code></a>
            <li> <a href=<?=url2?>>Second site on <code><?=url2?></code></a>
            <li> <a href="status?nb=15">Status of the server</a> This is a bit slow

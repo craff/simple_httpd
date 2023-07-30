@@ -19,6 +19,8 @@ module Output = Output
 
 module Address = Address
 
+module Client = Async.Client
+
 module Async = Async
 
 module Io = Async.Io
@@ -56,6 +58,8 @@ module Dir = Dir
 module Html = Html
 
 module Server = Server
+
+module Admin = Admin
 
 module Status = Status
 

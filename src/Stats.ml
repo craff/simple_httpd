@@ -40,7 +40,7 @@ let per_path = Hashtbl.create 128
 
 (** [Simple_httpd] provides filter for request, that can be used to collecting
     statistics. Currently, we can not count the time to output the response. *)
-let filter () : 'a Route.Filter.t * (?md5_pass:Digest.t -> Html.chaml) =
+let filter () =
 
   let measure req =
     let host = match Request.get_header req Headers.Host with
@@ -88,10 +88,15 @@ let filter () : 'a Route.Filter.t * (?md5_pass:Digest.t -> Html.chaml) =
 	     </tr>
      |funml} output
   in
-  let get_stat ?md5_pass req =
-    Request.check_md5_pass md5_pass req;
+  let get_stat ?check req =
+    let sess_cookies =
+      match check with
+      | None -> Cookies.empty
+      | Some f -> fst (f req)
+    in
     {chaml|
     <!DOCTYPE html>
+    <?prelude let cookies = sess_cookies ?>
     <head>
       <meta charset="UTF-8"/>
       <title>server status</title>

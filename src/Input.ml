@@ -258,7 +258,7 @@ let peek_char (self:t) : char =
   c
 
 (* put [n] bytes from the input into bytes *)
-let read_exactly_ ~too_short (self:t) (bytes:bytes) (n:int) : unit =
+let read_exactly_bytes ~too_short (self:t) (bytes:bytes) (n:int) : unit =
   assert (Bytes.length bytes >= n);
   let offset = ref 0 in
   while !offset < n do
@@ -429,7 +429,7 @@ let read_chunked ~buf ~fail ~trailer (bs:t) : t=
           if !chunk_size > 0 then (
             (* read the whole chunk, or [Bytes.length bytes] of it *)
             let to_read = min !chunk_size (Bytes.length self.bs) in
-            read_exactly_
+            read_exactly_bytes
               ~too_short:(fun () -> raise (fail "chunk is too short"))
               bs self.bs to_read;
             self.len <- to_read;

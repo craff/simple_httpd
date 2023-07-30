@@ -36,10 +36,6 @@ end
 
 type any_continuation (** internal use only *)
 
-(** Type associated to session, user extensible *)
-type session_data = ..
-type session_data += NoData
-
 (** Record describing clients *)
 type client = private {
     id : int;                         (** Unique identifier *)
@@ -64,12 +60,19 @@ and session_info =
   ; key : string
   ; life_time : float
   ; clients : client list Atomic.t
-  ; data : session_data Atomic.t
-  ; cleanup : session_data -> unit
+  ; data : Util.data Atomic.t
   ; mutable last_refresh : float (* protected by mutex_list in Session.ml *)
   }
 
 and session = session_info Util.LinkedList.cell
+
+module Client : sig
+  type t = client
+  val connected : t -> bool
+  val peer : t -> string
+  val start_time : t -> float
+  val is_ssl : t -> bool
+end
 
 (** only to please qtest *)
 val fake_client : client

@@ -173,7 +173,25 @@ let parse_multipart_ ~bound req =
     in
     query := (key, value) :: !query
   done;
-  { req with query = List.rev_append !query req.query }
+  let body = Input.of_string "" in
+  { req with query = List.rev_append !query req.query; body }
+
+let parse_urlencoded size req =
+  let r = Bytes.create size in
+  let too_short () = fail_raise ~code:bad_request "body too_short" in
+  Input.read_exactly_bytes ~too_short req.body r size;
+  let query = Bytes.unsafe_to_string r in
+  let query =
+    match Util.parse_query query with
+    | Ok q -> q
+    | Error e -> fail_raise ~code:bad_request "invalid body: %s" e
+  in
+  { req with query = List.rev_append query req.query}
+
+type enctype =
+  | Multipart of string
+  | UrlEncoded
+  | NoData
 
 (* parse body, given the headers.
    @param tr_stream a transformation of the input stream. *)
@@ -190,40 +208,48 @@ let parse_body_ ~tr_stream ~buf (req:Input.t t) : Input.t t =
     let trailer bs =
       req.trailer := Some (Headers.parse_ ~buf bs)
     in
-    let is_multipart, bound =
+    let enctype =
       try
         match Headers.(get Content_Type req.headers)
         with
+        | Some "application/x-www-form-urlencoded" ->
+           UrlEncoded
         | Some ct ->
            Scanf.sscanf ct "multipart/form-data ; boundary = %s "
-             (fun b -> (true, "--" ^ b))
-        | None -> (false, "")
-      with _ -> (false, "")
+             (fun b -> Multipart("--" ^ b))
+        | None -> NoData
+      with _ -> NoData
     in
     let transfer_encoding =
       get_header ~f:String.trim req Headers.Transfer_Encoding
     in
     let req =
-      match transfer_encoding, is_multipart
+      match transfer_encoding, enctype
       with
-      | None, false ->
+      | None, NoData ->
          let body = read_exactly ~size @@ tr_stream req.body in
          { req with body }
-      | None, true ->
+      | None, Multipart bound ->
          let req = parse_multipart_ ~bound req in
+         let body = Input.of_string "" in
+         { req with body }
+      | None, UrlEncoded ->
+         let req = parse_urlencoded size req in
          let body = Input.of_string "" in
          { req with body }
       | Some "chunked", _ ->
          let bs =
            read_stream_chunked_ ~buf ~trailer @@ tr_stream req.body
-                                                           (* body sent by chunks, with a trailer *)
+           (* body sent by chunks, with a trailer *)
          in
          let body = if size>0 then limit_body_size_ ~max_size:size bs else bs in
          let req = { req with body } in
-         if is_multipart then
-           parse_multipart_ ~bound req
-         else
-           req
+         (match enctype with
+          | Multipart bound ->
+             parse_multipart_ ~bound req
+          | UrlEncoded ->
+             parse_urlencoded size req
+          | NoData -> req)
       | Some s, _ -> fail_raise ~code:not_implemented "cannot handle transfer encoding: %s" s
     in
     req
@@ -241,16 +267,6 @@ let read_body_full ~buf (self:Input.t t) : string t =
     { self with body }
   with
   | e -> fail_raise ~code:bad_request "failed to read body: %s" (Async.printexn e)
-
-let check_md5_pass pass req =
-  match pass with
-  | None -> ()
-  | Some pass ->
-     try
-       let pass' = List.assoc "secret" (query req) in
-       if Digest.string pass' <> pass then raise Not_found
-     with Not_found ->
-       Response.fail_raise ~code:Response_code.not_found "not found"
 
 (*$R
   let module Request = Simple_httpd__Request in
