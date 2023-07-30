@@ -49,11 +49,8 @@ module Make(Auth:Auth) = struct
     in
     let check_pass session =
       try
-        Format.eprintf "coucou 1 %a\n%!" Request.pp (Request.set_body "" request);
         if Request.meth request <> Method.POST then raise Not_found;
         let pass = List.assoc "password" (Request.query request) in
-        Printf.eprintf "coucou 2\n%!";
-        Printf.eprintf "%S\n%!" pass;
         if Digest.string pass <> Auth.password then raise Not_found;
         Session.set_session_data session auth_key Logged
       with Not_found -> go_login session
