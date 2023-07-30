@@ -115,7 +115,7 @@
   (targets vfs.ml)
   (deps (source_tree files))
   (enabled_if (= %{system} "linux"))
-  (action (run %{bin:simple-httpd-vfs-pack} -o %{targets}
+  (action (run %{bin:vfs_pack} -o %{targets}
   	       -v
 	       --destination=/tmp/bigs
                --mirror=files/

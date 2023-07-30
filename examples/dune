@@ -44,7 +44,7 @@
   (targets vfs.ml)
   (deps (source_tree files) (:out test_output.txt.expected))
   (enabled_if (= %{system} "linux"))
-  (action (run %{bin:simple-httpd-vfs-pack} -o %{targets}
+  (action (run %{bin:vfs_pack} -o %{targets}
 	       --destination=/tmp/simple_httpd_echo
                --mirror=files/
                --file=test_out.txt,%{out}
