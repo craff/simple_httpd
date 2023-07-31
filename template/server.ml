@@ -73,21 +73,32 @@ module Common = struct
   module Secure = Admin.Make(Auth)
 
   let check = Secure.check
+  let in_body = {funml|
+                 <div style="float: right;">
+                   <button onclick="window.location.href='/logout'">
+                     Logout
+                   </button>
+                 </div>|funml}
 
   module Init(Init:Host.Init) = struct
     (** a status page accessible as /status *)
     let _ = Init.add_route_handler_chaml ~filter Route.(exact "status" @/ return)
-              (Status.html ~check Init.server)
+              (Status.html ~check ~in_body Init.server)
 
     (** Access to the statistics computed by the filter*)
     let _ =
       Init.add_route_handler_chaml ~filter
-        Route.(exact "stats" @/ return) (get_stats ~check)
+        Route.(exact "stats" @/ return) (get_stats ~check ~in_body)
 
     (** Login page for the status and statistics *)
     let _ =
       Init.add_route_handler_chaml ~filter
         Route.(exact "login" @/ return) Secure.login_page
+
+    (** Logout *)
+    let _ =
+      Init.add_route_handler ~filter
+        Route.(exact "logout" @/ return) (Secure.logout_page "/")
 
     let _ =
       Init.add_route_handler_chaml ~filter Route.return

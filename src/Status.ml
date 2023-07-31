@@ -64,7 +64,7 @@ let get_log i nb_lines output =
              Printf.sprintf "Can not read log file %s (exn: %s)\n%!"
                filename (Printexc.to_string e)) output
 
-let html ?log_size ?check self req headers =
+let html ?log_size ?check ?in_head ?in_body self req headers =
   let sess_cookies =
     match check with
     | None -> Cookies.empty
@@ -161,9 +161,11 @@ let html ?log_size ?check self req headers =
                  tbody.appendChild(rows[i]);
                }
              };
-         </script>
+          </script>
+          <?ml match in_head with None -> () | Some f -> f output ?>
        </head>
        <body onload="sort('table',0,false,false);">
+           <?ml match in_body with None -> () | Some f -> f output ?>
            <h1><?ml printf "Server status %d+1 threads" num_threads?></h1>
            <ol>
            <li><?= ps ?></li>

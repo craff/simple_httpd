@@ -95,6 +95,12 @@ module Client : sig
 
   (** Is the client using ssl *)
   val is_ssl : t -> bool
+
+  (** close the client connection *)
+  val close : t -> unit
+
+  (** flush an the ssl socket of the client if it has one *)
+  val ssl_flush : t -> unit
 end
 
 (** Module dealing with the asynchronous treatment of clients by each domain *)
@@ -142,12 +148,6 @@ module Async : sig
 
   val sleep : float -> unit
   (** Same as above, but with a minimum sleeping time in second *)
-
-  val close : Client.t -> unit
-  (** Close the given client connection *)
-
-  val flush : Client.t -> unit
-  (** Flushes clients output *)
 
   (** [schedule_io sock action] should be called when a non blocking read/write
       operation would have blocked. When read become possible, [action ()] will
@@ -916,10 +916,8 @@ module Session : sig
             'a Filter.t
   (** Same as above as a filter. The cookies are added to the response. *)
 
-(** get the client session. The session must have been initialized with [check]
-      otherwise [NoSession] may be raised *)
-  val get_session : 'a Request.t -> t
-  exception NoSession
+  (** get the client session is any. No check is performed on the session cookie *)
+  val get_session : 'a Request.t -> t option
 
   (** get the session data associated to the given key from a session.
       raises [Not_found] if the key is not present *)
@@ -1406,6 +1404,12 @@ module Admin : sig
     (* a basic default login page that you may associate to the given login_url*)
     val login_page : Html.chaml
 
+    (* [logout logout request]
+       logout by destroying the login session date, but not the session.
+       use {!Session.delete_session} to remove the session. Redirect to the
+       given url after logout *)
+    val logout_page : string -> 'a Request.t -> 'b
+
     (* checking session *)
     val check : 'a Request.t -> (Cookies.t * Session.t)
   end
@@ -1413,8 +1417,9 @@ end
 
 (** A module to get detail status about the server *)
 module Status : sig
-  val html : ?log_size:int -> ?check:(string Request.t -> Cookies.t * Session.t) ->
-             Server.t -> Html.chaml
+  val html : ?log_size:int -> ?check:(string Request.t -> Cookies.t * Session.t)
+             -> ?in_head : Html.elt -> ?in_body : Html.elt
+             -> Server.t -> Html.chaml
 (** Returns a detailed server status as html, including
 
     {ul {- number of actives connections (total and per threads)}
@@ -1430,8 +1435,8 @@ module Status : sig
     is not an integer, 100 is used.
 
     You can protect this page by using the [check] parameter that may use
-    {!Session.check_session}
- *)
+    {!Session.check_session}. You may add content at the end of the head and
+    beginning of the body using [in_head] and [in_body] parameters *)
 end
 
 (** provide a filter giving very simple statistics. We can do much better
@@ -1443,10 +1448,15 @@ module Stats : sig
     will give you a [Filter.t] and a function [get] returning the statistics
     as a html page
     ["N requests (average response time:
-         Tms = T1ms (read) + T2ms (build) + T3ms (send))"]
- *)
+       Tms = T1ms (read) + T2ms (build) + T3ms (send))"]
+
+    You can protect this page by using the [check] parameter that may use
+    {!Session.check_session}. You may add content at the end of the head and
+    beginning of the body using [in_head] and [in_body] parameters *)
   val filter : unit -> 'a Filter.t *
                          (?check:(string Request.t -> Cookies.t * Session.t)
+                          -> ?in_head: Html.elt
+                          -> ?in_body: Html.elt
                           -> Html.chaml)
 
 end

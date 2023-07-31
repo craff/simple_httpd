@@ -16,26 +16,43 @@ module Make(Auth:Auth) = struct
 
   let login_page : Html.chaml =
     {chaml|<!DOCTYPE html>
-           <?ml let dest = try Util.percent_decode (List.assoc "dest" (Request.query request))
-                with Not_found -> "/" ?>
+            <?ml let dest =
+                   try Util.percent_decode (List.assoc "dest" (Request.query request))
+                 with Not_found -> "/"
+           ?>
            <head>
               <title>login page</title>
+              <meta charset="UTF-8">
+              <script>
+                  function subf() {window.history.replaceState( {} , '', "/");}
+              </script>
            </head>
-           <form action=<?=dest?> method="post">
-             <table><tr><th>Admin password</tr>
-                    <tr><td><input type="password" name="password" value="" on/>
-                    <tr><td><input type="submit" name="submit" value="go on page"/>
-             </table>
-           </form>
+           <body>
+             <div style="text-align:center; position:absolute;
+                         top:50%; left:50%;
+                         transform:translate(-50%,-50%);">
+               <form action=<?=dest?> onsubmit="subf();" method="post">
+                 <table><tr><th><label for="password">Admin password</label></tr>
+                        <tr><td><input type="password" name="password" value="" on/>
+                        <tr><td><input type="submit" />
+                 </table>
+               </form>
+             </div>
+           </body>
      |chaml}
 
   exception Login of string
 
-  let logout request =
-    try
-      let (_, session) = Session.check request in
-      Session.remove_session_data session auth_key
-    with _ -> ()
+  let logout_page dest request =
+    begin
+      match Session.get_session request with
+      | None -> ()
+      | Some session ->
+         Session.remove_session_data session auth_key;
+    end;
+    let headers = [(Headers.Location, dest)] in
+    Response.fail_raise ~code:Response_code.temporary_redirect
+      ~headers "Logged out"
 
   let check request =
     let destination () =

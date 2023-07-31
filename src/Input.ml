@@ -89,7 +89,7 @@ let of_client_ ?(buf_size=16 * 1024) ~close ic : t =
       )
     ()
 
-let of_client = of_client_ ~close:(fun c -> Async.close c)
+let of_client = of_client_ ~close:(fun c -> Async.Client.close c)
 
 module Io = Async.Io
 

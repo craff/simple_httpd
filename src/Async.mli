@@ -61,6 +61,7 @@ and session_info =
   ; life_time : float
   ; clients : client list Atomic.t
   ; data : Util.data Atomic.t
+  ; mutable cell : session_info Util.LinkedList.cell
   ; mutable last_refresh : float (* protected by mutex_list in Session.ml *)
   }
 
@@ -72,6 +73,8 @@ module Client : sig
   val peer : t -> string
   val start_time : t -> float
   val is_ssl : t -> bool
+  val close : t -> unit
+  val ssl_flush : t -> unit
 end
 
 (** only to please qtest *)
@@ -86,8 +89,6 @@ val write : client -> Bytes.t -> int -> int -> int
 val sendfile : client -> Unix.file_descr -> int -> int -> int
 val yield : unit -> unit
 val sleep : float -> unit
-val close : client -> unit
-val flush : client -> unit
 
 (** This register the starttime of a request. You may use it to compute
     Request timeout (as opposed to socket timeout which are included

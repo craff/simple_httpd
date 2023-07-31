@@ -1,6 +1,6 @@
 open Response_code
 
-type t = Async.session
+type t = Async.session_info
 type data = Util.data
 type 'a key = 'a Util.key
 
@@ -16,8 +16,7 @@ let get_session, delete_session =
   (* session orderer by expiration data *)
   let sessions_list = LinkedList.create () in
   let mutex_list = Mutex.create () in
-  let delete_session sess =
-    let session = LinkedList.get sess in
+  let delete_session session =
     Mutex.lock mutex_tbl;
     Hashtbl.remove sessions_tbl session.Async.key;
     Mutex.unlock mutex_tbl;
@@ -27,7 +26,7 @@ let get_session, delete_session =
     in
     Util.update_atomic session.clients fn;
     Mutex.lock mutex_list;
-    (try LinkedList.remove_cell sess sessions_list;
+    (try LinkedList.remove_cell session.cell sessions_list;
          Mutex.unlock mutex_list
      with e ->
        Mutex.unlock mutex_list; raise e);
@@ -55,10 +54,10 @@ let get_session, delete_session =
     Mutex.lock mutex_tbl;
     try
       match client.Async.session with
-      | Some (s : t) ->
+      | Some s ->
          Mutex.unlock mutex_tbl;
          refresh s;
-         (s, true)
+         (LinkedList.get s, true)
       | None ->
          let session = match key with
            | None -> None
@@ -68,11 +67,11 @@ let get_session, delete_session =
          | Some session ->
             Async.set_session ~session client;
             Mutex.unlock mutex_tbl;
-            let sc = LinkedList.get session in
+            let session_info = LinkedList.get session in
             let fn clients = client :: clients in
-            Util.update_atomic sc.clients fn;
+            Util.update_atomic session_info.clients fn;
             refresh session;
-            (session, true)
+            (session_info, true)
          | None ->
             Mutex.unlock mutex_tbl;
             let addr = Util.addr_of_sock client.sock in
@@ -82,40 +81,39 @@ let get_session, delete_session =
             let now = Unix.gettimeofday () in
             let session_info =
               Async.({ addr; key; clients= Atomic.make [client]
-                       ; data
+                       ; data; cell = LinkedList.fake_cell
                        ; life_time = session_life_time
                        ; last_refresh = now })
             in
             Mutex.lock mutex_list;
             let session = LinkedList.add_first session_info sessions_list in
             Mutex.unlock mutex_list;
+            session_info.cell <- session;
             Async.set_session ~session client;
             Mutex.lock mutex_tbl;
             Hashtbl.add sessions_tbl key session;
             Mutex.unlock mutex_tbl;
-            (session, false)
+            (session_info, false)
     with e ->
       Mutex.unlock mutex_tbl; raise e
   in
   (get_session, delete_session)
 
-let get_session_data (sess : Async.session) key =
-  let l = Atomic.get (LinkedList.get sess).data in
+let get_session_data (sess : t) key =
+  let l = Atomic.get sess.data in
   Util.search key l
 
-let do_session_data : Async.session -> (data -> 'a * data) -> 'a =
-  fun (sess : Async.session) fn ->
-    let session = LinkedList.get sess in
-    Util.get_update_atomic session.data fn
+let do_session_data : t -> (data -> 'a * data) -> 'a =
+  fun (sess : t) fn ->
+    Util.get_update_atomic sess.data fn
 
-let set_session_data (sess : Async.session) key x =
+let set_session_data (sess : t) key x =
   do_session_data sess (fun l -> (), Util.add_replace key x l)
 
 let remove_session_data sess key =
   do_session_data sess (fun l -> (), Util.remove key l)
 
-let mk_cookies (sess : Async.session) filter c =
-  let session = LinkedList.get sess in
+let mk_cookies (session : t) filter c =
   let max_age = Int64.of_float session.life_time in
   let c = List.filter_map
             (fun c ->
@@ -134,7 +132,7 @@ let mk_cookies (sess : Async.session) filter c =
 
 let check
       ?(session_life_time=3600.0)
-      ?(check=fun _ -> true)
+      ?(check=fun (_:t) -> true)
       ?(filter=fun x -> Some x)
       ?(error=(bad_request, [])) req =
   let cookies = Request.cookies req in
@@ -142,10 +140,9 @@ let check
   let key = Option.map Http_cookie.value
               (Request.get_cookie req "SESSION_KEY")
   in
-  let (sess, old) = get_session ~session_life_time client key in
-  let session = LinkedList.get sess in
+  let (session, old) = get_session ~session_life_time client key in
   try
-    if not (check sess) then raise Exit;
+    if not (check session) then raise Exit;
     let cookies =
       if old then
         begin
@@ -165,9 +162,9 @@ let check
       else
         Cookies.delete_all cookies
     in
-    (mk_cookies sess filter cookies, sess)
+    (mk_cookies session filter cookies, session)
   with Exit ->
-    delete_session sess;
+    delete_session session;
     let cookies = Cookies.delete_all cookies in
     let (code, headers) = error in
     Response.fail_raise ~headers ~cookies ~code "session ends"
@@ -185,12 +182,6 @@ let filter
              (fun h -> Headers.set_cookies cookies h) in
   (req, gn)
 
-exception NoSession
-
 let get_session req =
   let client = Request.client req in
-  let key = Option.map Http_cookie.value
-              (Request.get_cookie req "SESSION_KEY")
-  in
-  let (sess, _) = get_session client key in
-  sess
+  Option.map LinkedList.get client.session

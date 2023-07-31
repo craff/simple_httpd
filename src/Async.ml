@@ -57,18 +57,11 @@ and session_info =
   ; life_time : float
   ; clients : client list Atomic.t
   ; data : Util.data Atomic.t
+  ; mutable cell : session_info Util.LinkedList.cell
   ; mutable last_refresh : float (* protected by mutex_list in Session.ml *)
   }
 
 and session = session_info LL.cell
-
-module Client = struct
-  type t = client
-  let connected c = c.connected
-  let peer c = c.peer
-  let start_time c = c.start_time
-  let is_ssl c = c.ssl <> None
-end
 
 let fake_client =
     { sock = Unix.stdout;
@@ -871,10 +864,17 @@ let rec ssl_flush s =
   with Ssl.Flush_error(true) ->
     schedule_io (Ssl.file_descr_of_socket s) (fun () -> ssl_flush s)
 
-let flush c = apply c (fun _ -> ()) (fun s -> ignore (ssl_flush s))
+module Client = struct
+  type t = client
+  let connected c = c.connected
+  let peer c = c.peer
+  let start_time c = c.start_time
+  let is_ssl c = c.ssl <> None
+  let ssl_flush c = apply c (fun _ -> ()) (fun s -> ignore (ssl_flush s))
 
-(* All close above where because of error or socket closed on client side.
-   close in Server may be because there is no keep alive and the server close,
-   so we flush before closing to handle the (very rare) ssl_flush exception
-   above *)
-let close c = flush c; raise ClosedByHandler
+  (* All close above where because of error or socket closed on client side.
+     close in Server may be because there is no keep alive and the server close,
+     so we flush before closing to handle the (very rare) ssl_flush exception
+     above *)
+  let close c = ssl_flush c; raise ClosedByHandler
+end

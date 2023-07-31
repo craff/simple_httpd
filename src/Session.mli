@@ -20,9 +20,7 @@ val filter : ?session_life_time:float ->
             ?error:(Response_code.t*Headers.t) ->
             'a Route.Filter.t
 
-val get_session : 'a Request.t -> t
-
-exception NoSession
+val get_session : 'a Request.t -> t option
 
 val get_session_data : t -> 'a key -> 'a
 val set_session_data : t -> 'a key -> 'a -> unit

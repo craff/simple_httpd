@@ -9,5 +9,5 @@ module Make(Auth:Auth) : sig
 
   val check : 'a Request.t -> (Cookies.t * Session.t)
 
-  val logout : 'a Request.t -> unit
+  val logout_page : string -> 'a Request.t -> 'b
 end

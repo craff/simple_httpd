@@ -10,4 +10,6 @@
  *)
 val filter : unit -> 'a Route.Filter.t *
                        (?check:(string Request.t -> Cookies.t * Session.t)
+                        -> ?in_head: Html.elt
+                        -> ?in_body: Html.elt
                         -> Html.chaml)

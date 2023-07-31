@@ -25,7 +25,7 @@ let flush oc =
   oc.o <- 0
 
 let close oc =
-  flush oc; Async.close oc.fd
+  flush oc; Async.Client.close oc.fd
 
 let add_substring oc str offset len =
   if oc.o + len <= oc.s then

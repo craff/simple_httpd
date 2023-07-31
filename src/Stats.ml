@@ -88,7 +88,7 @@ let filter () =
 	     </tr>
      |funml} output
   in
-  let get_stat ?check req =
+  let get_stat ?check ?in_head ?in_body req =
     let sess_cookies =
       match check with
       | None -> Cookies.empty
@@ -138,8 +138,10 @@ let filter () =
                }
              };
       </script>
+      <?ml match in_head with None -> () | Some f -> f output ?>
     </head>
     <body onload="sort('table',1,true,true);">
+      <?ml match in_body with None -> () | Some f -> f output ?>
       <h1>Statistics of the server</h1>
 
       <details><summary>Note about timings</summary>
