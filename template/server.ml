@@ -62,15 +62,19 @@ module Common = struct
   let addresses = addresses
 
   (** Some page are password protected *)
-  module Auth = struct
+  module Login = struct
+    type t = unit
+
     (** in production, use Digest.from_hex with only the encrypted
         password! *)
-    let password = Digest.string "1234"
+    let check ~login ~password =
+      if login = "admin" && password = "1234" then
+        Some () else None
 
     let login_url = "/login"
   end
 
-  module Secure = Admin.Make(Auth)
+  module Secure = Auth.Make(Login)
 
   let check = Secure.check
   let in_body = {funml|

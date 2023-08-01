@@ -166,30 +166,36 @@ module Log = struct
     | Req of int
     | Sch of int
     | Exc of int
+    | Aut of int
 
   type log_status =
     { mutable requests : int
     ; mutable scheduler : int
-    ; mutable exceptions : int }
+    ; mutable exceptions : int
+    ; mutable authentications : int }
 
   let log_status =
     { requests = 1
     ; scheduler = 0
-    ; exceptions = 1 }
+    ; exceptions = 1
+    ; authentications = 1}
 
-  let set_log_requests   n = log_status.requests   <- n
-  let set_log_scheduler  n = log_status.scheduler  <- n
-  let set_log_exceptions n = log_status.exceptions <- n
+  let set_log_requests        n = log_status.requests   <- n
+  let set_log_scheduler       n = log_status.scheduler  <- n
+  let set_log_exceptions      n = log_status.exceptions <- n
+  let set_log_authentications n = log_status.authentications <- n
 
   let do_log = function
     | Req n -> n < log_status.requests
     | Sch n -> n < log_status.scheduler
     | Exc n -> n < log_status.exceptions
+    | Aut n -> n < log_status.authentications
 
   let str_log = function
     | Req n -> "Req", n
     | Sch n -> "Sch", n
     | Exc n -> "Exc", n
+    | Aut n -> "Aut", n
 
   let log_files = ref [||]
   let log_folder = ref ""

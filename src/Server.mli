@@ -17,6 +17,8 @@ module type Parameters = sig
   val log_requests : int ref
   val log_exceptions : int ref
   val log_scheduler : int ref
+  val log_authentications : int ref
+
   val log_folder : string ref
   val log_basename : string ref
   val log_perm : int ref

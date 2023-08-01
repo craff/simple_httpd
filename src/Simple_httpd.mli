@@ -320,10 +320,11 @@ module Log : sig
 
   (** There are 3 kinds of log with separate log level *)
   type log_lvl =
-    | Req of int (** log request: at level 0 => information to log
-                     all request. > 0: more detail on the treatment of the request *)
+    | Req of int (** log request: at level 1 => information to log
+                     all request. > 1: more detail on the treatment of the request *)
     | Sch of int (** log the scheduler: mainly for debugging *)
-    | Exc of int (** Exception: 0 => only error that are important *)
+    | Exc of int (** Exception: 1 => only error that are important *)
+    | Aut of int (** Authentications: 1 => all login/logout *)
 
   (** Set log level for requests. [set_log_request n] will show all log called
       with [Req p] when p < n. *)
@@ -334,6 +335,9 @@ module Log : sig
 
   (** same as above for exceptions *)
   val set_log_exceptions : int -> unit
+
+  (** same as above for authentications *)
+  val set_log_authentications : int -> unit
 
   (** With asynchronous communication, log can be mixed between domains.
       To address this issue, each domain will use a different file inside
@@ -1000,6 +1004,9 @@ module Server : sig
     val log_scheduler : int ref
     (** log level to debug the scheduler *)
 
+    val log_authentications : int ref
+    (** log level for authentications *)
+
     val log_folder : string ref
     (** if non empty, one log per domain will be written in the given
         folder. The filename of the log is [log_basename-domainid.log]. Log
@@ -1394,13 +1401,24 @@ module Dir : sig
   end
 end
 
-module Admin : sig
-  module type Auth = sig
-    val password : Digest.t
+(** A module for authenticating user on the site *)
+module Auth : sig
+  module type Login = sig
+    (** type of the information about user *)
+    type t
+
+    (** function validating the password. Returns [None] for bad
+        login/password. Returns the information about user otherwise. *)
+    val check : login:string -> password:string -> t option
+
+    (** The url of the login page. It should return a request with two values:
+        ["login"] of type string and ["password"] of type string too. Password
+        should be encrypted by the [check] function, for instance using
+        [Digest.string]. *)
     val login_url : string
   end
 
-  module Make(Auth:Auth) : sig
+  module Make(Lohin:Login) : sig
     (* a basic default login page that you may associate to the given login_url*)
     val login_page : Html.chaml
 

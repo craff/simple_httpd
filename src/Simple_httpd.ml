@@ -59,7 +59,7 @@ module Html = Html
 
 module Server = Server
 
-module Admin = Admin
+module Auth = Auth
 
 module Status = Status
 
