@@ -10,7 +10,7 @@ build: [
   ["dune" "runtest" "-p" name "-j" jobs] {with-test}
 ]
 depends: [
-  "pacomb" { >= 1.3 }
+  "pacomb" { >= "1.3" }
   "yojson" { build }
   "simple_httpd" { = version }
 ]
