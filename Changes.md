@@ -35,18 +35,19 @@ It aims at
   The first page of the documentation shows some graphics, but here is a small
   comparison of latencies for a small 1kb file:
 
+```
                  min        mean      50%       90%       95%      99%      max
   Simple_httpd  79.478µs 242.006µs 237.576µs 294.802µs 305.68µs 329.352µs  3.049ms
   Nginx        170.551µs 328.904µs 309.577µs 384.313µs 400.51µs 482.987µs 42.003ms
   Apaches      196.321µs 466.439µs 452.265µs 545.121µs 590.05µs 913.527µs  6.372ms
-
+```
   And a small *chaml* (our equivalent of php) against *php-fpm* from *apache*
   and *nginx*:
-
+```
   Simple_httpd 146.944µs 285.044µs 280.552µs 341.175µs 356.497µs 507.305µs  8.069ms
   Nginx        411.151µs 793.437µs 653.131µs 796.300µs 882.268µs     2.9ms 44.504ms
   Apache       688.765µs   2.342ms 950.647µs   1.201ms   1.321ms   5.844ms   1.171s
-
+```
   These were obtained with vegeta at 1000 requests/s. Simple_httpd offers much
   more stable latencies under charge than nginx or apache.
 
