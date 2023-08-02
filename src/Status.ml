@@ -1,19 +1,21 @@
 open Server
 open Log
 
-let log_line i (time, date, client, rest) output =
+let date time (module Out : Html.Output) =
+  let date = Unix.gmtime time in
   let frac_date = mod_float time 1.0 in
   let frac_date = Printf.sprintf "%0.5f" frac_date in
   let frac_date = String.sub frac_date 2 5 in
   let frac_date = {html|<small><?=frac_date?></small>|html} in
-  let open Unix in
+  Out.printf "%02d-%02d-%d %02d:%02d:%02d.%s"
+           (date.tm_year+1900) (date.tm_mon + 1) date.tm_mday
+           date.tm_hour date.tm_min date.tm_sec frac_date
+
+let log_line i (time, client, rest) output =
   {funml|
    <tr>
      <td class="scol">
-       <?= Printf.sprintf "%02d-%02d-%d %02d:%02d:%02d.%s"
-           (date.tm_year+1900) (date.tm_mon + 1) date.tm_mday
-           date.tm_hour date.tm_min date.tm_sec frac_date
-           ?></td>
+        <?ml date time output ?></td>
         <td class="scol"><?= string_of_int i ?></td>
         <td class="scol"><?= string_of_int client ?></td>
         <td class="info"><?= (rest) ?></td>
@@ -53,14 +55,13 @@ let get_log i nb_lines output =
           (Buffer.add_string b "\n"; Buffer.add_string b line; gn ())
       in
       (try gn () with Unix.(Unix_error(EPIPE,_,_)) | End_of_file -> cont := false);
-      let date = Unix.gmtime time in
-      log_line i (time, date, client, Buffer.contents b) output;
+      log_line i (time, client, Buffer.contents b) output;
       Buffer.reset b
     in
     while !cont do fn () done;
     Input.close ch;
     ignore (Process.wait pid);
-  with e -> log_line i (0.0, Unix.gmtime 0.0, 0,
+  with e -> log_line i (0.0, 0,
              Printf.sprintf "Can not read log file %s (exn: %s)\n%!"
                filename (Printexc.to_string e)) output
 
@@ -169,10 +170,11 @@ let html ?log_size ?check ?in_head ?in_body self req headers =
        <body onload="sort('table',0,false,true);">
            <?ml match in_body with None -> () | Some f -> f output ?>
            <h1><?ml printf "Server status %d+1 threads" num_threads?></h1>
-           <ol>
-           <li><?= ps ?></li>
-           <li><?= df ?></li>
-           <li><?= string_of_int nfd ?> opened file descriptors</li>
+           <ul>
+           <li>Started at (<?ml date (started_time self) output ?>)
+           <li><?= ps ?>
+           <li><?= df ?>
+           <li><?= string_of_int nfd ?> opened file descriptors
            <?ml
              for i = 0 to num_threads do
                if i = 0 then
@@ -184,10 +186,10 @@ let html ?log_size ?check ?in_head ?in_body self req headers =
                    echo {html|<li><?=
                       Printf.sprintf "Thread %d: %d=%d-1 connections (%d)" i
                                    (Atomic.get (status.nb_connections.(i-1)))
-                                   (Hashtbl.length pps) (did :> int) ?></li>|html};
+                                   (Hashtbl.length pps) (did :> int) ?>|html};
                  end
               done
-           ?></ol>
+           ?></ul>
      <?ml
      if !Log.log_folder <> "" then
        {funml|

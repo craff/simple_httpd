@@ -53,6 +53,9 @@ val listens : t -> Address.t array
 val status : t -> Async.status
 (** Returns server status *)
 
+val started_time : t -> float
+(** Returns the time the server started *)
+
 val num_threads : t -> int
 (** Number of threads used by the server *)
 

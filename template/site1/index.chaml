@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 <?global let count_key = Session.new_key () ?>
-<?prelude let cookies, session = Session.check request
+<?prelude let cookies, session = Session.start_check request
   let count =
     try Session.get_session_data session count_key with Not_found -> 0
   let _ = Session.set_session_data session count_key (count+1) ?>

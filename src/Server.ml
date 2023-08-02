@@ -28,7 +28,9 @@ type t = {
 
   status : Async.status;
 
-  handlers : Route.handlers
+  handlers : Route.handlers;
+
+  started_time : float
 }
 
 let listens self = self.listens
@@ -38,6 +40,8 @@ let status self = self.status
 let num_threads self = self.num_threads
 
 let max_connections self = self.max_connections
+
+let started_time self = self.started_time
 
 let add_route_handler ?addresses ?meth ?filter
     self route f : unit =
@@ -198,7 +202,8 @@ let create ?(listens = [Address.make ()]) (module Params : Parameters) =
   let (listens, handlers) =
     Address.register Route.empty_handler listens
   in
-  let self = { listens; buf_size; max_connections
+  let started_time = Unix.gettimeofday () in
+  let self = { listens; buf_size; max_connections; started_time
              ; handlers; timeout; num_threads; status }
   in
   self

@@ -3,7 +3,7 @@
 <html>
   <head>
     <?prelude
-         let cookies, session = Session.check request
+         let cookies, session = Session.start_check request
          let count =
 	   match Session.get_session_data session count_key with
            | n -> n

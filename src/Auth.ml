@@ -9,10 +9,6 @@ end
 
 module Make(Login:Login) = struct
 
-  type auth_state =
-     | Logged of Login.t
-     | Logging
-
   let auth_key = Session.new_key ()
 
   let login_page : Html.chaml =
@@ -27,7 +23,7 @@ module Make(Login:Login) = struct
             | None -> raise Not_found
             | Some t ->
                Log.f (Aut 0) (fun k->k "Login successful for %S" login);
-               Session.set_session_data session auth_key (Logged t);
+               Session.set_session_data session auth_key t;
                true
           with Not_found ->
             Log.f (Aut 0) (fun k -> k "Login failed for %S" login);
@@ -45,15 +41,17 @@ module Make(Login:Login) = struct
         Response.fail_raise ~code:Response_code.temporary_redirect
           ~headers "Your are logged"
       in
-      begin
-        match Session.get_session request with
-        | None -> ()
-        | Some session ->
-           match Session.get_session_data session auth_key with
-           | Logged _  -> redirect ()
-           | Logging -> if check_pass session then redirect ()
-      end;
-      {chaml|<!DOCTYPE html>
+      let check session =
+        try
+          ignore (Session.get_session_data session auth_key);
+          redirect ()
+        with
+          Not_found -> if check_pass session then redirect () else true
+      in
+      let redirect_headers = [(Headers.Location, Request.path request)] in
+      let error = (Response_code.temporary_redirect, redirect_headers) in
+      let sess_cookies, _ = Session.start_check ~check ~error request in
+      {chaml|<!DOCTYPE html><?prelude let cookies = sess_cookies ?>
            <head>
               <title>login page</title>
               <meta charset="UTF-8">
@@ -96,21 +94,15 @@ module Make(Login:Login) = struct
       let path = Request.path request in
       Util.percent_encode path
     in
-    let go_login session =
-      Session.set_session_data session auth_key Logging;
-      raise Login
-    in
     let login_url = Printf.sprintf "%s?dest=%s" Login.login_url destination in
     let redirect_headers = [(Headers.Location, login_url)] in
     try
       let error = (Response_code.temporary_redirect,
                    redirect_headers) in
-      let (_, session) as r = Session.check ~error request in
+      let (_, session) as r = Session.start_check ~error request in
       begin
-        match Session.get_session_data session auth_key with
-        | Logged _ -> ()
-        | Logging -> go_login session
-        | exception Not_found -> go_login session
+        try ignore (Session.get_session_data session auth_key)
+        with Not_found -> raise Login
       end;
       r
     with Login ->

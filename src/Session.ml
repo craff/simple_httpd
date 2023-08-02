@@ -143,8 +143,7 @@ let mk_cookies (session : t) filter c =
             ~same_site:`Strict session.addr c in
   c
 
-let check
-      ?(session_life_time=3600.0)
+let start_check ?(session_life_time=3600.0)
       ?(check=fun (_:t) -> true)
       ?(filter=fun x -> Some x)
       ?(error=(bad_request, [])) req =
@@ -173,23 +172,29 @@ let check
           cookies
         end
       else
-        Cookies.delete_all cookies
+        begin
+          Cookies.delete_all cookies
+        end
     in
     (mk_cookies session filter cookies, session)
   with Exit ->
     delete_session session;
-    let cookies = Cookies.delete_all cookies in
     let (code, headers) = error in
-    Response.fail_raise ~headers ~cookies ~code "session ends"
+    Response.fail_raise ~headers ~cookies ~code "Delete session"
 
-let _check = check
+let delete_session
+      ?(filter=fun x -> Some x)
+      ?(error=(bad_request, [])) req =
+  let check _ = false in
+  ignore (start_check ~filter ~error ~check req);
+  assert false
 
 let filter
       ?(session_life_time=3600.0)
       ?(check=fun _ -> true)
       ?(filter=fun x -> Some x)
       ?(error=(bad_request, [])) req =
-  let (cookies, _) = _check ~session_life_time ~check ~filter
+  let (cookies, _) = start_check ~session_life_time ~check ~filter
                        ~error req in
   let gn = Response.update_headers
              (fun h -> Headers.set_cookies cookies h) in
