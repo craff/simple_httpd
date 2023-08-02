@@ -82,7 +82,7 @@ let of_client_ ?(buf_size=16 * 1024) ~close ic : t =
         self.off <- self.off + n;
         self.len <- self.len - n)
     ~fill:(fun self ->
-        if self.len <= 0 then (
+       if self.len <= 0 then (
           self.off <- 0;
           self.len <- Async.(read ic self.bs 0 (Bytes.length self.bs));
         )

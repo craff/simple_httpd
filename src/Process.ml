@@ -10,6 +10,6 @@ let create cmd args : (int * Io.t) =
                     process terminates in epoll *)
   (pid, s1)
 
-let rec wait ?(time=0.1) pid =
+let rec wait ?(time=0.005) pid =
   let (pid',r) = Unix.waitpid [WNOHANG] pid in
   if pid' = 0 then (Async.sleep time; wait pid) else r

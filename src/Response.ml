@@ -103,8 +103,6 @@ let output_ (oc:Output.t) (self:t) : unit =
   in
 
   let self = {self with headers; body} in
-  log (Req 2) (fun k->k "output response: %s"
-                       (Format.asprintf "%a" pp {self with body=String "<…>"}));
   List.iter (fun (k,v) ->
       Output.add_string oc (Headers.to_string k);
       Output.add_char oc ':';
@@ -113,6 +111,8 @@ let output_ (oc:Output.t) (self:t) : unit =
       Output.add_char oc '\r';
       Output.add_char oc '\n') headers;
   Output.add_string oc "\r\n";
+  log (Req 2) (fun k->k "output response: %s"
+                       (Format.asprintf "%a" pp {self with body=String "<…>"}));
   begin match body with
   | String "" | Void -> ()
   | String s         -> Output.output_str oc s

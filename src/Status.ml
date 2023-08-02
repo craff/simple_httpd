@@ -79,7 +79,7 @@ let html ?log_size ?check ?in_head ?in_body self req headers =
   in
   let num_threads = num_threads self in
   let mypid = Unix.getpid () in
-  let (pid,out) =
+  let (pid1,out) =
     Process.create "ps" [| "ps";"-p"; string_of_int mypid;"-o"
                          ; "%cpu,rss,vsz,pmem"|]
   in
@@ -88,8 +88,7 @@ let html ?log_size ?check ?in_head ?in_body self req headers =
   let _ = Input.read_line ~buf ch in
   let ps = Input.read_line ~buf ch in
   Input.close ch;
-  ignore (Process.wait pid);
-  let (pid,out) =
+  let (pid2,out) =
     Process.create "df" [| "df";"-h"; "."|]
   in
   let ch = Input.of_io out in
@@ -97,18 +96,7 @@ let html ?log_size ?check ?in_head ?in_body self req headers =
   let _ = Input.read_line ~buf ch in
   let df = Input.read_line ~buf ch in
   Input.close ch;
-  ignore (Process.wait pid);
-  let (pid,out) =
-    Process.create "ls" [| "ls"; "-w"; "1000000"; "-C"; "/proc/self/fd" |]
-  in
-  let ch = Input.of_io out in
-  let buf = Buffer.create 128 in
-  let line = Input.read_line ~buf ch in
-  let nfd =
-    List.length (List.filter (fun s -> s <> "") (String.split_on_char ' ' line))
-  in
-  Input.close ch;
-  ignore (Process.wait pid);
+  let nfd = Array.length (Sys.readdir "/proc/self/fd") in
   let ps =
     Scanf.sscanf ps " %f %d %d %f"
       (fun cpu rss vsz pmem  ->
@@ -117,6 +105,8 @@ let html ?log_size ?check ?in_head ?in_body self req headers =
         Printf.sprintf "%.2f%% CPU, %s Memory (%s resident, %.2f%%)"
                    cpu vsz rss pmem)
   in
+  ignore (Process.wait pid1);
+  ignore (Process.wait pid2);
   {chaml|
    <!DOCTYPE html>
    <?prelude let cookies = sess_cookies ?>
@@ -164,7 +154,7 @@ let html ?log_size ?check ?in_head ?in_body self req headers =
           </script>
           <?ml match in_head with None -> () | Some f -> f output ?>
        </head>
-       <body onload="sort('table',0,false,false);">
+       <body onload="sort('table',0,false,true);">
            <?ml match in_body with None -> () | Some f -> f output ?>
            <h1><?ml printf "Server status %d+1 threads" num_threads?></h1>
            <ol>

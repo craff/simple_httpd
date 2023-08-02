@@ -59,16 +59,16 @@ let filter () =
     let t2 = now () in
     (req, fun response ->
         let t3 = now () in
-        Atomic.max_float global.maxim (t3 -. t1);
         Atomic.add_float global.parse (t2 -. t1);
         Atomic.add_float global.build (t3 -. t2);
-        Atomic.max_float pp.maxim (t3 -. t1);
         Atomic.add_float pp.parse (t2 -. t1);
         Atomic.add_float pp.build (t3 -. t2);
         let post () =
           let t4 = now () in
+          Atomic.max_float global.maxim (t4 -. t1);
           Atomic.add_float global.total (t4 -. t1);
           Atomic.add_float global.send  (t4 -. t3);
+          Atomic.max_float pp.maxim (t4 -. t1);
           Atomic.add_float pp.total (t4 -. t1);
           Atomic.add_float pp.send  (t4 -. t3)
         in
@@ -82,6 +82,8 @@ let filter () =
      {funml|<tr><td><?= path?>
                 <td class="scol"><?= string_of_int nb?>
 		<td class="scol"><?= Printf.sprintf "%.3f" (f r.total)?>
+                <td class="scol"><?= Printf.sprintf "%.3f"
+                               (1e3 *. Atomic.get r.maxim)?>
 		<td class="scol"><?= Printf.sprintf "%.3f" (f r.parse)?>
 		<td class="scol"><?= Printf.sprintf "%.3f" (f r.build)?>
 		<td class="scol"><?= Printf.sprintf "%.3f" (f r.send)?>
@@ -165,15 +167,18 @@ let filter () =
 	  <th>total
             <button onclick="sort('table',2,true,false);">▼</button>
             <button onclick="sort('table',2,true,true);">▲</button>
-	  <th>parsing
+	  <th>max
             <button onclick="sort('table',3,true,false);">▼</button>
             <button onclick="sort('table',3,true,true);">▲</button>
-	  <th>build
+	  <th>parsing
             <button onclick="sort('table',4,true,false);">▼</button>
             <button onclick="sort('table',4,true,true);">▲</button>
-	  <th>send
+	  <th>build
             <button onclick="sort('table',5,true,false);">▼</button>
             <button onclick="sort('table',5,true,true);">▲</button>
+	  <th>send
+            <button onclick="sort('table',6,true,false);">▼</button>
+            <button onclick="sort('table',6,true,true);">▲</button>
 	  </tr>
 	  <?ml stat output "global" global ?>
 	</thead>

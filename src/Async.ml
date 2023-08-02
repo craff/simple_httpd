@@ -392,7 +392,7 @@ module Io = struct
 
   let close (s:t) =
     (try Unix.(shutdown s.sock SHUTDOWN_ALL); with _ -> ());
-    Unix.close s.sock
+    (try Unix.close s.sock with _ -> ())
 
   let register (r : t) =
     let i = (Domain.self () :> int) in
@@ -408,7 +408,7 @@ module Io = struct
     let r = { sock
             ; waiting = Array.make max_domain false }
     in
-    (try Gc.finalise close r with _ -> ());
+    Gc.finalise close r;
     r
 
   let rec read (io:t) s o l =
@@ -458,7 +458,7 @@ let connect addr port reuse maxc =
     Unix.bind sock (Unix.ADDR_INET (inet_addr, port));
     Unix.listen sock maxc;
     sock
-  with e -> Unix.close sock; raise e
+  with e -> (try Unix.close sock; with _ -> ()); raise e
 
 type pollResult =
   | Accept of (int * Unix.file_descr * Address.t)
@@ -554,11 +554,11 @@ let loop id st listens pipe timeout handler () =
     begin
       let fn s =
         (try Ssl.shutdown s with _ -> ());
-        Unix.close (Ssl.file_descr_of_socket s);
+        (try Unix.close (Ssl.file_descr_of_socket s) with _ -> ())
       in
       let gn s =
         (try Unix.shutdown s SHUTDOWN_ALL with _ -> ());
-        Unix.close s
+        (try Unix.close s with _ -> ())
       in
       try apply c gn fn with Unix.Unix_error _ -> ()
     end;

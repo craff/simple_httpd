@@ -3,7 +3,6 @@ open Chaml
 
 let file_path = ref ""
 let do_with_filename filename fn =
-  Printf.eprintf "%S\n%!" filename;
   let save = !file_path in
   file_path := Filename.dirname filename;
   try
