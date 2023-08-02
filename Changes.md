@@ -10,12 +10,11 @@ github and opam. It is a library to produce web server and sites.
   Documentation: https://raffalli.eu/simple_httpd/simple_httpd
   Github       : https://github.com/craff/simple_httpd
 
-WARNING: currently we need the latest master of ocaml-ssl and pacomb.
+WARNING: currently we need the latest master of ocaml-ssl.
 It requires Linux and OCaml 5.0, if you have this,
 you can install with:
 ```
   opam pin add https://github.com/savonet/ocaml-ssl#master -k git
-  opam pin add https://github.com/craff/pacomb#master -k git
   opam pin add https://github.com/craff/simple_httpd -k git
 ```
 And test the template site (very simple, as it is an empty shell to start
@@ -28,7 +27,7 @@ from) with
 It aims at
 
 - Being simple to use and rather complete (support ssl, *chaml*: an equivalent of php,
-  but in OCaml and compiled, and much more ...).
+  but in OCaml and compiled, status and statistics, authentication, cookies, ...).
 
 - Being fast: our latencies and number of requests per seconds are very good,
   thanks to using linux epoll, eventfd, OCaml's effects and domains, ...
@@ -40,7 +39,8 @@ It aims at
   Nginx        170.551µs 328.904µs 309.577µs 384.313µs 400.51µs 482.987µs 42.003ms
   Apaches      196.321µs 466.439µs 452.265µs 545.121µs 590.05µs 913.527µs  6.372ms
 
-  And a small *chaml* (our equivalent of php) against *php-fpm*:
+  And a small *chaml* (our equivalent of php) against *php-fpm* from *apache*
+  and *nginx*:
 
   Simple_httpd 146.944µs 285.044µs 280.552µs 341.175µs 356.497µs 507.305µs  8.069ms
   Nginx        411.151µs 793.437µs 653.131µs 796.300µs 882.268µs     2.9ms 44.504ms
@@ -51,7 +51,9 @@ It aims at
 
 - Currently only linux is supported.
 
-Help, comments, bug reports, ... would be greatly appreciated.
+Help, comments, bug reports, ... would be greatly appreciated, as this is
+alpha release, it is time for you to propose change in the design of the
+library.
 
 My website https://raffalli.eu and therefore simple_httpd documentation are
 powered by simple_httpd (do we name this bootstrap ;-) ?
