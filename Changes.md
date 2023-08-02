@@ -23,6 +23,7 @@ from) with
   cd source_dir/template
   dune exec -- ./server.exe --log-folder ./log
 ```
+The template is also documented at https://raffalli.eu/simple_httpd/simple_httpd/template.html
 
 It aims at
 
@@ -48,6 +49,11 @@ It aims at
 
   These were obtained with vegeta at 1000 requests/s. Simple_httpd offers much
   more stable latencies under charge than nginx or apache.
+
+  If you want your own measurments, you need to setup nginx/php on ports 7080
+  and 7443, an apache/php on port 80 and 443. Then, you can run [./bench.sh]
+  from the [tests] folder of the source tree. I would be happy to have
+  measurments for a big server with more than 20 cores.
 
 - Currently only linux is supported.
 
