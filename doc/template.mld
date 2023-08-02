@@ -1,13 +1,14 @@
 {0 A template to start creating sites and servers}
 
 The folder [template] contains an almost empty site exposing the main features
-of simple_httpd while remaining small (main file is 160 lines with comments,
-for SSL support, dual sites, server status and statistics, ...).
+of simple_httpd while remaining small (main file is less than 200 lines with
+comments, for SSL support, dual sites, server status and statistics,
+authentication, ...).
 
 Note: you must remove the extension of the provided file [dune.ext] and
 [dune-project.ext] to compile this template outside of the source tree of
 simple_httpd. To start the server within simple_httpd source tree, juste enter
-{[ cd template && dune exec -- ./server.exe --log-folder ./log ]}
+{[ cd template && ./start.sh ]}
 
 This template serves two sites/applications, both in http and https if a
 certificate is provided. It is easy to redirect http towards https.
@@ -28,7 +29,8 @@ with simple_httpd to embed html inside OCaml and both sites use
 {{:./vfs_pack.html}chaml} and {{:./vfs_pack.html}vfs_pack} to embed ocaml
 inside html and compile the folder [site1] and [site2] into two ml modules
 [site1.ml] and [site2.ml]. If they were large files, they could be copied by
-[vfs_pack] into a separate folder. Moreover, files are pre compressed.
+[vfs_pack] into a separate folder using the option [--max-size]. Moreover,
+files are precompressed.
 
 The first site also serves a dynamic folder [site1_dyn] (not statically
 compiled) which is superposed with the static parts (the paths can share
@@ -40,5 +42,5 @@ are build using {!Simple_httpd.Status} and {!Simple_httpd.Stats}, which are
 modules written using [chaml] that you may take as good exemaples or
 personnalize.
 
-Note: statistics will use a bit of CPU. You could compute some stats from the
-log file too.
+Note: statistics will use a bit of CPU. We could compute some stats from the
+log files too, not consumming any extra CPU while serving files.

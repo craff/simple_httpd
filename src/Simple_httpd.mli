@@ -1460,7 +1460,7 @@ module Status : sig
     is not an integer, 100 is used.
 
     You can protect this page by using the [check] parameter that may use
-    {!Session.check_session}. You may add content at the end of the head and
+    {!Session.start_check}. You may add content at the end of the head and
     beginning of the body using [in_head] and [in_body] parameters *)
 end
 
@@ -1476,7 +1476,7 @@ module Stats : sig
        Tms = T1ms (read) + T2ms (build) + T3ms (send))"]
 
     You can protect this page by using the [check] parameter that may use
-    {!Session.check_session}. You may add content at the end of the head and
+    {!Session.start_check}. You may add content at the end of the head and
     beginning of the body using [in_head] and [in_body] parameters *)
   val filter : unit -> 'a Filter.t *
                          (?check:(string Request.t -> Cookies.t * Session.t)
