@@ -79,34 +79,46 @@ let html ?log_size ?check ?in_head ?in_body self req headers =
   in
   let num_threads = num_threads self in
   let mypid = Unix.getpid () in
-  let (pid1,out) =
-    Process.create "ps" [| "ps";"-p"; string_of_int mypid;"-o"
-                         ; "%cpu,rss,vsz,pmem"|]
-  in
-  let ch = Input.of_io out in
-  let buf = Buffer.create 128 in
-  let _ = Input.read_line ~buf ch in
-  let ps = Input.read_line ~buf ch in
-  Input.close ch;
-  let (pid2,out) =
-    Process.create "df" [| "df";"-h"; "."|]
-  in
-  let ch = Input.of_io out in
-  let buf = Buffer.create 128 in
-  let _ = Input.read_line ~buf ch in
-  let df = Input.read_line ~buf ch in
-  Input.close ch;
-  let nfd = Array.length (Sys.readdir "/proc/self/fd") in
   let ps =
-    Scanf.sscanf ps " %f %d %d %f"
-      (fun cpu rss vsz pmem  ->
-        let rss = Util.to_human_int (rss * 1024) in
-        let vsz = Util.to_human_int (vsz * 1024) in
-        Printf.sprintf "%.2f%% CPU, %s Memory (%s resident, %.2f%%)"
-                   cpu vsz rss pmem)
+    try
+      let (_,out) =
+        Process.create "ps" [| "ps";"-p"; string_of_int mypid;"-o"
+                               ; "%cpu,rss,vsz,pmem"|]
+      in
+      let ch = Input.of_io out in
+      let buf = Buffer.create 128 in
+      let _ = Input.read_line ~buf ch in
+      let ps = Input.read_line ~buf ch in
+      let ps =
+        Scanf.sscanf ps " %f %d %d %f"
+          (fun cpu rss vsz pmem  ->
+            let rss = Util.to_human_int (rss * 1024) in
+            let vsz = Util.to_human_int (vsz * 1024) in
+            Printf.sprintf "%.2f%% CPU, %s Memory (%s resident, %.2f%%)"
+              cpu vsz rss pmem)
+      in
+      Input.close ch;
+      ps
+    with _ -> "Can not measure CPU"
   in
-  ignore (Process.wait pid1);
-  ignore (Process.wait pid2);
+  let df =
+    try
+      let (_,out) =
+        Process.create "df" [| "df";"-h"; "."|]
+      in
+      let ch = Input.of_io out in
+      let buf = Buffer.create 128 in
+      let _ = Input.read_line ~buf ch in
+      let df = Input.read_line ~buf ch in
+      Input.close ch;
+      df
+    with _ -> "Can not measure Disk Status"
+  in
+  (* TODO: use "lsof" if /proc/self/fd does not exists *)
+  let nfd =
+    try Array.length (Sys.readdir "/proc/self/fd")
+    with _ -> -1
+  in
   {chaml|
    <!DOCTYPE html>
    <?prelude let cookies = sess_cookies ?>
