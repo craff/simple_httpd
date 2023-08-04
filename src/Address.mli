@@ -16,7 +16,7 @@ type t = private
   }
 
 type ssl_info =
-  { protocol : Ssl.protocol
+  { protocol : Ssl.protocol (** min protocol version, max is 1_3 *)
   ; cert : string
   ; priv : string
   }

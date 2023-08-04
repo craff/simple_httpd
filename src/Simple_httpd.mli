@@ -60,7 +60,7 @@ module Address : sig
 
   (** type givent the relevant information for a ssl certificate *)
   type ssl_info =
-    { protocol : Ssl.protocol (** protocol to use *)
+    { protocol : Ssl.protocol (** minimum protocol to use, max is TSL1.3 *)
     ; cert : string           (** file name of the certificate *)
     ; priv : string           (** file name of the private key *)
     }
