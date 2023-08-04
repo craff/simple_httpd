@@ -242,6 +242,33 @@ let pp_date fmt date =
   Format.fprintf fmt "%s, %02d %s %04d %02d:%02d:%02d GMT"
     day date.tm_mday month (date.tm_year+1900) date.tm_hour date.tm_min date.tm_sec
 
+let _ = Unix.putenv "TZ" "UTC" (* we do not use localtime, only gmtime *)
+
+let date_of_string str =
+  Scanf.sscanf str "%s@, %d %s %d %d:%d:%d GMT"
+    (fun _ day month year h m s ->
+      let month = match month with
+        | "Jan" -> 0
+        | "Feb" -> 1
+        | "Mar" -> 2
+        | "Apr" -> 3
+        | "May" -> 4
+        | "Jun" -> 5
+        | "Jul" -> 6
+        | "Aug" -> 7
+        | "Sep" -> 8
+        | "Oct" -> 9
+        | "Nov" -> 10
+        | "Dec" -> 11
+        | _     -> invalid_arg "date_of_string: bad month"
+      in
+      let tm =
+        Unix.{ tm_sec = s; tm_min = m; tm_hour = h; tm_mday = day;
+               tm_mon = month; tm_year = year - 1900;
+               tm_wday = 0; tm_yday = 0; tm_isdst = false }
+      in
+      fst (Unix.mktime tm))
+
 module LinkedList = struct
 
   type 'a cell =

@@ -238,14 +238,24 @@ let add_vfs_ ?addresses ?(filter=(fun x -> (x, fun r -> r)))
     Server.add_route_handler ?addresses ~filter ~meth:GET server (route())
       (fun path -> let path = check true "download" path in fun req ->
         let FI info = VFS.read_file path in
-        let mtime =  match info.mtime with
-          | None -> None
-          | Some t -> Some (Printf.sprintf "mtime: %.4f" t)
+        let mtime, may_cache =
+           match info.mtime with
+           | None -> None, false
+           | Some t ->
+              let mtime_str = Printf.sprintf "mtime: %.4f" t in
+              let may_cache =
+                match Request.get_header req Headers.If_None_Match with
+                | Some mtime -> mtime = mtime_str
+                | None ->
+                match Request.get_header req Headers.If_Modified_Since with
+                | Some str ->
+                   (try Util.date_of_string str <= t with
+                      _ -> false)
+                | None -> false
+              in
+         (Some mtime_str, may_cache)
         in
-        let may_cache () =
-          mtime <> None && Request.get_header req Headers.If_None_Match = mtime
-        in
-        if may_cache () then Response.make_raw ~code:not_modified "" else
+        if may_cache then Response.make_raw ~code:not_modified "" else
         let cache_control () =
           match mtime with
           | None -> (Headers.Cache_Control, "no-store")
