@@ -39,7 +39,7 @@ module Make(Login:Login) = struct
       let redirect () =
         let headers = [Headers.Location, dest] in
         Response.fail_raise ~code:Response_code.temporary_redirect
-          ~headers "Your are logged"
+          ~headers "You are already logged"
       in
       let check session =
         try
