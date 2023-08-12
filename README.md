@@ -138,6 +138,11 @@ Use cases might include:
 
 See https://raffalli.eu/simple_httpd/simple_httpd
 
+## Site using simple_httpd
+
+- https://raffalli.eu
+- https://psfenua.com
+
 ## License
 
 MIT.
