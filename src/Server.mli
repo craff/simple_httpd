@@ -101,6 +101,14 @@ val add_route_handler :
     accept all requests and does not do any transformation.
 *)
 
+val redirect_https :
+  ?addresses:Address.t list ->
+  ?filter:Input.t Route.Filter.t ->
+  t -> unit
+(** Emmit a permanent redirect response for the same request.
+    The Host header must be present in the request, otherwise it gives a
+    not_found response code *)
+
 val add_route_handler_stream :
   ?addresses:Address.t list ->
   ?meth:Method.t ->

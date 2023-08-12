@@ -19,6 +19,8 @@ module type Init = sig
     ?filter:Input.t Route.Filter.t ->
     ('a, Html.chaml) Route.t -> 'a -> unit
 
+  val redirect_https : ?filter:Input.t Route.Filter.t -> unit -> unit
+
   val add_dir_path :
     ?filter:Input.t Route.Filter.t ->
     ?prefix:string ->

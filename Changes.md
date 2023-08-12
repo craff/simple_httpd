@@ -2,12 +2,13 @@
 
 ## Changes
 
-commit 44add2ce96d3258552d64244bf004e0b8068c629
+Author: Christophe Raffalli
+	Add in `Server` and `Host` a redirect_https function
+
 Author: Christophe Raffalli
     SSL protocol in Address is now the min version. Max version is
 	the max supported version (TLS 1.3)
 
-commit e86126a36531f719d6a9a0d134f7d0bc795058c6
 Author: Christophe Raffalli
     Manage in Dir module (and therefore VFS) the header If-Modified-Since
 

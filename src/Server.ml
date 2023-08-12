@@ -67,6 +67,22 @@ let add_route_handler_chaml ?addresses ?meth ?filter self route f =
   Route.add_route_handler ?filter ?addresses ?meth
     self.handlers route ~tr_req f
 
+let redirect_https ?addresses ?filter self =
+  add_route_handler ?addresses ?filter self Route.rest
+    (fun _ req ->
+      try
+        let host = match Request.get_header req Headers.Host with
+          | Some h -> h
+          | None -> raise Not_found
+        in
+        let path = Request.path req in
+        let url = Printf.sprintf "https://%s%s" host path in
+        let headers = [ (Headers.Location, url) ] in
+        Response.fail ~headers ~code:Response_code.permanent_redirect
+          "Redirection to https"
+      with
+        _ -> Response.fail_raise ~code:Response_code.not_found "Not_found")
+
 let[@inline] _opt_iter ~f o = match o with
   | None -> ()
   | Some x -> f x

@@ -1146,6 +1146,14 @@ module Server : sig
     ?filter:Input.t Filter.t ->
     t -> ('a, Html.chaml) Route.t -> 'a -> unit
 
+  val redirect_https :
+    ?addresses:Address.t list ->
+    ?filter:Input.t Filter.t ->
+    t -> unit
+  (** Emmit a permanent redirect response for the same request, but in https.
+      The Host header must be present in the request, otherwise it gives a
+      not_found response code *)
+
   (** {1 Server-sent events}
 
       {b EXPERIMENTAL}: this API is not stable yet. *)
@@ -1514,6 +1522,10 @@ module Host : sig
       ?meth:Method.t ->
       ?filter:Input.t Filter.t ->
       ('a, Html.chaml) Route.t -> 'a -> unit
+
+    val redirect_https : ?filter:Input.t Filter.t -> unit -> unit
+    (** Same as Server.redirect_https but the server is provided when
+        the host is attached to it by {!start_server}. *)
 
     val add_dir_path :
       ?filter:Input.t Filter.t ->

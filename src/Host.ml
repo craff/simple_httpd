@@ -19,6 +19,8 @@ module type Init = sig
     ?filter:Input.t Route.Filter.t ->
     ('a, Html.chaml) Route.t -> 'a -> unit
 
+  val redirect_https : ?filter:Input.t Route.Filter.t -> unit -> unit
+
   val add_dir_path :
     ?filter:Input.t Route.Filter.t ->
     ?prefix:string ->
@@ -78,6 +80,9 @@ let start_server parameters
 
           let add_route_handler_chaml  ?meth ?filter route =
             add_route_handler_chaml ~addresses ?meth ?filter server route
+
+          let redirect_https ?filter () =
+            redirect_https ~addresses ?filter server
 
           let add_dir_path ?filter ?prefix ?config dir =
             add_dir_path ~addresses ?filter ?prefix ?config ~dir server
