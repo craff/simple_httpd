@@ -42,7 +42,10 @@ val pp_date : Format.formatter -> Unix.tm -> unit
 (** Print date (given in GMT) in the expected format for http (for instance
     for expiration date of cookies. *)
 
-val date_of_string : string -> float
+val date_of_epoch : float -> string
+(** Convert epoch to http date *)
+
+val date_to_epoch : string -> float
 (** Convert date to epoch *)
 
 module LinkedList : sig

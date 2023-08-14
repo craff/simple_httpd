@@ -249,17 +249,21 @@ let add_vfs_ ?addresses ?(filter=(fun x -> (x, fun r -> r)))
                 | None ->
                 match Request.get_header req Headers.If_Modified_Since with
                 | Some str ->
-                   (try Util.date_of_string str <= t with
+                   (try Util.date_to_epoch str <= t with
                       _ -> false)
                 | None -> false
               in
          (Some mtime_str, may_cache)
         in
         if may_cache then Response.make_raw ~code:not_modified "" else
-        let cache_control () =
+        let cache_control h =
           match mtime with
-          | None -> (Headers.Cache_Control, "no-store")
-          | Some mtime -> (Headers.ETag, mtime)
+          | None -> (Headers.Cache_Control, "no-store") :: h
+          | Some mtime ->
+             (Headers.ETag, mtime)
+(*             :: (Headers.Date, Util.string_of_date (Unix.gettimeofday ()))
+               :: (Headers.Cache_Control, "public,max-age=86400,no-cache")*)
+             :: h
         in
         if VFS.is_directory path then (
           let parent = Some (Filename.(dirname (prefix // path))) in
@@ -292,37 +296,37 @@ let add_vfs_ ?addresses ?(filter=(fun x -> (x, fun r -> r)))
           | Path(_, Some (fz, size)) when deflate ->
              let fd = Unix.openfile fz [O_RDONLY] 0 in
              Response.make_raw_file
-               ~headers:(cache_control ()::
-                         (Headers.Content_Encoding, "deflate")::info.headers)
+               ~headers:(cache_control
+                         ((Headers.Content_Encoding, "deflate")::info.headers))
                ~code:ok ~close:true size fd
           | Path(f, _) ->
              let fd = Unix.openfile f [O_RDONLY] 0 in
              let size = match info.size with Some s -> s | None -> assert false in
              Response.make_raw_file
-               ~headers:(cache_control ()::info.headers)
+               ~headers:(cache_control info.headers)
                ~code:ok ~close:true size fd
           | Fd(fd) ->
              let size = Unix.(fstat fd).st_size in
              Response.make_raw_file
-               ~headers:(cache_control ()::info.headers)
+               ~headers:(cache_control info.headers)
                ~code:ok ~close:true size fd
           | String(_, Some sz) when deflate ->
              Response.make_raw
-               ~headers:(cache_control ()::
-                         (Headers.Content_Encoding, "deflate")::info.headers)
+               ~headers:(cache_control (
+                         (Headers.Content_Encoding, "deflate")::info.headers))
                ~code:ok sz
           | String(s, _) ->
              Response.make_raw
-               ~headers:(cache_control ()::info.headers)
+               ~headers:(cache_control info.headers)
                ~code:ok s
           | Dynamic f ->
-             let headers = [cache_control ()] in
+             let headers = cache_control [] in
              let headers, cookies, input = f req headers in
              Response.make_raw_stream
                ~headers ~cookies ~code:ok input
           | Stream input ->
              Response.make_raw_stream
-               ~headers:(cache_control ()::info.headers)
+               ~headers:(cache_control info.headers)
                ~code:ok input
 
           | Dir _ -> assert false

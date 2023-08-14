@@ -242,9 +242,15 @@ let pp_date fmt date =
   Format.fprintf fmt "%s, %02d %s %04d %02d:%02d:%02d GMT"
     day date.tm_mday month (date.tm_year+1900) date.tm_hour date.tm_min date.tm_sec
 
+let date_of_epoch time =
+  let tm = (Unix.gmtime time) in
+  let buf = Buffer.create 32 in
+  Format.fprintf (Format.formatter_of_buffer buf) "%a%!" pp_date tm;
+  Buffer.contents buf
+
 let _ = Unix.putenv "TZ" "UTC" (* we do not use localtime, only gmtime *)
 
-let date_of_string str =
+let date_to_epoch str =
   Scanf.sscanf str "%s@, %d %s %d %d:%d:%d GMT"
     (fun _ day month year h m s ->
       let month = match month with

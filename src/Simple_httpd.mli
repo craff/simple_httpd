@@ -20,6 +20,12 @@ module Util : sig
   (** Print date (given in GMT) in the expected format for http (for instance
       for expiration date of cookies. *)
 
+  val date_of_epoch : float -> string
+  (** Convert epoch to http date *)
+
+  val date_to_epoch : string -> float
+  (** Convert date to epoch *)
+
   val split_query : string -> string * string
   (** Split a path between the path and the query. *)
 
