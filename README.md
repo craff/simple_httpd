@@ -83,7 +83,7 @@ The program `http_of_dir` relies on the module `Simple_httpd_dir`, which
 can serve directories, as well as _virtual file systems_.
 
 In 'examples/dune', we produce an OCaml module `vfs.ml` using
-the program `tiny-httpd-vfs-pack`.  This module contains a VFS (virtual file
+the program `vfs_pack`.  This module contains a VFS (virtual file
 system) which can be served as if it were an actual directory.
 
 The dune rule:
@@ -113,6 +113,12 @@ The code to serve the VFS from `vfs.ml` is as follows:
 it allows downloading the files, and listing directories.
 If a directory contains `index.html` then this will be served
 instead of listing the content.
+
+An html file named `foo.chaml` will be served as `foo.html` but may use some OCaml
+code embedded inside the html, a bit like php, but statically compiled. Here
+is an example of chaml file:
+
+https://github.com/craff/simple_httpd/blob/c7dde278b19da562bcfd64aa0643ebcf0553bd70/examples/files/bar.chaml
 
 ## Why?
 
