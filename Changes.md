@@ -3,6 +3,19 @@
 ## Changes
 
 Author: Christophe Raffalli
+    better copying in vfs_path (no more use of Sys.command and
+	do not copy if mtime says so)
+
+Author: Christophe Raffalli
+    add --exclude option to vfs_path
+
+Author: Christophe Raffalli
+	better header for caching
+
+Author: Christophe Raffalli
+    Dir: avoid redirection for index.html when dowloading folder
+
+Author: Christophe Raffalli
 	Add in `Server` and `Host` a redirect_https function
 
 Author: Christophe Raffalli
