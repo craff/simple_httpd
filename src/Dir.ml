@@ -236,7 +236,17 @@ let add_vfs_ ?addresses ?(filter=(fun x -> (x, fun r -> r)))
 
   if config.download then (
     Server.add_route_handler ?addresses ~filter ~meth:GET server (route())
-      (fun path -> let path = check true "download" path in fun req ->
+      (fun path ->
+        let path = check true "download" path in
+        let path =
+          if VFS.is_directory path then
+            match config.dir_behavior with
+            | Index | Index_or_lists when
+                   VFS.contains (path // "index.html") -> path // "index.html"
+            | _ -> path
+          else path
+        in
+        fun req ->
         let FI info = VFS.read_file path in
         let mtime, may_cache =
            match info.mtime with
@@ -268,16 +278,6 @@ let add_vfs_ ?addresses ?(filter=(fun x -> (x, fun r -> r)))
         if VFS.is_directory path then (
           let parent = Some (Filename.(dirname (prefix // path))) in
           match config.dir_behavior with
-            | Index | Index_or_lists when VFS.contains (path // "index.html") ->
-               (* redirect using path, not full path *)
-               let new_path = "/" // prefix // path // "index.html" in
-               let query = String.concat "&"
-                             (List.map (fun (k,v) -> k ^ "=" ^ v)
-                                (Request.query req)) in
-               Response.make_raw ~code:moved_permanently "moved"
-                 ~headers:Headers.(empty
-                                   |> set Headers.Location (new_path ^ "?" ^ query)
-                                   |> set Headers.Content_Type "text/plain")
             | Lists | Index_or_lists ->
                let body = html_list_dir ~prefix vfs path ~parent in
                log (Req 1) (fun k->k "download index %s" path);
