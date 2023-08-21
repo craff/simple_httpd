@@ -38,6 +38,30 @@ let is_url s =
   in
   is_prefix "http://" s || is_prefix "https://" s
 
+let copy src dst perm =
+  let cho = Unix.(openfile dst [O_WRONLY; O_CREAT; O_TRUNC] perm) in
+  try
+    let chi = Unix.(openfile src [O_RDONLY] 0x0) in
+    try
+      let nb = ref Unix.((fstat chi).st_size) in
+      let offset = ref 0 in
+      let bsize = 64 * 1024 in
+      let buf = Bytes.create bsize in
+      while (!nb > 0) do
+        let r = Unix.read chi buf !offset (bsize - !offset) + !offset in
+        let w = Unix.write cho buf 0 r in
+        if w < r then
+          begin
+            offset := r - w;
+            Bytes.blit buf w buf 0 (r - w)
+          end
+        else offset := 0;
+        nb := !nb - w
+      done;
+      Unix.close chi; Unix.close cho
+    with e -> Unix.close chi; raise e
+  with e -> Unix.close cho; raise e
+
 (* I using path, destination will contain only those file,
    raise Failure if path is used and destination is not provided *)
 
@@ -99,11 +123,12 @@ let emit ~perm ?max_size ?destination oc (l:entry list) : unit =
        let actual_path = actual_path // vfs_path in
        let disk_path = store_path // vfs_path in
        log (fun k -> k "add path %S = %S in %S" vfs_path actual_path disk_path);
-       if disk_path <> actual_path then
-         if Sys.command (spf "install -C -m %o \"%s\" \"%s\"" (perm land 0o666) actual_path disk_path) <> 0
-         then failwith
-                (spf "vfs_pack: can not copy path %s to %s" actual_path disk_path);
        let stats = Unix.stat actual_path in
+       let changed =
+         try Unix.(stat disk_path).st_mtime < stats.st_mtime
+         with _ -> true in
+       if disk_path <> actual_path && changed then
+         copy actual_path disk_path (perm land 0o666);
        let zpath =
          let zpath = disk_path ^".zlib" in
          (try Simple_httpd.Camlzip.file_deflate disk_path zpath with _ -> ());
