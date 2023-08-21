@@ -252,7 +252,7 @@ let add_vfs_ ?addresses ?(filter=(fun x -> (x, fun r -> r)))
            match info.mtime with
            | None -> None, false
            | Some t ->
-              let mtime_str = Printf.sprintf "mtime: %.4f" t in
+              let mtime_str = Printf.sprintf "\"%.4f\"" t in
               let may_cache =
                 match Request.get_header req Headers.If_None_Match with
                 | Some mtime -> mtime = mtime_str
@@ -271,8 +271,8 @@ let add_vfs_ ?addresses ?(filter=(fun x -> (x, fun r -> r)))
           | None -> (Headers.Cache_Control, "no-store") :: h
           | Some mtime ->
              (Headers.ETag, mtime)
-(*             :: (Headers.Date, Util.string_of_date (Unix.gettimeofday ()))
-               :: (Headers.Cache_Control, "public,max-age=86400,no-cache")*)
+             :: (Headers.Date, Util.date_of_epoch (Request.start_time req))
+             :: (Headers.Cache_Control, "public,no-cache")
              :: h
         in
         if VFS.is_directory path then (
