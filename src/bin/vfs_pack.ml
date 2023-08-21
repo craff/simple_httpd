@@ -3,6 +3,7 @@ let fpf = Printf.fprintf
 let now_ = Unix.gettimeofday()
 let verbose = ref false
 let max_size = ref 0x8000
+let exclude = ref []
 
 type entry =
   | File of bool * string * string
@@ -170,6 +171,7 @@ let emit ~perm ?max_size ?destination oc (l:entry list) : unit =
       let rec traverse vfs_path =
         let real_path = dir // vfs_path in
         let store_path = store // vfs_path in
+        if List.mem vfs_path !exclude then () else
         if Sys.is_directory real_path then (
           if not (Sys.file_exists store_path && Sys.is_directory store_path) then
             Sys.mkdir store_path perm;
@@ -257,6 +259,8 @@ let () =
      " <int>set the permission of created folder");
     ("-F", Arg.String parse_source,
      " <file> reads entries from the file, written using this command line option syntax.");
+    ("--exclude", Arg.String (fun s -> exclude := s :: !exclude),
+     " <file> exclude the file or folder from the mirror")
   ] |> Arg.align)
 
   and parse args =
