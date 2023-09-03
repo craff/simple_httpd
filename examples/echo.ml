@@ -39,10 +39,10 @@ let server = Server.create parameters ~listens
 (** Compose the above filter with the compression filter
     provided by [Simple_httpd.Camlzip], than will compress output
     when [deflate] is accepted *)
+let filter_zip =
+  Camlzip.filter ~compress_above:1024 ~buf_size:(16*1024) ()
 let filter, get_stats =
   let filter_stat, get_stats = Stats.filter () in
-  let filter_zip =
-    Camlzip.filter ~compress_above:1024 ~buf_size:(16*1024) () in
   (Filter.compose_cross filter_zip filter_stat, get_stats)
 
 (** Add a route answering 'Hello world' to [http://localhost/hello/world] *)
@@ -82,8 +82,12 @@ let _ =
 
 (** Access to the statistics *)
 let _ =
-  Server.add_route_handler_chaml server ~filter Route.(exact "stats" @/ return)
-    get_stats
+  Server.add_route_handler_chaml server ~filter:filter_zip
+    Route.(exact "stats" @/ return) get_stats
+
+let _ = Server.add_route_handler_chaml server
+          ~filter:filter_zip Route.(exact "status" @/ return)
+          (Status.html server)
 
 (** Add a virtual file system VFS, produced by [simple-httpd-vfs-pack] from
     an actual folger *)
@@ -135,6 +139,7 @@ let _ =
            <li><pre>/upload/:path (PUT)</pre> to upload a file</li>
            <li><pre>/zcat/:path (GET)</pre> to download a file (deflate transfer-encoding)</li>
            <li><pre><a href="/stats/">/stats (GET)</a></pre> to access statistics</li>
+           <li><pre><a href="/stats/">/statuss (GET)</a></pre> to get server status</li>
            <li><pre><a href="/vfs/">/vfs (GET)</a></pre> to access a VFS
              embedded in the binary</li>
 	 </ul>

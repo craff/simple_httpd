@@ -238,15 +238,22 @@ let add_vfs_ ?addresses ?(filter=(fun x -> (x, fun r -> r)))
     Server.add_route_handler ?addresses ~filter ~meth:GET server (route())
       (fun path ->
         let path = check true "download" path in
-        let path =
-          if VFS.is_directory path then
+        fun req ->
+        if VFS.is_directory path then
+          begin
             match config.dir_behavior with
             | Index | Index_or_lists when
-                   VFS.contains (path // "index.html") -> path // "index.html"
-            | _ -> path
-          else path
-        in
-        fun req ->
+                   VFS.contains (path // "index.html") ->
+               let host = match Request.get_header req Headers.Host with
+                 | Some h -> h
+                 | None -> raise Not_found
+               in
+               let url = Printf.sprintf "https://%s/%s" host (prefix // path // "index.html") in
+               let headers = [ (Headers.Location, url) ] in
+               Response.fail_raise ~headers ~code:Response_code.permanent_redirect
+                 "Permanent redirect"
+            | _ -> ()
+          end;
         let FI info = VFS.read_file path in
         let mtime, may_cache =
            match info.mtime with
