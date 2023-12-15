@@ -39,6 +39,8 @@ let rec renew_ssl () =
   Unix.sleep !ssl_reload_period;
   let renew ssl =
     try
+      !forward_log (fun k -> k "try renew ssl certificate %S, %S%s"
+                    ssl.cert ssl.priv "");
       let mtime1 = (Unix.stat ssl.priv).st_mtime in
       let mtime2 = (Unix.stat ssl.cert).st_mtime in
       let mtime = max mtime1 mtime2 in
@@ -51,6 +53,8 @@ let rec renew_ssl () =
           | None -> assert false
           | Some a -> Atomic.set a ctx
         end;
+      !forward_log (fun k -> k "Renewed ssl certificate %S, %S: %s"
+                    ssl.cert ssl.priv "OK")
     with e ->
       !forward_log (fun k -> k "failed to renew ssl certificate %S, %S because %s"
                     ssl.cert ssl.priv (Printexc.to_string e))
