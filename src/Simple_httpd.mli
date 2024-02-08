@@ -585,6 +585,9 @@ module Request : sig
   (** time stamp (from [Unix.gettimeofday]) after parsing the first line of
     the request *)
 
+  val reset_timeout : _ t -> unit
+  (** reset the timeout for a request if it needs time *)
+
   val trailer : _ t -> (Headers.t * Cookies.t) option
   (** trailer, read after a chunked body. Only meaningfull after the body stream
       is fully read and closed *)
@@ -615,7 +618,8 @@ module Response : sig
       the client to answer a {!Request.t}*)
 
   type body = String of string
-            | Stream of Input.t
+            | Stream of Input.t * (unit -> unit) option
+           (** flush each part and call f if second arg is [Some f] *)
             | File of
                 { fd : Unix.file_descr
                 ; size : int
@@ -669,6 +673,7 @@ module Response : sig
       Use [""] to not send a body at all. *)
 
   val make_raw_stream :
+    ?synch:(unit->unit) ->
     ?cookies:Cookies.t ->
     ?headers:Headers.t ->
     ?post:(unit -> unit) ->
@@ -718,6 +723,7 @@ module Response : sig
   (** Same as {!make} but with a string body. *)
 
   val make_stream :
+    ?synch:(unit -> unit) ->
     ?cookies:Cookies.t ->
     ?headers:Headers.t ->
     ?post:(unit -> unit) ->

@@ -4,7 +4,8 @@
     the client to answer a {!Request.t}*)
 
 type body = String of string
-          | Stream of Input.t
+          | Stream of Input.t * (unit -> unit) option
+           (** flush each part and call f if second arg is [Some f] *)
           | File of
               { fd : Unix.file_descr
               ; size : int
@@ -61,6 +62,7 @@ val make_raw :
     Use [""] to not send a body at all. *)
 
 val make_raw_stream :
+  ?synch:(unit->unit) ->
   ?cookies:Cookies.t ->
   ?headers:Headers.t ->
   ?post:(unit -> unit) ->
@@ -110,6 +112,7 @@ val make_string :
 (** Same as {!make} but with a string body. *)
 
 val make_stream :
+  ?synch:(unit->unit) ->
   ?cookies:Cookies.t ->
   ?headers:Headers.t ->
   ?post:(unit -> unit) ->

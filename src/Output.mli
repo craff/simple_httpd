@@ -16,7 +16,7 @@ val add_subbytes : t -> bytes -> int -> int -> unit
 
 val printf : t -> ('a, unit, string, unit) format4 -> 'a
 
-val output_chunked : t -> Input.t -> unit
+val output_chunked : ?synch:(unit -> unit) -> t -> Input.t -> unit
 (** Write the stream into the channel, using the chunked encoding. *)
 
 val output_str   : t -> string -> unit

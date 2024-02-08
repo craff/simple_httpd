@@ -49,6 +49,8 @@ type client = private {
     mutable session : session option; (** Session *)
     mutable acont : any_continuation; (** internal use *)
     mutable start_time : float;       (** start of request *)
+    mutable timeout_ref : float;      (** reference for timeout, usually start_time,
+                                          except if [Async.reset_timeout] is used*)
     mutable locks : Mutex.t list;     (** all lock, locked by this client *)
     buf : Buffer.t;                   (** used to parse headers *)
     mutable last_seen_cell : client Util.LinkedList.cell;
@@ -91,9 +93,11 @@ val yield : unit -> unit
 val sleep : float -> unit
 
 (** This register the starttime of a request. You may use it to compute
-    Request timeout (as opposed to socket timeout which are included
-    and reset the timeout if you know a request requires time. *)
+    Request timeout (as opposed to socket timeout) *)
 val register_starttime : client -> float
+
+(** reset the timeout if you know a request requires time. *)
+val reset_timeout : client -> unit
 
 (** Module with function similar to Unix.read and Unix.single_write
     but that will perform scheduling *)

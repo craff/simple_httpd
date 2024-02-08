@@ -39,6 +39,8 @@ let set_header k v self = {self with headers=Headers.set k v self.headers}
 let update_headers f self = {self with headers=f self.headers}
 let set_body b self = {self with body=b}
 
+let reset_timeout self = Async.reset_timeout self.client
+
 let get_cookie self h =
   try Some (Cookies.get h self.cookies)
   with Not_found -> None

@@ -36,6 +36,7 @@ type client =
   ; mutable session : session option
   ; mutable acont : any_continuation
   ; mutable start_time : float (* last time request started *)
+  ; mutable timeout_ref : float
   ; mutable locks : mutex list
   ; buf : Buffer.t (* used to parse headers *)
   ; mutable last_seen_cell : client LL.cell
@@ -73,6 +74,7 @@ let fake_client =
       id = -1;
       buf = Buffer.create 16;
       start_time = 0.0;
+      timeout_ref = 0.0;
       locks = [];
       accept_by = 0;
       last_seen_cell = LL.fake_cell
@@ -122,7 +124,9 @@ let printexn e =
   | e -> (Printexc.to_string e)
 
 type pending_status =
-  NoEvent | Wait : 'a pending -> pending_status | TooSoon of bool
+  |  NoEvent
+  | Wait : 'a pending -> pending_status
+  | TooSoon of Unix.error option
 
 type socket_info =
   { ty : socket_type
@@ -383,9 +387,16 @@ let cur_client () =
 let register_starttime cl =
   let r = now () in
   cl.start_time <- r;
+  cl.timeout_ref <- r;
   let ll = all_domain_info.((Domain.self () :> int)).last_seen in
   Util.LinkedList.move_first cl.last_seen_cell ll;
   r
+
+let reset_timeout cl =
+  let r = now () in
+  cl.timeout_ref <- r;
+  let ll = all_domain_info.((Domain.self () :> int)).last_seen in
+  Util.LinkedList.move_first cl.last_seen_cell ll
 
 module Io = struct
   include IoTmp
@@ -462,7 +473,7 @@ let connect addr port reuse maxc =
 
 type pollResult =
   | Accept of (int * Unix.file_descr * Address.t)
-  | Action : 'a pending * socket_info * bool -> pollResult
+  | Action : 'a pending * socket_info * Unix.error option -> pollResult
   | Yield of ((unit,unit) continuation * client * float)
   | Wait
 
@@ -588,8 +599,9 @@ let loop id st listens pipe timeout handler () =
     try
       let cell = LL.tail last_seen in
       let client = LL.get cell in
-      if client.start_time < t0 then
-       begin
+      if client.timeout_ref < t0 then
+        begin
+          Log.(f (Exc 1)) (fun k -> k "[%d] timout: closing" client.id);
           close ~client TimeOut;
           remove_timeout t0
         end
@@ -635,17 +647,27 @@ let loop id st listens pipe timeout handler () =
                                                    (Printexc.to_string e))
              end
           | { pd = NoEvent ; _ } as r ->
-             let e = Polly.Events.((err lor hup lor rdhup) land evt <> empty)
+             let e =
+               if Polly.Events.((err lor hup lor rdhup) land evt <> empty) then
+                 Unix.(getsockopt_error sock)
+               else None
              in
              r.pd <- TooSoon e
           | { pd = Wait a ; _ } as p ->
-             let e = Polly.Events.((err lor hup lor rdhup) land evt <> empty) in
+             let e =
+               if Polly.Events.((err lor hup lor rdhup) land evt <> empty) then
+                 Unix.(getsockopt_error sock)
+               else None
+             in
              add_ready (Action(a,p,e));
              p.pd <- NoEvent;
           | { pd = TooSoon b ; _ } as p ->
-             let e = Polly.Events.((err lor hup lor rdhup) land evt <> empty)
+             let e =
+               if Polly.Events.((err lor hup lor rdhup) land evt <> empty) then
+                 match Unix.(getsockopt_error sock) with None -> b | e -> e
+               else b
              in
-             p.pd <- TooSoon (b || e)
+             p.pd <- TooSoon e
         in
         List.iter fn (find sock)
       in
@@ -664,10 +686,12 @@ let loop id st listens pipe timeout handler () =
          poll ()
       | Accept (index, sock, linfo) ->
          let peer = Util.addr_of_sock sock in
+         let now = now () in
          let client = { sock; ssl = None; id = new_id ()
                       ; peer
                       ; connected = true; session = None
-                      ; start_time = now (); locks = []
+                      ; start_time = now; timeout_ref = now
+                      ; locks = []
                       ; acont = N; buf = Buffer.create 4_096
                       ; accept_by = index; last_seen_cell = LL.fake_cell
                       }
@@ -708,17 +732,16 @@ let loop id st listens pipe timeout handler () =
            begin
              dinfo.cur_client <-cl;
              cl.acont <- N;
-             if e then
-               begin
-                 Log.f (Sch 0) (fun k -> k "[%d] discontinue io" cl.id);
-                 discontinue cont (Unix.Unix_error(EPIPE, "error_in_poll", ""))
-               end
-             else
-               begin
-                 Log.f (Sch 0) (fun k -> k "[%d] continue io" cl.id);
-                 let n = fn () in
-                 continue cont n;
-               end
+             match e with
+             | Some e ->
+                let msg = Unix.error_message e in
+                Log.f (Sch 0) (fun k ->
+                    k "[%d] discontinue io %s" cl.id msg);
+                discontinue cont (Unix.Unix_error(e, msg, "error_in_poll"))
+             | None ->
+                Log.f (Sch 0) (fun k -> k "[%d] continue io" cl.id);
+                let n = fn () in
+                continue cont n;
            end
       | Yield(cont,cl,_) ->
          if cl.connected then

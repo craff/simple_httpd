@@ -85,6 +85,9 @@ val start_time : _ t -> float
 (** time stamp (from [Unix.gettimeofday]) after parsing the first line of
     the request *)
 
+val reset_timeout : _ t -> unit
+(** reset the timeout for a request if it needs time *)
+
 val trailer : _ t -> (Headers.t * Cookies.t) option
 (** trailer, read after a chunked body. Only maeningfull after the body stream
     we fully read and closed *)

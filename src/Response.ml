@@ -4,7 +4,8 @@ let fail_raise = Headers.fail_raise
 let log = Log.f
 
 type body = String of string
-          | Stream of Input.t
+          | Stream of Input.t * (unit -> unit) option
+           (** flush each part and call f if second arg is [Some f] *)
           | File of
               { fd : Unix.file_descr
               ; size : int
@@ -37,12 +38,12 @@ let make_raw ?(cookies=[]) ?(headers=[]) ?(post=fun () -> ()) ~code body : t =
   let body = if body = "" then Void else String body in
   { code; headers; body; post }
 
-let make_raw_stream ?(cookies=[]) ?(headers=[]) ?(post=fun () -> ())
+let make_raw_stream ?synch ?(cookies=[]) ?(headers=[]) ?(post=fun () -> ())
       ~code body : t =
   (* do not add content length to response *)
   let headers = Headers.set Headers.Transfer_Encoding "chunked" headers in
   let headers = Headers.set_cookies cookies headers in
-  { code; headers; body=Stream body; post }
+  { code; headers; body=Stream(body,synch); post }
 
 let make_raw_file ?(cookies=[]) ?(headers=[]) ?(post=fun () -> ())
       ~code ~close size body : t =
@@ -57,15 +58,15 @@ let make_void ?(cookies=[]) ?(headers=[]) ?(post=fun () -> ()) ~code () : t =
 let make_string ?cookies ?headers ?post body =
   make_raw ?cookies ?headers ?post ~code:ok body
 
-let make_stream ?cookies ?headers ?post body =
-  make_raw_stream ?cookies ?headers ?post ~code:ok body
+let make_stream ?synch  ?cookies ?headers ?post body =
+  make_raw_stream ?synch ?cookies ?headers ?post ~code:ok body
 
 let make_file ?cookies ?headers ?post ~close n body =
   make_raw_file ?cookies ?headers ?post ~code:ok ~close n body
 
 let make ?cookies ?headers ?post r : t = match r with
   | String body -> make_raw ?cookies ?headers ~code:ok body
-  | Stream body -> make_raw_stream ?cookies ?headers ~code:ok body
+  | Stream(body,synch) -> make_raw_stream ?synch ?cookies ?headers ~code:ok body
   | File{size;fd=body;close}->
      make_raw_file ?cookies ?headers ?post ~code:ok ~close size body
   | Void -> make_void ?cookies ?headers ~code:ok ()
@@ -120,9 +121,9 @@ let output_ (oc:Output.t) (self:t) : unit =
   | File {size; fd; close=true} ->
      (try Output.sendfile oc size fd; Unix.close fd
       with e -> Unix.close fd; raise e)
-  | Stream str ->
+  | Stream (str, synch) ->
      (try
-        Output.output_chunked oc str;
+        Output.output_chunked ?synch oc str;
         Input.close str;
       with e -> Input.close str; raise e)
   end;

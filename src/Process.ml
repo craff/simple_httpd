@@ -5,7 +5,7 @@ let create cmd args : (int * Io.t) =
   Unix.set_nonblock s1;
   Unix.setsockopt_optint s1 SO_LINGER (Some 0);
   let s1 = Io.create s1 in
-  let pid = Unix.create_process cmd args s2 s2 Unix.stderr in
+  let pid = Unix.create_process cmd args Unix.stdin s2 s2 in
   Unix.close s2; (* if we don't close the other, we do not get informed when
                     process terminates in epoll *)
   (pid, s1)

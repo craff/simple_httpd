@@ -110,7 +110,7 @@ let printf oc format =
  *)
 
 (* print a stream as a series of chunks: no allocation! *)
-let output_chunked (oc:t) (self:Input.t) : unit =
+let output_chunked ?synch (oc:t) (self:Input.t) : unit =
   let continue = ref true in
   while !continue do
     (* next chunk *)
@@ -122,8 +122,10 @@ let output_chunked (oc:t) (self:Input.t) : unit =
     add_string oc "\r\n";
     self.consume n;
     if n = 0 then (
-      continue := false;
-    );
+      continue := false
+    ) else (match synch with
+           | None -> ()
+           | Some f -> flush oc; f ())
   done;
   (*add_string oc "\r\n";*) (* empty trailer required by RFC *)
   ()
