@@ -289,8 +289,10 @@ let () =
   ] |> Arg.align)
 
   and parse args =
-    let opts = Lazy.force opts in
-    Arg.parse_argv ~current:(ref 0) args opts (fun _ -> raise (Arg.Help "no positional arg")) help
+    try
+      let opts = Lazy.force opts in
+      Arg.parse_argv ~current:(ref 0) args opts (fun _ -> raise (Arg.Help "no positional arg")) help
+    with Arg.Help msg -> Printf.eprintf "%s" msg; exit 1
 
   and parse_source f =
       log (fun k -> k "read source file %S" f);
