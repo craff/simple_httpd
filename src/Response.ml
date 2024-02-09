@@ -53,6 +53,11 @@ let make_raw_file ?(cookies=[]) ?(headers=[]) ?(post=fun () -> ())
 
 let make_void ?(cookies=[]) ?(headers=[]) ?(post=fun () -> ()) ~code () : t =
   let headers = Headers.set_cookies cookies headers in
+  let headers = if Headers.(get Content_Type headers = None)
+                   &&  Headers.(get Content_Length headers = None)
+                then
+                  Headers.(set Content_Length "0" headers) else headers
+  in
   { code; headers; body=Void; post }
 
 let make_string ?cookies ?headers ?post body =
