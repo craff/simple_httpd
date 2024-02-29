@@ -38,7 +38,8 @@ module Util : sig
   val get_query : string -> string
   (** Obtain the query part of a path. *)
 
-  val parse_query : string -> ((string*string) list, string) result
+  exception Invalid_query of string
+  val parse_query : string -> (string*string) list
   (** Parse a query as a list of ['&'] or [';'] separated [key=value] pairs.
       The order might not be preserved.  *)
 end

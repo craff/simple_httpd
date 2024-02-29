@@ -132,9 +132,9 @@ let parse_req_start ~client ~buf (bs:Input.t)
     let path_components = List.map Util.percent_decode path_components in
 
     let query =
-      match Util.(parse_query query) with
-      | Ok l -> l
-      | Error e -> fail_raise ~code:bad_request "invalid query: %s" e
+      try Util.(parse_query query)
+      with Util.Invalid_query e ->
+        fail_raise ~code:bad_request "invalid query: %s" e
     in
     let req = {
         meth; query; host; client; path; path_components;
@@ -184,9 +184,9 @@ let parse_urlencoded size req =
   Input.read_exactly_bytes ~too_short req.body r size;
   let query = Bytes.unsafe_to_string r in
   let query =
-    match Util.parse_query query with
-    | Ok q -> q
-    | Error e -> fail_raise ~code:bad_request "invalid body: %s" e
+    try Util.parse_query query
+    with Util.Invalid_query e ->
+      fail_raise ~code:bad_request "invalid body: %s" e
   in
   { req with query = List.rev_append query req.query}
 

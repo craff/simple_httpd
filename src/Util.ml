@@ -116,7 +116,7 @@ let percent_decode (s:string) =
           Q.Test.fail_report "invalid percent encoding")
 *)
 
-exception Invalid_query
+exception Invalid_query of string
 
 let find_q_index_ s = String.index s '?'
 
@@ -162,14 +162,14 @@ let split_on_slash s : _ list =
   [] (split_on_slash "//")
 *)
 
-let parse_query s : (_ list, string) result=
+let parse_query s : _ list =
   let pairs = ref [] in
   let is_sep_ = function '&' | ';' -> true | _ -> false in
   let i = ref 0 in
   let j = ref 0 in
   try
     let percent_decode s =
-      try percent_decode s with _ -> raise Invalid_query
+      try percent_decode s with _ -> raise (Invalid_query "bad percent encoding")
     in
     let parse_pair () =
       let eq = String.index_from s !i '=' in
@@ -189,14 +189,13 @@ let parse_query s : (_ list, string) result=
         i := String.length s; (* done *)
       )
     done;
-    Ok !pairs
+    !pairs
   with
-  | Invalid_argument _ | Not_found | Failure _ ->
-    Error (Printf.sprintf "error in parse_query for %S: i=%d,j=%d" s !i !j)
-  | Invalid_query -> Error ("invalid query string: " ^ s)
+  | Invalid_argument _ | Not_found | Failure _ as e ->
+    raise (Invalid_query (Printexc.to_string e))
 
 (*$= & ~printer:pp_res_query ~cmp:eq_sorted
-  (Ok ["a", "b"; "c", "d"]) (parse_query "a=b&c=d")
+  (Ok ["a", "b"; "c", "d"]) (Ok (parse_query "a=b&c=d"))
 *)
 
 (*$QR & ~long_factor:20 ~count:1_000
@@ -209,7 +208,7 @@ let parse_query s : (_ list, string) result=
           ) l;
         let s = String.concat "&"
             (List.map (fun (x,y) -> percent_encode x ^"="^percent_encode y) l) in
-        eq_sorted (Ok l) (parse_query s))
+        eq_sorted (Ok l) (Ok (parse_query s)))
 *)
 
 let pp_date fmt date =
