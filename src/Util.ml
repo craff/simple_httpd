@@ -67,12 +67,12 @@ let percent_encode ?(skip=fun _->false) s =
   String.iter
     (function
       | c when skip c -> Buffer.add_char buf c
-      | (' ' | '!' | '"' | '#' | '$' | '%' | '&' | '\'' | '(' | ')' | '*' | '+'
+      | ( '!' | '"' | '#' | '$' | '%' | '&' | '\'' | '(' | ')' | '*' | '+'
         | ',' | '/' | ':' | ';' | '=' | '?' | '@' | '[' | ']' | '~')
         as c ->
         Printf.bprintf buf "%%%X" (Char.code c)
-      | c when Char.code c > 127 ->
-        Printf.bprintf buf "%%%X" (Char.code c)
+      | c when let code = Char.code c in code > 127 || code <= 32 ->
+        Printf.bprintf buf "%%%02X" (Char.code c)
       | c -> Buffer.add_char buf c)
     s;
   Buffer.contents buf
@@ -81,10 +81,7 @@ let percent_encode ?(skip=fun _->false) s =
   "hello%20world" (percent_encode "hello world")
   "%23%25^%24%40^%40" (percent_encode "#%^$@^@")
   "a%20ohm%2B5235%25%26%40%23%20---%20_" (percent_encode "a ohm+5235%&@# --- _")
-*)
-
-(*$= & ~printer:Q.(Print.string)
-  ("?") (percent_decode @@ percent_encode "?")
+  "%0A" (percent_encode "\n")
 *)
 
 let hex_int (s:string) : int = Scanf.sscanf s "%x" (fun x->x)
@@ -108,6 +105,15 @@ let percent_decode (s:string) =
     | c -> Buffer.add_char buf c; incr i
   done;
   Buffer.contents buf
+
+(*$= & ~printer:(fun s ->s)
+  "?" (percent_decode @@ percent_encode "?")
+  "\n" (percent_decode @@ percent_encode "\n")
+  "\r" (percent_decode @@ percent_encode "\r")
+  "\t" (percent_decode @@ percent_encode "\t")
+  "abs def&;\n cou=cou[](){}" (percent_decode @@ percent_encode "abs def&;\n cou=cou[](){}")
+*)
+
 
 (*$QR & ~count:1_000 ~long_factor:20
     Q.string (fun s ->
@@ -194,8 +200,8 @@ let parse_query s : _ list =
   | Invalid_argument _ | Not_found | Failure _ as e ->
     raise (Invalid_query (Printexc.to_string e))
 
-(*$= & ~printer:pp_res_query ~cmp:eq_sorted
-  (Ok ["a", "b"; "c", "d"]) (Ok (parse_query "a=b&c=d"))
+(*$= &
+  ["c", "d"; "a", "b"] (parse_query "a=b&c=d")
 *)
 
 (*$QR & ~long_factor:20 ~count:1_000
@@ -208,7 +214,7 @@ let parse_query s : _ list =
           ) l;
         let s = String.concat "&"
             (List.map (fun (x,y) -> percent_encode x ^"="^percent_encode y) l) in
-        eq_sorted (Ok l) (Ok (parse_query s)))
+        l = parse_query s)
 *)
 
 let pp_date fmt date =
