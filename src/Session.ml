@@ -180,6 +180,7 @@ let start_check ?(session_life_time=3600.0)
   with Exit ->
     delete_session session;
     let (code, headers) = error in
+    let cookies = Cookies.delete_all cookies in
     Response.fail_raise ~headers ~cookies ~code "Delete session"
 
 let delete_session
