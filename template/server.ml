@@ -22,6 +22,8 @@ let ssl_priv = ref ""
 (** Server.args provides a bunch and standard option to control the
     maximum number of connections, logs, etc... *)
 let args, parameters = Server.args ()
+
+(** We can provide extra parameters *)
 let _ =
   Arg.parse (Arg.align ([
       "--addr", Arg.Set_string addr, " set address";
@@ -33,7 +35,7 @@ let _ =
       "--dir", Arg.String (fun s -> global_top_dir := s), " set the top dir for file path";
     ] @ args)) (fun _ -> raise (Arg.Bad "")) "echo [option]*"
 
-(** Initialize ssla, if needed *)
+(** Initialize ssl, if needed *)
 let ssl =
   if !ssl_cert <> "" then
     Some Address.{ cert = !ssl_cert; priv = !ssl_priv; protocol = Ssl.TLSv1_3 }
@@ -48,6 +50,7 @@ let filter, get_stats =
     Camlzip.filter ~compress_above:1024 ~buf_size:(16*1024) () in
   (Filter.compose_cross filter_zip filter_stat, get_stats)
 
+(** We build the list of addresses to listen from *)
 let addresses = [Address.make ~addr:!addr ~port:!port ()]
 let addresses = match ssl with
   | None -> addresses
@@ -57,7 +60,7 @@ let addresses = match ssl with
 (** Simple_httpd offers the possibility to use different module for different
     applications or sites managed by the same server. *)
 
-(** First a module common to all web site *)
+(** First a module common to all web sites *)
 module Common = struct
   let addresses = addresses
 

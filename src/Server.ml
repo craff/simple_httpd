@@ -274,7 +274,6 @@ let handle_client_ (self:t) (client:Async.client) : unit =
         (* call handler *)
         handler oc req ~resp;
         log (Req 0) (fun k -> k "response sent after %fms" (1e3 *. (Unix.gettimeofday () -. req.start_time)));
-        if !cont then Async.yield ()
       with
       | Headers.Bad_req (c,s,headers,cookies) ->
          log (Req 0) (fun k -> k "not 200 status: %d (%s)" (c :> int) s);
