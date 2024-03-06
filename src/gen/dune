@@ -1,17 +1,29 @@
+(library
+  (name compile_headers_common)
+  (modules compile_headers_common))
+
 (executable
   (name compile_headers_fun)
+  (libraries compile_headers_common)
   (modules compile_headers_fun))
 
 (executable
   (name compile_headers_mli)
+  (libraries compile_headers_common)
   (modules compile_headers_mli))
+
+(library
+  (name compile_status_common)
+  (modules compile_status_common))
 
 (executable
   (name compile_status_code)
+  (libraries compile_status_common)
   (modules compile_status_code))
 
 (executable
   (name compile_status_mli)
+  (libraries compile_status_common)
   (modules compile_status_mli))
 
 (executable
