@@ -3,10 +3,6 @@
   (modules compile_headers_fun))
 
 (executable
-  (name compile_headers_tbl)
-  (modules compile_headers_tbl))
-
-(executable
   (name compile_headers_mli)
   (modules compile_headers_mli))
 
