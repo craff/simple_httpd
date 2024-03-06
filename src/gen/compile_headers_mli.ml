@@ -2,7 +2,11 @@ open Compile_headers_common
 
 let _ =
   Printf.printf "type header =\n";
-  List.iter (fun h -> Printf.printf "  | %s\n" (to_cstr h)) fields;
+  List.iter (fun (h, s) ->
+      Printf.printf "  | %s\n" (to_cstr h);
+      if s = Deprecated then
+        Printf.printf "[@ocaml.deprecated \"Header %s is deprecated\"]" h
+    ) fields;
   Printf.printf "\n%!"
 
 let _ = Printf.printf "

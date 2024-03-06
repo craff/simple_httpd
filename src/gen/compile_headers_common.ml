@@ -25,8 +25,27 @@ let rec fn acc =
 
 let to_cstr = String.map (function '-' -> '_' | c -> c)
 
-let filename = ["Filename-Multipart"; ""; ""; "Managment of filenames in multipart encoded data as a fake header"; ""]
+let filename = ["Filename-Multipart"; ""; "provisional"; "Managment of filenames in multipart encoded data as a fake header"; ""]
 
 let lines = List.rev (fn [filename])
 
-let fields = List.map (function [] -> assert false | (h::_) -> h) lines
+type status =
+  Permanent
+| Provisional
+| Deprecated
+| Obsoleted
+
+let string_to_status = function
+    "permanent" -> Permanent
+  | "provisional" -> Provisional
+  | "deprecated" -> Deprecated
+  | "obsoleted" -> Obsoleted
+  | _ -> assert false
+
+let fields =
+  List.filter_map
+    (function
+     | (h::_::s::_) ->
+        let s = string_to_status s in
+        if s = Obsoleted then None else Some(h,s)
+     | _ -> assert false) lines
