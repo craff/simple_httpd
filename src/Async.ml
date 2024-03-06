@@ -265,13 +265,7 @@ module Log = struct
 end
 
 let yield () = perform Yield
-(*
-let schedule () =
-  let id = Domain.self () in
-  let time = all_domain_info.((id :> int)).schedule in
-  let now = now () in
-  if now >= time then yield ()
- *)
+
 module Mutex : sig
     type t = mutex
     val create : unit -> t

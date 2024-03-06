@@ -10,6 +10,7 @@ type 'body t = {
     path: string;
     path_components: string list;
     query: (string*string) list;
+    multipart_headers: ((string*Headers.header)*string) list;
     body: 'body;
     start_time: float;
     trailer : (Headers.t * Cookies.t) option ref;
@@ -31,6 +32,7 @@ let start_time self = self.start_time
 let trailer self = !(self.trailer)
 
 let query self = self.query
+let multipart_headers self = self.multipart_headers
 let get_header ?f self h = Headers.get ?f h self.headers
 let get_header_int self h = match get_header self h with
   | Some x -> (try Some (int_of_string x) with _ -> None)
@@ -136,8 +138,10 @@ let parse_req_start ~client ~buf (bs:Input.t)
       with Util.Invalid_query e ->
         fail_raise ~code:bad_request "invalid query: %s" e
     in
+    let multipart_headers = [] (* initialized when parsing a multipart body *)
+    in
     let req = {
-        meth; query; host; client; path; path_components;
+        meth; query; host; client; path; path_components; multipart_headers;
         headers; cookies; http_version=(major, minor); body=bs; start_time;
         trailer = ref None;
       } in
@@ -156,6 +160,7 @@ let parse_multipart_ ~bound req =
   let buf2 = Buffer.create 1024 in
   let _ = Input.read_line ~buf body in
   let query = ref [] in
+  let multipart_headers = ref [] in
   let cont = ref true in
   while !cont do
     let (header, _) = Headers.parse_ ~buf body in
@@ -163,10 +168,20 @@ let parse_multipart_ ~bound req =
       with Some cd -> cd
          | None -> raise Not_found
     in
-    let key =
-      Scanf.sscanf cd "form-data; name = %S " (* FIXME: filename *)
-        String.trim
+    let key, rest =
+      Scanf.sscanf cd "form-data; name = %S%s@\n"
+        (fun str rest -> String.trim str, rest)
     in
+    let _ =
+      try Scanf.sscanf rest " ; filename = %S"
+            (fun str ->
+              multipart_headers := ((key, Headers.Filename_Multipart), String.trim str)
+                                   :: !multipart_headers)
+      with _ -> ()
+    in
+    List.iter (fun (h,v) ->
+        if h <> Headers.Content_Disposition then
+          multipart_headers := ((key, h), v) :: !multipart_headers) header;
     let value =
       Input.read_until ~buf:buf2 ~target:bound body;
       let line = Input.read_line ~buf body in
@@ -176,7 +191,9 @@ let parse_multipart_ ~bound req =
     query := (key, value) :: !query
   done;
   let body = Input.of_string "" in
-  { req with query = List.rev_append !query req.query; body }
+  { req with query = List.rev_append !query req.query;
+             multipart_headers = List.rev_append !multipart_headers req.multipart_headers;
+             body }
 
 let parse_urlencoded size req =
   let r = Bytes.create size in

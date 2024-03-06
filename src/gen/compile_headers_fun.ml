@@ -26,7 +26,9 @@ let rec fn acc =
 
 let to_cstr = String.map (function '-' -> '_' | c -> c)
 
-let lines = List.rev (fn [])
+let filename = ["Filename-Multipart"; ""; ""; "Managment of filenames in multipart encoded data as a fake header"; ""]
+
+let lines = List.rev (fn [filename])
 
 let fields = List.map (function [] -> assert false | (h::_) -> h) lines
 

@@ -582,6 +582,10 @@ module Request : sig
   val query : _ t -> (string*string) list
   (** Decode the query part of an url *)
 
+  val multipart_headers : _ t -> ((string*Headers.header)*string) list
+  (** Contains the headers included for each multipart section in the body.
+    Filename is included as a fake header Headers.Filename_Multipart *)
+
   val start_time : _ t -> float
   (** time stamp (from [Unix.gettimeofday]) after parsing the first line of
     the request *)

@@ -12,6 +12,8 @@ type 'body t = { meth: Method.t (** The method of this request *)
                ; path: string (** full path of the request *)
                ; path_components: string list  (** the part of the path that precedes [query] and is split on ["/"]. *)
                ; query: (string*string) list (** the query parameters in ["?foo=bar,x=y"] *)
+               ; multipart_headers: ((string*Headers.header)*string) list
+               (** headers of each part of a multipart encoded body *)
                ; body: 'body (** The body (its current state, depending on the stage of treatment *)
                ; start_time: float (** unix time when the request was started *)
                ; trailer: (Headers.t * Cookies.t) option ref (** trailer after a chunked body.
@@ -76,7 +78,12 @@ val client : _ t -> Async.client
 (** Request client *)
 
 val query : _ t -> (string*string) list
-(** Decode the query part of the {!field-path} field *)
+(** Decode the query part of the {!field-path} field, or the body in case of a POST method,
+    encode as multipart or url encoded*)
+
+val multipart_headers : _ t -> ((string*Headers.header)*string) list
+(** Contains the headers included for each multipart section in the body.
+    Filename is included as a fake header Headers.Filename_Multipart *)
 
 val body : 'b t -> 'b
 (** Request body, possibly empty. *)
