@@ -54,7 +54,7 @@ let get_log i nb_lines output =
         else
           (Buffer.add_string b "\n"; Buffer.add_string b line; gn ())
       in
-      (try gn () with Unix.(Unix_error(EPIPE,_,_)) | End_of_file -> cont := false);
+      (try gn () with Unix.(Unix_error(EPIPE,_,_)) -> cont := false);
       log_line i (time, client, Buffer.contents b) output;
       Buffer.reset b
     in

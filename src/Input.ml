@@ -273,14 +273,12 @@ let read_all ~buf (self:t) : string =
 
 let read_char (self:t) : char =
   self.fill_buf();
-  if self.len <= 0 then raise End_of_file;
   let c = unsafe_get self.bs self.off in
   self.consume 1;
   c
 
 let peek_char (self:t) : char =
   self.fill_buf();
-  if self.len <= 0 then raise End_of_file;
   let c = unsafe_get self.bs self.off in
   c
 

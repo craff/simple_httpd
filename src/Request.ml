@@ -139,7 +139,6 @@ let parse_req_start ~client ~buf (bs:Input.t)
       } in
     Some req
   with
-  | End_of_file -> None
   | Headers.Bad_req _ as e -> raise e
   | Input.FailParse n ->
      log (Exc 1) (fun k->k "Invalid request line at %d: %S" n (Input.current bs));
@@ -265,7 +264,6 @@ let parse_body_ ~tr_stream ~buf (req:Input.t t) : Input.t t =
     in
     req
   with
-  | End_of_file -> fail_raise ~code:bad_request "unexpected end of file"
   | Headers.Bad_req _ as e -> raise e
   | e -> fail_raise ~code:internal_server_error "exception: %s" (Async.printexn e)
 
