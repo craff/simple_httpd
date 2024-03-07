@@ -7,7 +7,7 @@ type status = {
     domain_ids : Domain.id array;
   }
 
-let max_domain = 16
+let max_domain = 1024
 
 let new_id =
   let c = ref 0 in
@@ -333,7 +333,7 @@ module Ssl = struct include Ssl include Ssl.Runtime_lock end
 
 let rec read c s o l =
   try
-    apply c Unix.read Ssl.read s o l
+    apply c Util.read Ssl.read s o l
   with Unix.(Unix_error((EAGAIN|EWOULDBLOCK),_,_))
      | Ssl.(Read_error(Error_want_read|Error_want_write
                         |Error_want_connect|Error_want_accept|Error_zero_return)) ->        perform_read c s o l
@@ -343,7 +343,7 @@ and perform_read c s o l =
 
 let rec write c s o l =
   try
-    apply c Unix.single_write Ssl.write s o l
+    apply c Util.single_write Ssl.write s o l
   with Unix.(Unix_error((EAGAIN|EWOULDBLOCK),_,_))
     | Ssl.(Write_error(Error_want_read|Error_want_write
                        |Error_want_connect|Error_want_accept|Error_zero_return)) ->
@@ -855,7 +855,7 @@ let accept_loop status listens pipes maxc =
   in
   let nb_socks = Array.length listens in
   while true do
-    try ignore (Polly.wait poll_list nb_socks 60_000_000 treat)
+    try ignore (Polly.wait poll_list nb_socks 1_000_000 treat)
     with
     | Unix.Unix_error((EAGAIN|EWOULDBLOCK),_,_) -> ()
     | exn ->

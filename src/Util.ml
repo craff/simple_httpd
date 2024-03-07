@@ -1,5 +1,5 @@
 
-external raw_single_write : Unix.file_descr -> Bytes.t -> int -> int -> int = "caml_fast_single_write" [@@noalloc]
+external raw_single_write : Unix.file_descr -> Bytes.t -> (int [@untagged]) -> (int [@untagged]) -> int = "caml_byte_fast_single_write" "caml_fast_single_write" [@@noalloc]
 
 external write_error : unit -> 'a = "caml_write_error"
 
@@ -10,7 +10,7 @@ let single_write fd buf ofs len =
   if ret == -1 then write_error();
   ret
 
-external raw_read : Unix.file_descr -> Bytes.t -> int -> int -> int = "caml_fast_read" [@@noalloc]
+external raw_read : Unix.file_descr -> Bytes.t -> (int [@untagged]) -> (int [@untagged]) -> int = "caml_byte_fast_read" "caml_fast_read" [@@noalloc]
 
 external read_error : unit -> 'a = "caml_read_error"
 
