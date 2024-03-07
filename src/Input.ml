@@ -393,20 +393,15 @@ let read_line_into (self:t) ~buf : unit =
     self.fill_buf();
     if self.len=0 then (
       continue := false;
-      if Buffer.length buf = 0 then raise End_of_file;
     );
-    let j = ref self.off in
-    while !j < self.off + self.len && unsafe_get self.bs !j <> '\n' do
-      incr j
-    done;
-    if !j-self.off < self.len then (
-      Buffer.add_subbytes buf self.bs self.off (!j - self.off); (* without \n *)
-      self.consume (!j-self.off+1); (* remove \n/stop *)
+    try
+      let j = index_rec self.bs (self.off + self.len) self.off '\n' in
+      Buffer.add_subbytes buf self.bs self.off (j - self.off); (* without \n *)
+      self.consume (j-self.off+1); (* remove \n/stop *)
       continue := false
-    ) else (
+    with Not_found ->
       Buffer.add_subbytes buf self.bs self.off self.len;
       self.consume self.len;
-    )
   done
 
 let read_line ~buf self : string =
@@ -550,6 +545,11 @@ let fail_parse : t -> 'a = fun self -> raise (FailParse self.off)
 let [@inline] branch_char : (char -> t -> 'a) -> t -> 'a = fun fn self ->
   let c = read_char self in
   fn c self
+
+let [@inline] read_exact_char : char -> 'a -> t -> 'a = fun c r self ->
+  let c' = read_char self in
+  if c <> c' then fail_parse self;
+  r
 
 let [@inline] exact_char : char -> 'a -> t -> 'a = fun c r self ->
   let c' = peek_char self in

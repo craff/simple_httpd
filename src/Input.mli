@@ -143,6 +143,7 @@ val fail_parse : t -> 'a
 val branch_char : (char -> t -> 'a) -> t -> 'a
 
 val exact_char : char -> 'a -> t -> 'a
+val read_exact_char : char -> 'a -> t -> 'a
 
 val exact_string : string -> 'a -> t -> 'a
 

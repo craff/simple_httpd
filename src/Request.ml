@@ -112,7 +112,7 @@ let parse_req_start ~client ~buf (bs:Input.t)
   try
     let meth = Method.parse bs in
     let start_time = Async.register_starttime client in
-    let _ = Input.exact_char ' ' () bs in
+    let _ = Input.read_exact_char ' ' () bs in
     let (path, path_components, query) = Input.read_path ~buf bs in
     let _ = Input.exact_string "HTTP/" () bs in
     let major = Input.int bs in
