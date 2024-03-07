@@ -113,7 +113,7 @@ let parse_req_start ~client ~buf (bs:Input.t)
     let meth = Method.parse bs in
     let start_time = Async.register_starttime client in
     let _ = Input.exact_char ' ' () bs in
-    let path = Input.read_until ~buf ~target:" " bs; Buffer.contents buf in
+    let (path, path_components, query) = Input.read_path ~buf bs in
     let _ = Input.exact_string "HTTP/" () bs in
     let major = Input.int bs in
     let _ = Input.exact_char '.' () bs in
@@ -129,15 +129,7 @@ let parse_req_start ~client ~buf (bs:Input.t)
       | None -> fail_raise ~code:bad_request "No 'Host' header in request"
       | Some h -> h
     in
-    let path_components, query = Util.split_query path in
-    let path_components = Util.split_on_slash path_components in
-    let path_components = List.map Util.percent_decode path_components in
 
-    let query =
-      try Util.(parse_query query)
-      with Util.Invalid_query e ->
-        fail_raise ~code:bad_request "invalid query: %s" e
-    in
     let multipart_headers = [] (* initialized when parsing a multipart body *)
     in
     let req = {

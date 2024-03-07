@@ -1,3 +1,30 @@
+(* copied from Bytes.ml *)
+external unsafe_get : bytes -> int -> char = "%bytes_unsafe_get"
+let index_rec s lim i c =
+  let rec fn i =
+    if i >= lim then raise Not_found else
+      if unsafe_get s i = c then i else fn (i + 1)
+  in fn i
+(*let rec index_rec2 s lim i c1 c2 =
+  if i >= lim then raise Not_found else
+    begin
+      let cr = unsafe_get s i in
+      if cr = c1 then (i, true)
+      else if cr = c2 then (i, false)
+      else index_rec2 s lim (i + 1) c1 c2
+    end*)
+type three = One | Two | Three
+let index_rec3 s lim i c1 c2 c3 =
+  let rec fn i =
+    if i >= lim then raise Not_found else
+      begin
+        let cr = unsafe_get s i in
+        if cr = c1 then (i, One)
+        else if cr = c2 then (i, Two)
+        else if cr = c3 then (i, Three)
+        else fn (i+1)
+      end
+  in fn i
 
 let spf = Printf.sprintf
 
@@ -247,14 +274,14 @@ let read_all ~buf (self:t) : string =
 let read_char (self:t) : char =
   self.fill_buf();
   if self.len <= 0 then raise End_of_file;
-  let c = Bytes.get self.bs self.off in
+  let c = unsafe_get self.bs self.off in
   self.consume 1;
   c
 
 let peek_char (self:t) : char =
   self.fill_buf();
   if self.len <= 0 then raise End_of_file;
-  let c = Bytes.get self.bs self.off in
+  let c = unsafe_get self.bs self.off in
   c
 
 (* put [n] bytes from the input into bytes *)
@@ -272,24 +299,91 @@ let read_exactly_bytes ~too_short (self:t) (bytes:bytes) (n:int) : unit =
 
 let read_until ~buf ~target (self:t) : unit =
   Buffer.clear buf;
-  let pos = ref 0 in
   let len = String.length target in
+  let c0 = target.[0] in
+  let pos = ref 0 in
   while !pos < len do
     self.fill_buf();
-    let c = Bytes.get self.bs self.off in
-    self.consume 1;
-    if c <> target.[!pos] then
-      begin
-        if !pos > 0 then
+    try
+      let i = index_rec self.bs (self.off+self.len) self.off c0 in
+      let r = i - self.off + 1 in
+      if r > self.len then raise Not_found;
+      Buffer.add_subbytes buf self.bs self.off (r - 1);
+      self.consume r;
+      pos := 1;
+      while !pos < len && !pos > 0 do
+        self.fill_buf();
+        let c = unsafe_get self.bs self.off in
+        self.consume 1;
+        if c <> target.[!pos] then
           begin
             Buffer.add_substring buf target 0 !pos;
+            Buffer.add_char buf c;
             pos := 0;
-          end;
-        Buffer.add_char buf c;
-      end
-    else incr pos
+          end
+        else incr pos
+      done
+    with Not_found ->
+      Buffer.add_subbytes buf self.bs self.off self.len;
+      self.consume self.len
   done
 
+let read_path ~buf (self:t) : (string * string list * (string * string) list) =
+  Buffer.clear buf;
+  let path_components = ref [] in
+  let cont = ref true in
+  let cont_query = ref true in
+  let start = ref 0 in
+  let pos = ref 0 in
+  let get_buf len = Buffer.sub buf !start len in
+  while !cont do
+    self.fill_buf();
+    try
+      let (i,nb) = index_rec3 self.bs (self.off+self.len) self.off '/' '?' ' ' in
+      let r = i - self.off + 1 in
+      Buffer.add_subbytes buf self.bs self.off r;
+      pos := !pos + r;
+      self.consume r;
+      let len = !pos - 1 - !start in
+      if len > 0 then path_components := get_buf len :: !path_components;
+      start := !pos;
+      match nb with
+      | One -> ()
+      | Two -> cont := false;
+      | Three -> cont := false; cont_query := false
+    with Not_found ->
+      Buffer.add_subbytes buf self.bs self.off self.len;
+      pos := !pos + self.len;
+      self.consume self.len;
+  done;
+  let query = ref [] in
+  let last_key = ref "" in
+  while !cont_query do
+    self.fill_buf();
+    try
+      let (i,nb) = index_rec3 self.bs (self.off+self.len) self.off '=' '&' ' ' in
+      let r = i - self.off + 1 in
+      Buffer.add_subbytes buf self.bs self.off r;
+      pos := !pos + r;
+      self.consume r;
+      let len = !pos - 1 - !start in
+      (match nb with
+      | One -> last_key := get_buf len
+      | Two -> query := (!last_key, get_buf len) :: !query
+      | Three -> query := (!last_key, get_buf len) :: !query; cont_query := false);
+      start := !pos;
+    with Not_found ->
+      Buffer.add_subbytes buf self.bs self.off self.len;
+      pos := !pos + self.len;
+      self.consume self.len;
+  done;
+  let path = Buffer.sub buf 0 (!pos - 1) in
+  Buffer.clear buf;
+  (*Printf.printf "%s " path;
+  List.iter (fun s -> Printf.printf "@%s" s) !path_components;
+  List.iter (fun (k,v) -> Printf.printf "&%s=%s" k v) !query;
+  Printf.printf "\n%!";*)
+  (path, List.rev !path_components, !query)
 
 (* read a line into the buffer, after clearing it. *)
 let read_line_into (self:t) ~buf : unit =
@@ -302,7 +396,7 @@ let read_line_into (self:t) ~buf : unit =
       if Buffer.length buf = 0 then raise End_of_file;
     );
     let j = ref self.off in
-    while !j < self.off + self.len && Bytes.get self.bs !j <> '\n' do
+    while !j < self.off + self.len && unsafe_get self.bs !j <> '\n' do
       incr j
     done;
     if !j-self.off < self.len then (
