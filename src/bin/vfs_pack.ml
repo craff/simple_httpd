@@ -162,7 +162,7 @@ let emit ~perm ?max_size ?destination oc (l:entry list) : unit =
           end in let open [@warning \"-33\"] M in let open [@warning \"-33\"] %s in
           let input =
           Input.of_output (fun (module Out : Html.Output) ->
-          let open Out [@warning \"-33\"] in
+          let open [@warning \"-33\"] Out in
           let module M = struct %s end in
           ()) in
             ( headers, cookies, input )))\n%!"
