@@ -82,19 +82,16 @@ CAMLprim value caml_efd_semaphore()
   CAMLreturn(Val_int(EFD_SEMAPHORE));
 }
 
-CAMLprim value caml_fast_single_write(value fd, value buf, long ofs,
+long caml_fast_single_write(value fd, value buf, long ofs,
                                       long len)
 {
-  CAMLparam1(buf);
-  int ret;
-
-  ret = write(Int_val(fd), &Byte(buf, ofs), len);
-  CAMLreturn(Val_int(ret));
+  return write(Int_val(fd), &Byte(buf, ofs), len);
 }
 
 CAMLprim value caml_byte_fast_single_write(value fd, value buf, value vofs,
 				   value vlen) {
-  return caml_fast_single_write(fd,buf,Int_val(vofs),Int_val(vlen));
+  CAMLparam0();
+  CAMLreturn(Int_val(caml_fast_single_write(fd,buf,Int_val(vofs),Int_val(vlen))));
 }
 
 CAMLprim void caml_write_error() {
@@ -103,20 +100,15 @@ CAMLprim void caml_write_error() {
   CAMLreturn0;
 }
 
-CAMLprim value caml_fast_read(value fd, value buf, long ofs,
-                                      long len)
+long caml_fast_read(value fd, value buf, long ofs, long len)
 {
-  CAMLparam1(buf);
-  int ret;
-
-
-  ret = read(Int_val(fd), &Byte(buf, ofs), len);
-  CAMLreturn(Val_int(ret));
+  return read(Int_val(fd), &Byte(buf, ofs), len);
 }
 
 CAMLprim value caml_byte_fast_read(value fd, value buf, value vofs,
 				   value vlen) {
-  return caml_fast_read(fd,buf,Int_val(vofs),Int_val(vlen));
+  CAMLparam0();
+  CAMLreturn(Int_val(caml_fast_read(fd,buf,Int_val(vofs),Int_val(vlen))));
 }
 
 CAMLprim void caml_read_error() {

@@ -184,9 +184,9 @@ let html ?log_size ?check ?in_head ?in_body self req headers =
                    let did = status.domain_ids.(i-1) in
                    let pps = Async.all_domain_info.((did :> int)).pendings in
                    echo {html|<li><?=
-                      Printf.sprintf "Thread %d: %d=%d-1 connections (%d)" i
+                      Printf.sprintf "Thread %d: %d connections (%d)" i
                                    (Atomic.get (status.nb_connections.(i-1)))
-                                   (Hashtbl.length pps) (did :> int) ?>|html};
+                                   (did :> int) ?>|html};
                  end
               done
            ?></ul>

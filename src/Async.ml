@@ -134,9 +134,14 @@ type socket_info =
   ; mutable pd : pending_status
   }
 
+type socket_infos =
+  | NoSocket
+  | OneSocket of socket_info
+  | QueueSocket of socket_info list
+
 type domain_info =
   { mutable cur_client : client (* the client currently running *)
-  ; pendings : (Unix.file_descr, socket_info) Hashtbl.t
+  ; pendings : socket_infos array
   (** The main pipe of the domain and the socket of each client are
       added at creation in the table and removed went terminating
       the client.
@@ -153,7 +158,7 @@ type domain_info =
 
 let fake_domain_info =
   { cur_client = fake_client
-  ; pendings = Hashtbl.create 16
+  ; pendings = Array.make Util.maxfd NoSocket
   ; poll_list = Polly.create ()
   ; bytes = Bytes.create 0
   ; last_seen = LL.create ()
@@ -407,7 +412,7 @@ module Io = struct
         Polly.(add info.poll_list r.sock Events.(inp lor out lor et lor rdhup));
       end;
     let c = cur_client () in
-    Hashtbl.replace info.pendings r.sock { ty = Io; client = c; pd = NoEvent }
+    info.pendings.(Util.file_descr_to_int r.sock) <- (OneSocket { ty = Io; client = c; pd = NoEvent })
 
   let create sock =
     let r = { sock
@@ -480,11 +485,9 @@ let loop id st listens pipe timeout handler () =
   (* size for two ints *)
   let pipe_buf = Bytes.create 8 in
   (* table of all sockets *)
-  let pendings : (Unix.file_descr, socket_info) Hashtbl.t
-    = Hashtbl.create 16384
-  in
+  let pendings = Array.make Util.maxfd NoSocket in
   let pipe_info = { ty = Pipe; client = fake_client; pd = NoEvent } in
-  Hashtbl.add pendings pipe pipe_info;
+  pendings.(Util.file_descr_to_int pipe) <- OneSocket pipe_info;
 
   let bytes = Bytes.create (16 * 4_096) in
   let last_seen = LL.create () in
@@ -530,6 +533,18 @@ let loop id st listens pipe timeout handler () =
 
   (* Managment of lock *)
   (* O(1) *)
+
+  let en_queue socket info =
+    let q =
+      match pendings.(Util.file_descr_to_int socket) with
+      | NoSocket -> []
+      | QueueSocket q -> q
+      | OneSocket _ -> assert false
+    in
+
+    pendings.(Util.file_descr_to_int socket) <- QueueSocket (info::q)
+  in
+
   let add_lock : Mutex.t -> (Mutex.t -> unit) -> (unit, unit) continuation -> unit =
     fun lk fn cont ->
     let cl = get_client () in
@@ -546,11 +561,15 @@ let loop id st listens pipe timeout handler () =
         lk.waiting.((did :> int)) <- true
       end;
 
-    Hashtbl.add pendings lk.eventfd info;
-
+    en_queue lk.eventfd info
   in
 
-  let find s = Hashtbl.find_all pendings s in
+  let iter_pendings fn s =
+    match pendings.(Util.file_descr_to_int s) with
+    | NoSocket -> ()
+    | OneSocket i -> fn i
+    | QueueSocket q -> List.iter fn q
+  in
 
   let close ?client exn =
     let c = match client with None -> get_client () | Some c -> c in
@@ -567,7 +586,7 @@ let loop id st listens pipe timeout handler () =
       in
       try apply c gn fn with Unix.Unix_error _ -> ()
     end;
-    Hashtbl.remove pendings c.sock;
+    pendings.(Util.file_descr_to_int c.sock) <- NoSocket;
     Atomic.decr st.nb_connections.(id);
 
     begin
@@ -618,8 +637,8 @@ let loop id st listens pipe timeout handler () =
       let fn _ sock evt =
         let fn info =
           (match info with
-           | { ty = (Lock | Io); _ } ->
-              Hashtbl.remove pendings sock;
+           | { ty = (Io | Lock); _ } ->
+              pendings.(Util.file_descr_to_int sock) <- NoSocket;
            | _ -> ());
           match info with
           | { ty = Pipe; _ } ->
@@ -663,7 +682,7 @@ let loop id st listens pipe timeout handler () =
              in
              p.pd <- TooSoon e
         in
-        List.iter fn (find sock)
+        iter_pendings fn sock
       in
       try
         ignore (Polly.wait poll_list 1000 select_timeout fn);
@@ -699,7 +718,7 @@ let loop id st listens pipe timeout handler () =
          Unix.(setsockopt_float sock SO_RCVTIMEO timeout);
          Unix.(setsockopt_float sock SO_SNDTIMEO timeout);
          Unix.(setsockopt sock TCP_NODELAY true); (* not clearly usefull *)
-         Hashtbl.add pendings sock info;
+         en_queue sock info;
          Polly.(add poll_list sock Events.(inp lor out lor et lor rdhup));
          begin
            match linfo.ssl with
@@ -768,7 +787,6 @@ let loop id st listens pipe timeout handler () =
         | Io {sock; fn; _} ->
            Some (fun (cont : (c,_) continuation) ->
                (get_client ()).acont <- C cont;
-               let infos = find sock in
                let fn info =
                  match info.pd with
                  | NoEvent ->
@@ -777,7 +795,7 @@ let loop id st listens pipe timeout handler () =
                     add_ready (Action({ fn; cont }, info, e))
                  | Wait _ -> assert false
                in
-               List.iter fn infos)
+               iter_pendings fn sock)
         | _ -> None
     )}
   in

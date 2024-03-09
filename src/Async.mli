@@ -154,11 +154,11 @@ module Log : sig
   val fname : int -> string
 end
 
-type socket_info
+type socket_infos
 
 type domain_info =
   { mutable cur_client : client (* the client currently running *)
-  ; pendings : (Unix.file_descr, socket_info) Hashtbl.t
+  ; pendings : socket_infos array
   ; poll_list : Polly.t
   ; bytes : Bytes.t (* a preallocated buffer *)
   ; last_seen : client Util.LinkedList.t

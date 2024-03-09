@@ -1,5 +1,6 @@
 (** {1 Some utils for writing web servers} *)
 
+val maxfd : int
 val single_write : Unix.file_descr -> Bytes.t -> int -> int -> int
 val read : Unix.file_descr -> Bytes.t -> int -> int -> int
 val sendfile : Unix.file_descr -> Unix.file_descr -> int -> int -> int
