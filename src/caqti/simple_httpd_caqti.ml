@@ -91,3 +91,6 @@ module System = struct
 end
 
 include Caqti_connect.Make_unix (System)
+
+(* level is managed by simple_httpd, put maximum for caqti *)
+let _ = Logs.(set_level ~all:true (Some Debug))
