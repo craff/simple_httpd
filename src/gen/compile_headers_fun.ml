@@ -63,18 +63,20 @@ let rec fn first tree k =
   List.iter (fun (_,(c0,t)) ->
       let k = k ^ String.make 1 c0 in
       fn false t k) tree.nodes;
+  let first = if first then "    | '\\r' -> raise End_of_headers\n" else "" in
   let cases = List.map (fun (c,(_,t)) ->
                   Printf.sprintf "    | %s -> fn_%d _input" (both c) t.id) tree.nodes
   in
   let default = Printf.sprintf "    | c -> raise (Invalid_header (%S ^ String.make 1 c))" k in
-  let cases = String.concat "\n" (cases @ [default]) in
-  Printf.printf "let fn_%d = Input.branch_char (fun c _input -> %smatch c with %s\n%s)\n"
-  tree.id
-  (if first then "if c = '\\r' then raise End_of_headers;\n"
-            else "")
+  let cases = String.concat "\n" cases in
+  Printf.printf "let fn_%d = Input.branch_char (fun c _input -> match c with %s\n%s%s%s)\n"
+    tree.id
   (match tree.leaf with
    | None -> ""
-   | Some h -> Printf.sprintf "  ':' -> %s" (to_cstr h)) cases
+   | Some h -> Printf.sprintf "  ':' -> %s" (to_cstr h))
+  first
+  cases
+  default
 
 let _ = fn true tree ""
 
