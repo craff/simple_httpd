@@ -151,25 +151,29 @@ let remove_session_data sess key =
   do_session_data sess (fun l -> (), Util.remove key l)
 
 
-let mk_cookies (session : t)  cookie_policy c =
+let mk_cookies (session : t)  cookie_policy cs =
   let session_key = session_key cookie_policy in
   let session_adr = session_adr cookie_policy in
   let path = cookie_policy.path in
   let max_age = Int64.of_float session.life_time in
-  let c = List.filter_map
+  let cs = List.filter_map
             (fun c ->
               let name = Http_cookie.name c in
               if name = session_key || name = session_adr then
                 None
-              else Option.map (Http_cookie.update_max_age (Some max_age))
-                     (cookie_policy.filter c))
-                     c
+              else
+                Option.map
+                  (fun c -> match Http_cookie.update_max_age (Some max_age) c
+                            with Ok c -> c
+                               | Error _ -> assert false)
+                  (cookie_policy.filter c))
+            cs
   in
-  let c = Cookies.create ~name:session_key ~max_age ~path ~secure:true
-            ~same_site:`Strict session.key c in
-  let c = Cookies.create ~name:session_adr ~max_age ~path ~secure:true
-            ~same_site:`Strict session.addr c in
-  c
+  let cs = Cookies.create ~name:session_key ~max_age ~path ~secure:true
+            ~same_site:`Strict session.key cs in
+  let cs = Cookies.create ~name:session_adr ~max_age ~path ~secure:true
+            ~same_site:`Strict session.addr cs in
+  cs
 
 let select_cookies cookie_policy req =
   let session_key = session_key cookie_policy in

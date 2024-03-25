@@ -28,14 +28,12 @@ let create : ?path:string ->
       ?same_site ?extension ~name value cookies ->
   match create ?path ?domain ?expires ?max_age ?secure ?http_only
           ?same_site ?extension ~name value
-  with Ok c -> add c cookies
-     | Error err -> raise (BadCookies err)
+  with
+  | Ok c -> add c cookies
+  | Error err -> raise (BadCookies err)
 
 let get name cookies =
   List.find (fun c -> Http_cookie.name c = name) cookies
-
-let delete_all cookies =
-  List.map Http_cookie.expire cookies
 
 let delete name cookies =
   try
@@ -44,3 +42,6 @@ let delete name cookies =
     Http_cookie.expire c :: cookies
   with
     Not_found -> cookies
+
+let delete_all cookies =
+  List.map expire cookies
