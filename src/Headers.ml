@@ -55,7 +55,7 @@ let parse_ ~buf (bs:Input.t) : t * Cookies.t =
         (fun () -> (headers,cookies))
      | Invalid_header s ->
         let _ = Input.read_line ~buf bs in
-        Log.f (Req 3) (fun k -> k "ignoring unknown header starting with %s\n%!" s);
+        Log.f (Req 3) (fun k -> k "ignoring unknown header starting with %s" s);
         (fun () -> loop headers cookies)) ()
   in
   loop [] []

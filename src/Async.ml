@@ -241,7 +241,7 @@ module Log = struct
     if Unix.(fstat (Unix.descr_of_out_channel ch)).st_nlink < 1 then
       begin
         (try close_out ch with _ -> ());
-        let ch, fmt as c = open_log id in
+        let _, fmt as c = open_log id in
         !log_files.(id) <- c;
         fmt
       end

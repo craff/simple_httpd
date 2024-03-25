@@ -61,10 +61,10 @@ module System = struct
     type 'a log = ('a, unit) Logs.msgf -> unit
     let gen lvl ?(src=Logs.default) (f: ('a,unit) Logs.msgf) =
       let src = Logs.Src.name src in
-      Log.f (Log.Sch lvl)
+      Log.f (Log.Req lvl)
         (fun g -> f (fun ?(header="") ?(tags=Logs.Tag.empty) ->
                       let sep = if header = "" then "" else ":" in
-                      (fun fmt -> g ("(%s%s%s%a)" ^^ fmt)
+                      (fun fmt -> g ("(%s%s%s%a) " ^^ fmt)
                                     src sep header Logs.Tag.pp_set tags)))
     let err ?src f = gen 0 ?src f
     let warn ?src f = gen 1 ?src f
