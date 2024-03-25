@@ -89,7 +89,7 @@ let pp out self : unit =
   Format.fprintf out "{@[code=%d;@ headers=[@[%a@]];@ body=%a@]}"
     (self.code :> int) Headers.pp self.headers pp_body self.body
 
-let output_ (oc:Output.t) (self:t) : unit =
+let output_ meth (oc:Output.t) (self:t) : unit =
   Output.add_string oc "HTTP/1.1 ";
   Output.add_decimal oc (self.code :> int);
   Output.add_char oc ' ';
@@ -116,21 +116,30 @@ let output_ (oc:Output.t) (self:t) : unit =
       Output.add_string oc v;
       Output.add_char oc '\r';
       Output.add_char oc '\n') headers;
-  Output.add_string oc "\r\n";
   log (Req 2) (fun k->k "output response: %s"
                        (Format.asprintf "%a" pp {self with body=String "<…>"}));
-  begin match body with
-  | String "" | Void -> ()
-  | String s         -> Output.output_str oc s
-  | File {size; fd; close=false} -> Output.sendfile oc size fd
-  | File {size; fd; close=true} ->
-     (try Output.sendfile oc size fd; Unix.close fd
-      with e -> Unix.close fd; raise e)
-  | Stream (str, synch) ->
-     (try
-        Output.output_chunked ?synch oc str;
-        Input.close str;
-      with e -> Input.close str; raise e)
-  end;
+  Output.add_string oc "\r\n";
+  if meth = Method.HEAD then
+    begin
+      match body with
+      | File {size=_; fd; close=true} -> Unix.close fd
+      | Stream (str, _synch) -> Input.close str
+      | _ -> ()
+    end
+  else
+    begin
+      match body with
+      | String "" | Void -> ()
+      | String s         -> Output.output_str oc s
+      | File {size; fd; close=false} -> Output.sendfile oc size fd
+      | File {size; fd; close=true} ->
+         (try Output.sendfile oc size fd; Unix.close fd
+        with e -> Unix.close fd; raise e)
+      | Stream (str, synch) ->
+         (try
+            Output.output_chunked ?synch oc str;
+            Input.close str;
+          with e -> Input.close str; raise e)
+    end;
   Output.flush oc;
   self.post ()

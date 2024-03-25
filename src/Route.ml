@@ -56,14 +56,12 @@ type 'a tree =
   { get : 'a otree
   ; put : 'a otree
   ; post : 'a otree
-  ; head : 'a otree
   ; delete : 'a otree }
 
 let empty_tree () =
   { get = empty_otree ()
   ; put = empty_otree ()
   ; post = empty_otree ()
-  ; head = empty_otree ()
   ; delete = empty_otree () }
 
 let rec compare : type a1 a2 b1 b2.(a1,b1) t -> (a2,b2) t -> int = fun r1 r2 ->
@@ -103,7 +101,7 @@ let insert : type a b c.Method.t -> (a,b) t -> c tree -> ((a,b) t -> c) -> unit 
     | GET -> t.get
     | PUT -> t.put
     | POST -> t.post
-    | HEAD -> t.head
+    | HEAD -> t.get
     | DELETE -> t.delete
   in
   let rec fn : c otree -> (a,b) t -> unit =
@@ -129,7 +127,7 @@ let get : Method.t -> string list -> 'c tree -> string list * 'c cell list =
     | GET -> t.get
     | PUT -> t.put
     | POST -> t.post
-    | HEAD -> t.head
+    | HEAD -> t.get
     | DELETE -> t.delete
   in
   let rec fn t = function
@@ -218,7 +216,6 @@ let add_route_handler
        insert m route t fn
     | None ->
        insert GET route t fn;
-       insert HEAD route t fn;
        insert POST route t fn
   in
   let kn hosts (default, specific) = match hosts with

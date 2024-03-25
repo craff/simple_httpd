@@ -246,7 +246,7 @@ let handle_client_ (self:t) (client:Async.client) : unit =
         begin match Request.get_header ~f:String.trim req Headers.Expect with
           | Some "100-continue" ->
             log (Req 1) (fun k->k "send back: 100 CONTINUE");
-            Response.output_ oc (Response.make_raw ~code:continue "");
+            Response.output_ (Request.meth req) oc (Response.make_raw ~code:continue "");
             (* CHECK !!! *)
           | Some s -> Response.fail_raise ~code:expectation_failed
                         "unknown expectation %s" s
@@ -264,7 +264,7 @@ let handle_client_ (self:t) (client:Async.client) : unit =
           try
             if Headers.get Headers.Connection r.Response.headers = Some"close" then
               cont := false;
-            Response.output_ oc r;
+            Response.output_ (Request.meth req) oc r;
           with Sys_error _
              | Unix.Unix_error _ as e ->
                 cont := false;
@@ -280,7 +280,7 @@ let handle_client_ (self:t) (client:Async.client) : unit =
          log (Req 0) (fun k -> k "not 200 status: %d (%s)" (c :> int) s);
          let res = Response.make_raw ~headers ~cookies ~code:c s in
          begin
-           try Response.output_ oc res
+           try Response.output_ (Request.meth req) oc res
            with Sys_error _ | Unix.Unix_error _ -> ()
          end;
          if not ((c :> int) < 500) then cont := false else Async.yield ()
@@ -296,7 +296,7 @@ let handle_client_ (self:t) (client:Async.client) : unit =
          log (Exc 0) (fun k -> k "internal server error (%s)"
                                     (Async.printexn e));
          cont := false;
-         Response.output_ oc @@
+         Response.output_ (Request.meth req) oc @@
            Response.fail ~code:internal_server_error
              "server error: %s" (Async.printexn e)
   done;

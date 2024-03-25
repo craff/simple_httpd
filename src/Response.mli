@@ -148,4 +148,4 @@ val pp : Format.formatter -> t -> unit
 (** Pretty print the response. *)
 
 (** internal use *)
-val output_ : Output.t -> t -> unit
+val output_ : Method.t -> Output.t -> t -> unit
