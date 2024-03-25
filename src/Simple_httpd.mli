@@ -964,12 +964,9 @@ module Session : sig
   (** remove the session data associated to the givent key *)
   val remove_session_data : t -> 'a key -> unit
 
-(** remove all server side and client side session data by expiring the
-    session cookies and send the given response code and headers (typically a
-    redirect) *)
-val delete_session :
-  ?filter:(Http_cookie.t -> Http_cookie.t option) ->
-  ?error:Response_code.t * Headers.t -> 'a Request.t -> 'b
+  (** remove all server side and client side session data by expiring the
+      session cookies. *)
+  val delete_session : ?cookie_policy:cookie_policy -> 'a Request.t -> Cookies.t
 
 end
 
