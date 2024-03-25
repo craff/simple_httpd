@@ -71,7 +71,7 @@ val add_dir_path :
   dir:string ->
   Server.t -> unit
 
-type dynamic = string Request.t -> Headers.t -> Headers.t * Cookies.t * Input.t
+type dynamic = Html.chaml
 
 type 'a content =
   | String of string * string option

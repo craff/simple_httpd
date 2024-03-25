@@ -55,7 +55,7 @@ let encode_path s = Util.percent_encode ~skip:(function '/' -> true|_->false) s
 
 let is_hidden s = String.length s>0 && s.[0] = '.'
 
-type dynamic = string Request.t -> Headers.t -> Headers.t * Cookies.t * Input.t
+type dynamic = Html.chaml
 
 type 'a content =
   | String of string * string option
@@ -172,7 +172,8 @@ let add_vfs_ ?addresses ?(filter=(fun x -> (x, fun r -> r)))
                ?(prefix="") ~vfs:((module VFS:VFS) as vfs) server : unit=
   let route () =
     if prefix="" then Route.rest
-    else Route.exact_path prefix Route.rest
+    else let prefix = List.rev (String.split_on_char '/' prefix) in
+         List.fold_left (fun acc s -> Route.exact_path s acc) Route.rest prefix
   in
   let check must_exists ope path =
     let path = String.concat "/" path in
