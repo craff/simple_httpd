@@ -5,14 +5,17 @@ let index_rec s lim i c =
     if i >= lim then raise Not_found else
       if unsafe_get s i = c then i else fn (i + 1)
   in fn i
-(*let rec index_rec2 s lim i c1 c2 =
-  if i >= lim then raise Not_found else
-    begin
-      let cr = unsafe_get s i in
-      if cr = c1 then (i, true)
-      else if cr = c2 then (i, false)
-      else index_rec2 s lim (i + 1) c1 c2
-    end*)
+let index_rec2 s lim i c1 v1 c2 v2 =
+  let rec fn i =
+    if i >= lim then raise Not_found else
+      begin
+        let cr = unsafe_get s i in
+        if cr = c1 then (i, v1)
+        else if cr = c2 then (i, v2)
+        else fn (i + 1)
+      end
+  in
+  fn i
 type three = One | Two | Three
 let index_rec3 s lim i c1 c2 c3 =
   let rec fn i =
@@ -446,9 +449,9 @@ let read_line_into (self:t) ~buf : unit =
       continue := false;
     );
     try
-      let j = index_rec self.bs (self.off + self.len) self.off '\r' in
+      let j, nb = index_rec2 self.bs (self.off + self.len) self.off '\r' 2 '\n' 1 in
       Buffer.add_subbytes buf self.bs self.off (j - self.off); (* without \r\n *)
-      self.consume (j-self.off+2); (* remove \n/stop *)
+      self.consume (j-self.off+nb); (* remove \n/stop *)
       continue := false
     with Not_found ->
       Buffer.add_subbytes buf self.bs self.off self.len;
