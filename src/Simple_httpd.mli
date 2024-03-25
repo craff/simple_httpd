@@ -900,14 +900,29 @@ module Session : sig
   (** [new_key ()] creates a new key, to associate data to.*)
   val new_key : unit -> 'a key
 
+  (** element of this type control the managment of cookies *)
+  type cookie_policy =
+    { path : string (** cookies path *)
+    ; base : string (** cookies base name, the cookie's name will be
+                        "__Host-"^basename^suffix *)
+    ; life : float  (** session life time in seconds *)
+    ; filter : Http_cookie.t -> Http_cookie.t option
+      (** tells which cookies should be deleted together with the session key
+          and address *)}
+
+  (**   { path = "/"
+        ; base = "Session"
+        ; filter = fun _ -> None } *)
+  val default_cookie_policy : cookie_policy
+
   (** same as above but with a cleanup function called on the associated data
       when a session holding this data is closed. Typically to close a handle
       to an external ressource *)
   val new_key_with_cleanup : ('a -> unit) -> 'a key
 
-  val start_check: ?session_life_time:float ->
+  val start_check: ?create:bool ->
             ?check:(t -> bool) ->
-            ?filter:(Http_cookie.t -> Http_cookie.t option) ->
+            ?cookie_policy:cookie_policy ->
             ?error:(Response_code.t*Headers.t) ->
             'a Request.t -> Cookies.t * t
    (** Check or create a new session and add the session cookies to the
@@ -918,10 +933,9 @@ module Session : sig
 
        If it fails, all cookies in the request are expired by the resposne sent.
 
-      @param session_life_time: session are destroyed if not accessed after
-        this time.
       @param initial value for the session data (default: NoData)
       @param finalise function called on the session data when it is detroyed.
+      @param create if false no session is created if there was none
       @param check some extra check, the session will be destroy if it fails.
       @param filter this parameter is called on all request cookies.  If the
         filter return None, the cookie is expired. The default is to keep all
@@ -930,15 +944,15 @@ module Session : sig
       @param error status code and hadears to send in case of error. Can
         be used to redirect to a login or error page. *)
 
-  val filter : ?session_life_time:float ->
+  val filter :
             ?check:(t -> bool) ->
-            ?filter:(Http_cookie.t -> Http_cookie.t option) ->
+            ?cookie_policy:cookie_policy ->
             ?error:(Response_code.t*Headers.t) ->
             'a Filter.t
   (** Same as above as a filter. The cookies are added to the response. *)
 
   (** get the client session is any. No check is performed on the session cookie *)
-  val get_session : 'a Request.t -> t option
+  val get_session : ?cookie_policy:cookie_policy -> 'a Request.t -> t option
 
   (** get the session data associated to the given key from a session.
       raises [Not_found] if the key is not present *)
@@ -1443,31 +1457,52 @@ module Auth : sig
         login/password. Returns the information about user otherwise. *)
     val check : login:string -> password:string -> t option
 
-    (** The url of the login page. It should return a request with two values:
-        ["login"] of type string and ["password"] of type string too. Password
-        should be encrypted by the [check] function, for instance using
-        [Digest.string]. *)
+    (** The url of the login page. It should return a POST request with two
+        values: ["login"] of type string and ["password"] of type string
+        too. Password should be encrypted by the [check] function, for
+        instance using [Digest.string]. The login_url can be the url of the
+        [login_page] provided by the functor below. *)
     val login_url : string
+
+    (** Cookie policy, check {!Session.cookie_policy}*)
+    val cookie_policy : Session.cookie_policy
+
   end
 
-  module Make(Lohin:Login) : sig
-    (* a basic default login page that you may associate to the given login_url*)
-    val login_page : Html.chaml
+  module Make(Login:Login) : sig
+    (** a basic default login page that you may associate to the given login_url.
+       If will both validate login and display the given page if the user is not logged.
+       The page can be adapted using the optional argument. In case of succesful login,
+       the user is redirected to the destination (empty url = same page, by default) *)
+    val login_page : ?destination:string -> ?page:Html.chaml -> Html.chaml
 
-    (* [logout logout request]
-       logout by destroying the login session date, but not the session.
-       use {!Session.delete_session} to remove the session. Redirect to the
-       given url after logout *)
-    val logout_page : string -> 'a Request.t -> 'b
+    (** logout by destroying the login session data and cookies and send back
+        to the destination [login_url] by default. If a page is provided, there is no
+        redirection, the given page is directly displayed. *)
+    val logout_page : ?destination:string -> ?page:Html.chaml -> Html.chaml
 
-    (* checking session *)
-    val check : 'a Request.t -> (Cookies.t * Session.t)
+    (** checking session, with proper type for defaut parameter of {!Server} functions *)
+    val check : ?nologin:(Response_code.t * Headers.t * string) ->
+                ?check_data:(Login.t -> bool)
+                -> 'a Request.t -> (Cookies.t * Session.t)
+
+    (** A way to check the session and get the data associated to the session
+        in the handler. One may also give a different response when not logged *)
+    val check_handler : ?not_logged:('a Request.t -> Response.t)
+      -> ('a Request.t -> Cookies.t -> Login.t -> Response.t)
+      -> ('a Request.t -> Response.t)
+
+    (** check session as a {!Filter} *)
+    val check_filter :
+      ?nologin:(Response_code.t * Headers.t * string) ->
+      ?check_data:(Login.t -> bool)
+      -> 'a Filter.t
   end
 end
 
 (** A module to get detail status about the server *)
 module Status : sig
-  val html : ?log_size:int -> ?check:(string Request.t -> Cookies.t * Session.t)
+  val html : ?log_size:int
              -> ?in_head : Html.elt -> ?in_body : Html.elt
              -> Server.t -> Html.chaml
 (** Returns a detailed server status as html, including
@@ -1484,8 +1519,7 @@ module Status : sig
     the parameter ["nb"] of the query will be used, and if it not provided or
     is not an integer, 100 is used.
 
-    You can protect this page by using the [check] parameter that may use
-    {!Session.start_check}. You may add content at the end of the head and
+    You may add content at the end of the head and
     beginning of the body using [in_head] and [in_body] parameters *)
 end
 
@@ -1500,14 +1534,10 @@ module Stats : sig
     ["N requests (average response time:
        Tms = T1ms (read) + T2ms (build) + T3ms (send))"]
 
-    You can protect this page by using the [check] parameter that may use
-    {!Session.start_check}. You may add content at the end of the head and
+    You may add content at the end of the head and
     beginning of the body using [in_head] and [in_body] parameters *)
   val filter : unit -> 'a Filter.t *
-                         (?check:(string Request.t -> Cookies.t * Session.t)
-                          -> ?in_head: Html.elt
-                          -> ?in_body: Html.elt
-                          -> Html.chaml)
+                         (?in_head: Html.elt -> ?in_body: Html.elt                         -> Html.chaml)
 
 end
 

@@ -75,11 +75,14 @@ module Common = struct
         Some () else None
 
     let login_url = "/login"
+
+    let cookie_policy = Session.default_cookie_policy
   end
 
   module Secure = Auth.Make(Login)
 
-  let check = Secure.check
+  let filter_auth = Filter.compose_cross filter Secure.check_filter
+
   let in_body = {funml|
                  <div style="float: right;">
                    <button onclick="window.location.href='/logout'">
@@ -89,13 +92,13 @@ module Common = struct
 
   module Init(Init:Host.Init) = struct
     (** a status page accessible as /status *)
-    let _ = Init.add_route_handler_chaml ~filter Route.(exact "status" @/ return)
-              (Status.html ~check ~in_body Init.server)
+    let _ = Init.add_route_handler_chaml ~filter:filter_auth Route.(exact "status" @/ return)
+              (Status.html ~in_body Init.server)
 
     (** Access to the statistics computed by the filter*)
     let _ =
-      Init.add_route_handler_chaml ~filter
-        Route.(exact "stats" @/ return) (get_stats ~check ~in_body)
+      Init.add_route_handler_chaml ~filter:filter_auth
+        Route.(exact "stats" @/ return) (get_stats ~in_body)
 
     (** Login page for the status and statistics *)
     let _ =
@@ -104,8 +107,8 @@ module Common = struct
 
     (** Logout *)
     let _ =
-      Init.add_route_handler ~filter
-        Route.(exact "logout" @/ return) (Secure.logout_page "/")
+      Init.add_route_handler_chaml ~filter
+        Route.(exact "logout" @/ return) Secure.logout_page
 
     let _ =
       Init.add_route_handler_chaml ~filter Route.return

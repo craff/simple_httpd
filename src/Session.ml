@@ -50,14 +50,32 @@ let refresh session =
     Mutex.unlock mutex_list;
     raise e
 
-let get_session (type a) (req : a Request.t) =
-  let client = Request.client req in
-  match client.session with
+type cookie_policy =
+  { path : string
+  ; base : string
+  ; life : float
+  ; filter : Http_cookie.t -> Http_cookie.t option }
+
+let default_cookie_policy =
+  { path = "/"
+  ; base = "Session"
+  ; life = 3600.0
+  ; filter = fun c ->
+             let name = Http_cookie.name c in
+             if name.[0] = '_' then None else Some c }
+
+
+let prefix_sec info =
+  if info.path = "/" then "Host" else "Secure"
+let session_key info =
+  Printf.sprintf "__%s-%s-Key" (prefix_sec info) info.base
+let session_adr info =
+  Printf.sprintf "__%s-%s-Adr" (prefix_sec info) info.base
+
+let get_client_session client key =
+  match Async.(client.session) with
   | Some l -> Some (LinkedList.get l)
   | None ->
-     let key = Option.map Http_cookie.value
-                 (Request.get_cookie req "SESSION_KEY")
-     in
      match key with
      | None -> None
      | Some key ->
@@ -65,6 +83,12 @@ let get_session (type a) (req : a Request.t) =
         let r = Hashtbl.find_opt sessions_tbl key in
         Mutex.unlock mutex_tbl;
         Option.map LinkedList.get r
+
+let get_session (type a) ?(cookie_policy=default_cookie_policy) (req : a Request.t) =
+  let key = Option.map Http_cookie.value
+              (Request.get_cookie req (session_key cookie_policy))
+  in
+  get_client_session (Request.client req) key
 
 let start_session ?(session_life_time=3600.0) client key =
   try
@@ -126,49 +150,77 @@ let set_session_data (sess : t) key x =
 let remove_session_data sess key =
   do_session_data sess (fun l -> (), Util.remove key l)
 
-let mk_cookies (session : t) filter c =
+
+let mk_cookies (session : t)  cookie_policy c =
+  let session_key = session_key cookie_policy in
+  let session_adr = session_adr cookie_policy in
+  let path = cookie_policy.path in
   let max_age = Int64.of_float session.life_time in
   let c = List.filter_map
             (fun c ->
               let name = Http_cookie.name c in
-              if name = "SESSION_KEY" || name = "SESSION_ADDR" then
+              if name = session_key || name = session_adr then
                 None
-              else match filter c with
-                   | Some x -> Some x
-                   | None -> Some (Http_cookie.expire c)) c
+              else Option.map (Http_cookie.update_max_age (Some max_age))
+                     (cookie_policy.filter c))
+                     c
   in
-  let c = Cookies.create ~name:"SESSION_KEY" ~max_age
+  let c = Cookies.create ~name:session_key ~max_age ~path ~secure:true
             ~same_site:`Strict session.key c in
-  let c = Cookies.create ~name:"SESSION_ADDR" ~max_age
+  let c = Cookies.create ~name:session_adr ~max_age ~path ~secure:true
             ~same_site:`Strict session.addr c in
   c
 
-let start_check ?(session_life_time=3600.0)
+let select_cookies cookie_policy req =
+  let session_key = session_key cookie_policy in
+  let session_adr = session_adr cookie_policy in
+  List.filter_map
+    (fun c ->
+      let name = Http_cookie.name c in
+      if name = session_key || name = session_adr then
+        Some c
+      else cookie_policy.filter c) (Request.cookies req)
+
+let start_check
+      ?(create=true)
       ?(check=fun (_:t) -> true)
-      ?(filter=fun x -> Some x)
+      ?(cookie_policy=default_cookie_policy)
       ?(error=(bad_request, [])) req =
+  let session_life_time = cookie_policy.life in
   let cookies = Request.cookies req in
   let client = Request.client req in
+  let session_key = session_key cookie_policy in
+  let session_adr = session_adr cookie_policy in
   let key = Option.map Http_cookie.value
-              (Request.get_cookie req "SESSION_KEY")
+              (Request.get_cookie req session_key)
   in
-  let (session, old) = start_session ~session_life_time client key in
+  let exception Bad of t in
   try
-    if not (check session) then raise Exit;
+    let (session, old) =
+      if create then start_session ~session_life_time client key
+      else match get_client_session client key with
+           | None -> raise Exit
+           | Some session -> (session, true)
+    in
+    let bad () = raise (Bad session) in
+    if not (check session) then bad ();
     let cookies =
       if old then
         begin
-          begin
-            match (key, Request.get_cookie req "SESSION_ADDR") with
+          let session, cookies =
+            match (key, Request.get_cookie req session_adr) with
             | (Some key, Some addr) when
                    key = session.key &&
-                     Http_cookie.value addr = session.addr -> ()
-            | (None, None) when cookies = [] -> ()
-            | _ -> raise Exit
-            | exception _ -> raise Exit
-          end;
+                     Http_cookie.value addr = session.addr -> (session, cookies)
+            | (None, None) when cookies = [] -> (session, cookies)
+            | _ ->
+               delete_session session;
+               if create then (fst (start_session ~session_life_time client key), [])
+               else raise Exit
+            | exception _ -> bad ()
+          in
           let addr = Util.addr_of_sock client.sock in
-          if addr <> session.addr then raise Exit;
+          if addr <> session.addr then bad ();
           cookies
         end
       else
@@ -176,27 +228,31 @@ let start_check ?(session_life_time=3600.0)
           Cookies.delete_all cookies
         end
     in
-    (mk_cookies session filter cookies, session)
-  with Exit ->
-    delete_session session;
-    let (code, headers) = error in
-    let cookies = Cookies.delete_all cookies in
-    Response.fail_raise ~headers ~cookies ~code "Delete session"
+    (mk_cookies session cookie_policy cookies, session)
+  with Bad session ->
+        delete_session session;
+        let (code, headers) = error in
+        let cookies = Cookies.delete_all (select_cookies cookie_policy req) in
+        Response.fail_raise ~headers ~cookies ~code "Delete session"
+     | Exit ->
+        let (code, headers) = error in
+        let cookies = Cookies.delete_all (select_cookies cookie_policy req) in
+        Response.fail_raise ~headers ~cookies ~code "Delete session"
 
-let delete_session
-      ?(filter=fun x -> Some x)
-      ?(error=(bad_request, [])) req =
-  let check _ = false in
-  ignore (start_check ~filter ~error ~check req);
-  assert false
+let delete_session ?(cookie_policy=default_cookie_policy) req =
+  let session = get_session req in
+  begin
+    match session with
+    | None -> ()
+    | Some session -> delete_session session
+  end;
+  Cookies.delete_all (select_cookies cookie_policy req)
 
 let filter
-      ?(session_life_time=3600.0)
       ?(check=fun _ -> true)
-      ?(filter=fun x -> Some x)
+      ?(cookie_policy=default_cookie_policy)
       ?(error=(bad_request, [])) req =
-  let (cookies, _) = start_check ~session_life_time ~check ~filter
-                       ~error req in
+  let (cookies, _) = start_check ~check ~cookie_policy ~error req in
   let gn = Response.update_headers
              (fun h -> Headers.set_cookies cookies h) in
   (req, gn)
