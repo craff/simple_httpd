@@ -28,7 +28,7 @@ let add_ssl ssl =
   Util.update_atomic all_ssl (fun old_ssl -> ssl :: old_ssl)
 
 let forward_log
-    : (((('a, out_channel, unit, unit) format4 -> 'a) -> unit) -> unit) ref
+    : (((('a, Format.formatter, unit, unit) format4 -> 'a) -> unit) -> unit) ref
     = ref (fun _ -> assert false)
 
 let ssl_reload_period = ref (24 * 3600)

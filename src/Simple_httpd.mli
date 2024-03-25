@@ -366,7 +366,7 @@ module Log : sig
   (** The log function. It must be used as
       [ Log.f ~lvl:n (fun k -> k fmt ...) ] using [ Printf ] format. *)
   val f : log_lvl ->
-          ((('a, out_channel, unit, unit) format4 -> 'a) -> unit) -> unit
+          ((('a, Format.formatter, unit, unit) format4 -> 'a) -> unit) -> unit
 end
 
 (** Module providing Mutex thats works with our [Async] module above *)
@@ -382,6 +382,15 @@ module Mutex : sig
   val try_lock : t -> bool
   val lock : t -> unit
   val unlock : t -> unit
+end
+
+module Semaphore : sig
+  type t
+  val create : int -> t
+  val decr : t -> unit
+  val try_decr : t -> bool
+  val incr : t -> unit
+  val delete : t -> unit
 end
 
 (** Module for creating process to communicate with.

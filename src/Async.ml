@@ -38,6 +38,7 @@ type client =
   ; mutable start_time : float (* last time request started *)
   ; mutable timeout_ref : float
   ; mutable locks : mutex list
+  ; mutable slocks : semaphore list
   ; buf : Buffer.t (* used to parse headers *)
   ; mutable last_seen_cell : client LL.cell
   }
@@ -48,6 +49,13 @@ and mutex =
   { mutable eventfd : Unix.file_descr
   ; mutable owner   : mutex_state
   ; waiting : bool array (* which domain has added the mutex to epoll, the
+                            first time it had a client blocked while trying to
+                            lock *)
+  }
+
+and semaphore =
+  { mutable seventfd : Unix.file_descr
+  ; swaiting : bool array (* which domain has added the mutex to epoll, the
                             first time it had a client blocked while trying to
                             lock *)
   }
@@ -76,6 +84,7 @@ let fake_client =
       start_time = 0.0;
       timeout_ref = 0.0;
       locks = [];
+      slocks = [];
       accept_by = 0;
       last_seen_cell = LL.fake_cell
     }
@@ -89,6 +98,7 @@ type _ Effect.t +=
    | Yield : unit Effect.t
    | Sleep : float -> unit Effect.t
    | Lock  : mutex * (mutex -> unit) -> unit Effect.t
+   | Decr  : semaphore * (semaphore -> unit) -> unit Effect.t
 
 type 'a pending =
   { fn : unit -> 'a
@@ -118,6 +128,7 @@ type socket_type =
   | Client (* main socket serving the http connexion *)
   | Pipe   (* pipe to receive the new connection *)
   | Lock   (* mutex *)
+  | Decr   (* semaphore *)
 
 let printexn e =
   match e with
@@ -222,19 +233,19 @@ module Log = struct
     if size <= 0 then
       Printf.fprintf ch "%.6f %2d %10d Log0: log created\n%!"
         (Unix.gettimeofday ()) i (-1);
-    ch
+    ch, Format.formatter_of_out_channel ch
 
   let get_log id =
-    let ch = !log_files.(id) in
+    let ch, fmt = !log_files.(id) in
     (* reopen log file it no link: logrotate might delete it*)
     if Unix.(fstat (Unix.descr_of_out_channel ch)).st_nlink < 1 then
       begin
         (try close_out ch with _ -> ());
-        let ch = open_log id in
-        !log_files.(id) <- ch;
-        ch
+        let ch, fmt as c = open_log id in
+        !log_files.(id) <- c;
+        fmt
       end
-    else ch
+    else fmt
 
   let set_log_folder ?(basename="log") ?(perm=0o700) folder nb_dom =
     log_perm := perm;
@@ -243,7 +254,7 @@ module Log = struct
     if not (Sys.file_exists folder) then Sys.mkdir folder perm;
     if not (Sys.is_directory folder) then invalid_arg "set_log_folder";
     try
-      let a = Array.init nb_dom (fun i -> open_log i) in
+      let a = Array.init nb_dom (function i -> open_log i) in
       log_files := a
     with e -> failwith ("set_log_folder: " ^ Printexc.to_string e)
 
@@ -253,12 +264,13 @@ module Log = struct
           let id = Domain.((self() :> int)) in
           let cl = global_get_client () in
           let ch =
-            if id < Array.length !log_files then get_log id else stdout
+            if id < Array.length !log_files then get_log id else
+              Format.std_formatter
           in
           let log,lvl = str_log ty in
-          Printf.fprintf ch "%.6f %2d %10d %s%d: "
+          Format.fprintf ch "%.6f %2d %10d %s%d: "
             (Unix.gettimeofday ()) id cl.id log lvl;
-          Printf.kfprintf (fun oc -> Printf.fprintf oc "\n%!") ch fmt
+          Format.kfprintf (fun oc -> Format.fprintf oc "\n%!") ch fmt
         )
     )
 
@@ -332,6 +344,51 @@ module Mutex : sig
 
   let rec lock : t -> unit = fun lk ->
     if not (try_lock lk) then perform (Lock (lk, lock))
+end
+
+module Semaphore : sig
+    type t = semaphore
+    val create : int -> t
+    val decr : t -> unit
+    val try_decr : t -> bool
+    val incr : t -> unit
+    val delete : t -> unit
+  end = struct
+  external raw_eventfd  : int -> int -> Unix.file_descr = "caml_eventfd"
+  (*external raw_efd_cloexec   : unit -> int = "caml_efd_cloexec"*)
+  external raw_efd_nonblock  : unit -> int = "caml_efd_nonblock"
+  external raw_efd_semaphore  : unit -> int = "caml_efd_semaphore"
+
+  let flags = raw_efd_nonblock() lor raw_efd_semaphore ()
+
+  type t = semaphore
+
+  let delete r =
+    try Unix.close r.seventfd with _ -> ()
+
+  let create n =
+    let r =
+      { seventfd = raw_eventfd n flags
+      ; swaiting = Array.make max_domain false}
+    in
+    Gc.finalise delete r;
+    r
+
+  let one = let r = Bytes.create 8 in Bytes.set_int64_ne r 0 1L; r
+
+  let incr lk =
+    assert (Util.single_write lk.seventfd one 0 8 = 8)
+
+  let try_decr lk =
+    let buf = Bytes.create 8 in
+    try assert(Util.read lk.seventfd buf 0 8 = 8);
+        let cl = global_get_client () in
+        cl.slocks <- lk :: cl.slocks;
+        true
+    with Unix.(Unix_error((EAGAIN | EWOULDBLOCK), _, _)) -> false
+
+  let rec decr : t -> unit = fun lk ->
+    if not (try_decr lk) then perform (Decr (lk, decr))
 end
 
 module Ssl = struct include Ssl include Ssl.Runtime_lock end
@@ -564,6 +621,25 @@ let loop id st listens pipe timeout handler () =
     en_queue lk.eventfd info
   in
 
+  let add_decr : Semaphore.t -> (Semaphore.t -> unit) -> (unit, unit) continuation -> unit =
+    fun lk fn cont ->
+    let cl = get_client () in
+    cl.acont <- C cont;
+    let fn () = fn lk in
+    let info = { ty = Decr ; client = cl
+               ; pd = Wait { fn; cont }
+               }
+    in
+    (* may be another client is already waiting *)
+    if not lk.swaiting.((did :> int)) then
+      begin
+        Polly.(add poll_list lk.seventfd Events.(inp lor et));
+        lk.swaiting.((did :> int)) <- true
+      end;
+
+    en_queue lk.seventfd info
+  in
+
   let iter_pendings fn s =
     match pendings.(Util.file_descr_to_int s) with
     | NoSocket -> ()
@@ -637,7 +713,7 @@ let loop id st listens pipe timeout handler () =
       let fn _ sock evt =
         let fn info =
           (match info with
-           | { ty = (Io | Lock); _ } ->
+           | { ty = (Io | Lock | Decr); _ } ->
               pendings.(Util.file_descr_to_int sock) <- NoSocket;
            | _ -> ());
           match info with
@@ -704,7 +780,7 @@ let loop id st listens pipe timeout handler () =
                       ; peer
                       ; connected = true; session = None
                       ; start_time = now; timeout_ref = now
-                      ; locks = []
+                      ; locks = []; slocks = []
                       ; acont = N; buf = Buffer.create 4_096
                       ; accept_by = index; last_seen_cell = LL.fake_cell
                       }
@@ -784,6 +860,9 @@ let loop id st listens pipe timeout handler () =
         | Lock(lk, fn) ->
            Some (fun (cont : (c,_) continuation) ->
                add_lock lk fn cont)
+        | Decr(lk, fn) ->
+           Some (fun (cont : (c,_) continuation) ->
+               add_decr lk fn cont)
         | Io {sock; fn; _} ->
            Some (fun (cont : (c,_) continuation) ->
                (get_client ()).acont <- C cont;

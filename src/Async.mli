@@ -34,6 +34,15 @@ module Mutex : sig
   val delete : t -> unit
 end
 
+module Semaphore : sig
+  type t
+  val create : int -> t
+  val decr : t -> unit
+  val try_decr : t -> bool
+  val incr : t -> unit
+  val delete : t -> unit
+end
+
 type any_continuation (** internal use only *)
 
 (** Record describing clients *)
@@ -52,6 +61,7 @@ type client = private {
     mutable timeout_ref : float;      (** reference for timeout, usually start_time,
                                           except if [Async.reset_timeout] is used*)
     mutable locks : Mutex.t list;     (** all lock, locked by this client *)
+    mutable slocks : Semaphore.t list;(** all semaphore, locked by this client *)
     buf : Buffer.t;                   (** used to parse headers *)
     mutable last_seen_cell : client Util.LinkedList.cell;
      (** pointer to the linked list used to detect timeout *)
@@ -117,6 +127,7 @@ type socket_type =
   | Client
   | Pipe
   | Lock
+  | Decr
 
 exception NoRead
 exception NoWrite
@@ -145,7 +156,7 @@ module Log : sig
     | Exc of int
     | Aut of int
   val f : log_lvl ->
-          ((('a, out_channel, unit, unit) format4 -> 'a) -> unit) -> unit
+          ((('a, Format.formatter, unit, unit) format4 -> 'a) -> unit) -> unit
 
   val log_folder : string ref
   val log_basename : string ref

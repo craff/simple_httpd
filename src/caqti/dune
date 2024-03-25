@@ -1,0 +1,7 @@
+(library
+ (name simple_httpd_caqti)
+ (public_name simple_httpd.caqti)
+ (libraries
+    caqti
+    domain-name ipaddr
+    logs unix simple_httpd))

@@ -38,7 +38,7 @@ val set_ssl_reload_period : int -> unit
 val register : (t -> 'a) -> t list -> t array * 'a array
 val index : t -> index
 val forward_log
-    : ((((string -> string -> string -> unit, out_channel, unit, unit) format4 ->
+    : ((((string -> string -> string -> unit, Format.formatter, unit, unit) format4 ->
          string -> string -> string -> unit) -> unit) -> unit) ref
 val dummy : t
 val set_index_ref : t -> index ref -> unit
