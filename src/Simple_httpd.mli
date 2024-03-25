@@ -262,7 +262,14 @@ module Input : sig
   (** Open a file with given name, and obtain an input stream
       on its content. When the function returns, the stream (and file) are closed. *)
 
+  val end_of_input : t -> bool
+  (** returns true if we are at the end of the input (self.len = 0 and fill returns 0) *)
+
+  val eof : char
+  (** the chracter '\255'*)
+
   val read_char : t -> char
+  (** read one char, returns {!Input.eof} u=if the input buffer is empty *)
 
   val read_line : buf:Buffer.t -> t -> string
   (** Read a line from the stream.
@@ -286,8 +293,8 @@ module Input : sig
         @param too_short is called if [bs] closes with still [n] bytes remaining
    *)
 
-  (** The following are a minimal set of non backtracking parsing combinators,
-      used to parse the first request line with no allocation. *)
+  (** The following are a minimal set of non backtracking parsing combinators
+      with no allocation. They use {!Input.eof} when the stream is empty*)
   exception FailParse of int
   val fail_parse : t -> 'a
   (** fail, return the current offset *)
@@ -302,10 +309,12 @@ module Input : sig
   (** parse exactly the given string *)
 
   val star : (t -> unit) -> t -> unit
-  (** repeat parsing 0 or more time, fail if partial parsing is possible *)
+  (** repeat parsing 0 or more time, fail if partial parsing of one more item
+      is possible *)
 
   val plus : (t -> unit) -> t -> unit
-  (** repeat parsing 1 or more time, fail if partial parsing is possible *)
+  (** repeat parsing 1 or more time, fail if partial parsing of one more item
+      is possible *)
 
   val blank : t -> unit
   (** parse blank charaters *)

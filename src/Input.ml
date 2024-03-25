@@ -61,7 +61,6 @@ let make ?(bs=Bytes.create @@ 16 * 1024) ?(close=ignore) ~consume ~fill () : t =
         if self.len = 0 then fill self);
     consume=
       (fun n ->
-         assert (n <= self.len);
          consume self n
       );
     _rest=();
@@ -130,8 +129,7 @@ let of_io_ ?(buf_size=16 * 1024) ~close (sock:Io.t) : t =
     ~fill:(fun self ->
         if self.len <= 0 then (
           self.off <- 0;
-          self.len <-
-            Io.read sock self.bs 0 (Bytes.length self.bs);
+          self.len <- Io.read sock self.bs 0 (Bytes.length self.bs)
         )
       )
     ()
@@ -151,7 +149,6 @@ let rec iter f (self:t) : unit =
 let to_chan (oc:out_channel) (self:t) = iter (output oc) self
 
 let of_bytes ?(i=0) ?len (bs:bytes) : t =
-  (* invariant: !i+!len is constant *)
   let len =
     match len with
     | Some n ->
@@ -164,7 +161,6 @@ let of_bytes ?(i=0) ?len (bs:bytes) : t =
       ~bs ~fill:ignore
       ~close:(fun self -> self.len <- 0)
       ~consume:(fun self n ->
-          assert (n>=0 && n<= self.len);
           self.off <- n + self.off;
           self.len <- self.len - n
         )
@@ -176,6 +172,26 @@ let of_bytes ?(i=0) ?len (bs:bytes) : t =
 
 let of_string s : t =
   of_bytes (Bytes.unsafe_of_string s)
+
+(* mainly for tests *)
+let of_strings ?(buf_size=16 * 1024) ls : t =
+  let buf_size =
+    List.fold_left (fun s str -> max s (String.length str)) buf_size ls
+  in
+  let ls = ref ls in
+  make ~bs:(Bytes.make buf_size ' ')
+    ~fill:(fun self ->
+    if self.len <= 0 then
+      match !ls with
+      | [] -> ()
+      | str::l ->
+         ls := l; self.len <- String.length str; self.off <- 0;
+         Bytes.blit_string str 0 self.bs 0 self.len)
+    ~close:(fun self -> self.len <- 0)
+    ~consume:(fun self n ->
+      self.off <- n + self.off;
+      self.len <- self.len - n)
+    ()
 
 module type Output = sig
   val echo : string -> unit
@@ -271,16 +287,29 @@ let read_all ~buf (self:t) : string =
   Buffer.clear buf;
   r
 
+(*$= & ~printer:Q.(Print.string)
+  "hello world" (of_strings ~buf_size:16 ["hello"; " "; "world"] |> read_all ~buf:(Buffer.create 16))
+
+ *)
+
+let end_of_input (self:t) =
+  (self.len = 0 && (self.fill_buf(); self.len = 0))
+
+let eof = '\255'
+
 let read_char (self:t) : char =
   self.fill_buf();
-  let c = unsafe_get self.bs self.off in
-  self.consume 1;
-  c
+  if self.len <= 0 then eof else
+    begin
+      let c = unsafe_get self.bs self.off in
+      self.consume 1;
+      c
+    end
 
 let peek_char (self:t) : char =
   self.fill_buf();
-  let c = unsafe_get self.bs self.off in
-  c
+  if self.len <= 0 then eof else
+    unsafe_get self.bs self.off
 
 (* put [n] bytes from the input into bytes *)
 let read_exactly_bytes ~too_short (self:t) (bytes:bytes) (n:int) : unit =
@@ -326,6 +355,17 @@ let read_until ~buf ~target (self:t) : unit =
       self.consume self.len
   done
 
+(*$= & ~printer:Q.(Print.string)
+  "hell" (let target = "o wor" and buf = Buffer.create 16 in\
+          let _ = of_strings ~buf_size:16 ["hello"; " "; "world"]\
+                |> read_until ~buf ~target in\
+          Buffer.contents buf)
+  "hello hell" (let target = "o wor" and buf = Buffer.create 16 in\
+          let _ = of_strings ~buf_size:16 ["hello "; "hello"; " "; "world"]\
+                |> read_until ~buf ~target in\
+          Buffer.contents buf)
+*)
+
 let read_path ~buf (self:t) : (string * string list * (string * string) list) =
   Buffer.clear buf;
   let path_components = ref [] in
@@ -367,8 +407,10 @@ let read_path ~buf (self:t) : (string * string list * (string * string) list) =
       let len = !pos - 1 - !start in
       (match nb with
       | One -> last_key := get_buf len
-      | Two -> query := (!last_key, get_buf len) :: !query
-      | Three -> query := (!last_key, get_buf len) :: !query; cont_query := false);
+      | Two -> query := (Util.percent_decode !last_key, Util.percent_decode @@ get_buf len)
+                        :: !query
+      | Three -> query := (Util.percent_decode !last_key, Util.percent_decode @@ get_buf len)
+                          :: !query; cont_query := false);
       start := !pos;
     with Not_found ->
       Buffer.add_subbytes buf self.bs self.off self.len;
@@ -383,6 +425,17 @@ let read_path ~buf (self:t) : (string * string list * (string * string) list) =
   Printf.printf "\n%!";*)
   (path, List.rev !path_components, !query)
 
+(*$= & ~printer:Q.(fun (x,ls,l2s) -> x ^ String.concat " " ls ^ String.concat " " (List.map (fun (x,y) -> x ^ "=" ^ y) l2s))
+  ("hello/world?x=z&u=v", ["hello";"world"], [("u","v");("x","z")])\
+  (let buf = Buffer.create 16 in\
+   of_strings ~buf_size:16 ["hello"; "/"; "world"; "?x="; "z&u"; "="; "v "]\
+                |> read_path ~buf)
+  ("hello/world?x=z&u=v+j", ["hello";"world"], [("u","v j");("x","z")])\
+  (let buf = Buffer.create 16 in\
+   of_strings ~buf_size:16 ["he"; "ll"; "o"; "/w"; "orl"; "d?x"; "=z&u"; "="; "v+j "]\
+                |> read_path ~buf)
+ *)
+
 (* read a line into the buffer, after clearing it. *)
 let read_line_into (self:t) ~buf : unit =
   Buffer.clear buf;
@@ -393,9 +446,9 @@ let read_line_into (self:t) ~buf : unit =
       continue := false;
     );
     try
-      let j = index_rec self.bs (self.off + self.len) self.off '\n' in
-      Buffer.add_subbytes buf self.bs self.off (j - self.off); (* without \n *)
-      self.consume (j-self.off+1); (* remove \n/stop *)
+      let j = index_rec self.bs (self.off + self.len) self.off '\r' in
+      Buffer.add_subbytes buf self.bs self.off (j - self.off); (* without \r\n *)
+      self.consume (j-self.off+2); (* remove \n/stop *)
       continue := false
     with Not_found ->
       Buffer.add_subbytes buf self.bs self.off self.len;
@@ -483,7 +536,7 @@ let read_exactly ~close_rec ~size ~too_short (arg:t) : t =
       ()
   )
 
-let read_chunked ~buf ~fail ~trailer (bs:t) : t=
+let read_chunked ~buf ~fail ~trailer (bs:t) : t =
   let first = ref true in
   let read_next_chunk_len () : int =
     if !first then (
@@ -497,7 +550,7 @@ let read_chunked ~buf ~fail ~trailer (bs:t) : t=
     let chunk_size = (
       if String.trim line = "" then 0
       else
-        try Scanf.sscanf line "%x %s@\r" (fun n _ext -> n)
+        try Scanf.sscanf line "%x" (fun n -> n)
         with _ -> raise (fail (spf "cannot read chunk size from line %S" line))
     ) in
     chunk_size
@@ -543,11 +596,6 @@ let fail_parse : t -> 'a = fun self -> raise (FailParse self.off)
 let [@inline] branch_char : (char -> t -> 'a) -> t -> 'a = fun fn self ->
   let c = read_char self in
   fn c self
-
-let [@inline] read_exact_char : char -> 'a -> t -> 'a = fun c r self ->
-  let c' = read_char self in
-  if c <> c' then fail_parse self;
-  r
 
 let [@inline] exact_char : char -> 'a -> t -> 'a = fun c r self ->
   let c' = peek_char self in

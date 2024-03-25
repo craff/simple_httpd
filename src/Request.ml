@@ -112,7 +112,7 @@ let parse_req_start ~client ~buf (bs:Input.t)
   try
     let meth = Method.parse bs in
     let start_time = Async.register_starttime client in
-    let _ = Input.read_exact_char ' ' () bs in
+    let _ = Input.exact_char ' ' () bs in
     let (path, path_components, query) = Input.read_path ~buf bs in
     let _ = Input.exact_string "HTTP/" () bs in
     let major = Input.int bs in
@@ -146,25 +146,24 @@ let parse_req_start ~client ~buf (bs:Input.t)
   | e -> fail_raise ~code:internal_server_error "exception: %s" (Async.printexn e)
 
 let parse_multipart_ ~bound req =
+  let target = "\r\n" ^ bound in
   let body = req.body in
   let buf = Buffer.create 1024 in
   let buf2 = Buffer.create 1024 in
-  let _ = Input.read_line ~buf body in
+  Input.read_until ~buf ~target:bound body;
+  let _ = Input.read_line ~buf:buf2 body in
   let query = ref [] in
   let multipart_headers = ref [] in
   let cont = ref true in
   while !cont do
     let (header, _) = Headers.parse_ ~buf body in
     let cd = match Headers.get Content_Disposition header
-      with Some cd -> cd
+      with Some cd -> Scanf.Scanning.from_string cd
          | None -> raise Not_found
     in
-    let key, rest =
-      Scanf.sscanf cd "form-data; name = %S%s@\n"
-        (fun str rest -> String.trim str, rest)
-    in
+    let key = Scanf.bscanf cd "form-data; name = %S" String.trim in
     let _ =
-      try Scanf.sscanf rest " ; filename = %S"
+      try Scanf.bscanf cd " ; filename = %S"
             (fun str ->
               multipart_headers := ((key, Headers.Filename_Multipart), String.trim str)
                                    :: !multipart_headers)
@@ -174,7 +173,7 @@ let parse_multipart_ ~bound req =
         if h <> Headers.Content_Disposition then
           multipart_headers := ((key, h), v) :: !multipart_headers) header;
     let value =
-      Input.read_until ~buf:buf2 ~target:bound body;
+      Input.read_until ~buf:buf2 ~target body;
       let line = Input.read_line ~buf body in
       if String.trim line = "--" then cont := false;
       Buffer.contents buf2

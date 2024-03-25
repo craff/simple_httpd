@@ -59,6 +59,8 @@ val of_bytes : ?i:int -> ?len:int -> bytes -> t
 
 val of_string : string -> t
 
+val of_strings : ?buf_size:int -> string list -> t
+
 module type Output = sig
   val echo : string -> unit
   val printf : ('a, Format.formatter, unit, unit) format4 -> 'a
@@ -88,7 +90,13 @@ val with_file : ?buf_size:int -> string -> (t -> 'a) -> 'a
 (** Open a file with given name, and obtain an input stream
     on its content. When the function returns, the stream (and file) are closed. *)
 
+val end_of_input : t -> bool
+
+val eof : char
+(** the character '\255'*)
+
 val read_char : t -> char
+(** read one char, returns {!Input.eof} u=if the input buffer is empty *)
 
 val read_line : buf:Buffer.t -> t -> string
 (** Read a line from the stream.
@@ -143,7 +151,6 @@ val fail_parse : t -> 'a
 val branch_char : (char -> t -> 'a) -> t -> 'a
 
 val exact_char : char -> 'a -> t -> 'a
-val read_exact_char : char -> 'a -> t -> 'a
 
 val exact_string : string -> 'a -> t -> 'a
 
