@@ -49,10 +49,11 @@ let get_log i nb_lines output =
       Buffer.add_string b rest;
       let rec gn () =
         let line = Input.read_line ~buf ch in
+        cont := not (Input.end_of_input ch);
         if String.length line > 0 && '0' <= line.[0] && line.[0] <= '9' then
           first_line := line
         else
-          (Buffer.add_string b "\n"; Buffer.add_string b line; gn ())
+          (Buffer.add_string b "\n"; Buffer.add_string b line; if !cont then gn ())
       in
       (try gn () with Unix.(Unix_error(EPIPE,_,_)) -> cont := false);
       log_line i (time, client, Buffer.contents b) output;
@@ -65,12 +66,7 @@ let get_log i nb_lines output =
              Printf.sprintf "Can not read log file %s (exn: %s)\n%!"
                filename (Printexc.to_string e)) output
 
-let html ?log_size ?check ?in_head ?in_body self req headers =
-  let sess_cookies =
-    match check with
-    | None -> Cookies.empty
-    | Some f -> fst (f req)
-  in
+let html ?log_size ?in_head ?in_body self req headers =
   let status = status self in
   let log_size =
     match log_size with
@@ -122,7 +118,6 @@ let html ?log_size ?check ?in_head ?in_body self req headers =
   in
   {chaml|
    <!DOCTYPE html>
-   <?prelude let cookies = sess_cookies ?>
    <html>
        <head>
          <meta charset="UTF-8"/>

@@ -126,15 +126,9 @@ let filter () =
 	     </tr>
      |funml} output
   in
-  let get_stat ?check ?in_head ?in_body req =
-    let sess_cookies =
-      match check with
-      | None -> Cookies.empty
-      | Some f -> fst (f req)
-    in
+  let get_stat ?in_head ?in_body req headers =
     {chaml|
     <!DOCTYPE html>
-    <?prelude let cookies = sess_cookies ?>
     <head>
       <meta charset="UTF-8"/>
       <title>server status</title>
@@ -288,6 +282,6 @@ let filter () =
 	<tbody id="table">
 	  <?ml Hashtbl.iter (stat output) per_path ?>
 	</tbody>
-      </table></body>|chaml} req
+      </table></body>|chaml} req headers
   in
   (measure, get_stat)

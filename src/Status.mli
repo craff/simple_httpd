@@ -1,5 +1,5 @@
 
-val html : ?log_size:int -> ?check:('a Request.t -> Cookies.t * Session.t)
+val html : ?log_size:int
            -> ?in_head : Html.elt -> ?in_body : Html.elt
-           -> Server.t -> 'a Request.t -> Headers.t -> Headers.t * Cookies.t * Input.t
+           -> Server.t -> Html.chaml
 (** Returns a detailed server status as html *)

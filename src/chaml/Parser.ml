@@ -365,11 +365,11 @@ and ocaml_lexer top s n =
             assert (global = "");
             Printf.bprintf out
               "(fun [@warning \"-27\"] request headers ->
+                let [@warning \"-26..27\"] cookies = Request.cookies request in
                 let module M = struct
-                  let [@warning \"-32\"] cookies = Cookies.empty
                   %s
                 end in
-                let open [@warning \"-33\"] M in
+                let open [@warning \"-33-60\"] M in
                 let headers = (Headers.Content_Type, \"text/html\")::headers in
                 let input =
                   Input.of_output (fun [@warning \"-26..27\"]
