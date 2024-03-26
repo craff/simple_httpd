@@ -103,7 +103,7 @@ module Make(Login:Login) = struct
     | None ->
        let headers = [Headers.Location, destination] in
        Response.fail_raise ~code:Response_code.see_other ~cookies
-         ~headers "You are logger out"
+         ~headers "You are logged out"
 
   let check ?nologin ?(check_data=fun _ -> true) request =
     let (log_code, log_headers, log_msg) =

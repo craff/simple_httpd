@@ -41,6 +41,7 @@ type client =
   ; mutable slocks : semaphore list
   ; buf : Buffer.t (* used to parse headers *)
   ; mutable last_seen_cell : client LL.cell
+  ; close : unit -> unit
   }
 
 and mutex_state = Unlocked | Locked of client | Deleted
@@ -86,8 +87,11 @@ let fake_client =
       locks = [];
       slocks = [];
       accept_by = 0;
-      last_seen_cell = LL.fake_cell
+      last_seen_cell = LL.fake_cell;
+      close = (fun () -> ())
     }
+
+let close client = client.close ()
 
 let set_session ?session client =
   client.session <- session
@@ -776,13 +780,14 @@ let loop id st listens pipe timeout handler () =
       | Accept (index, sock, linfo) ->
          let peer = Util.addr_of_sock sock in
          let now = now () in
-         let client = { sock; ssl = None; id = new_id ()
-                      ; peer
-                      ; connected = true; session = None
-                      ; start_time = now; timeout_ref = now
-                      ; locks = []; slocks = []
-                      ; acont = N; buf = Buffer.create 4_096
-                      ; accept_by = index; last_seen_cell = LL.fake_cell
+         let rec client = { sock; ssl = None; id = new_id ()
+                            ; peer
+                            ; connected = true; session = None
+                            ; start_time = now; timeout_ref = now
+                            ; locks = []; slocks = []
+                            ; acont = N; buf = Buffer.create 4_096
+                            ; accept_by = index; last_seen_cell = LL.fake_cell
+                            ; close = (fun () -> close ~client Exit)
                       }
          in
          client.last_seen_cell <- LL.add_first client dinfo.last_seen;

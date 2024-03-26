@@ -30,7 +30,7 @@ let delete_session session =
        Mutex.unlock mutex_list
    with e ->
      Mutex.unlock mutex_list; raise e);
-  (*List.iter Async.close session.clients;*)
+  List.iter Async.close (Atomic.get session.clients);
   Util.cleanup (Atomic.get session.data)
 
 let refresh session =

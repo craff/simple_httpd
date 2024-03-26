@@ -64,7 +64,8 @@ type client = private {
     mutable slocks : Semaphore.t list;(** all semaphore, locked by this client *)
     buf : Buffer.t;                   (** used to parse headers *)
     mutable last_seen_cell : client Util.LinkedList.cell;
-     (** pointer to the linked list used to detect timeout *)
+    (** pointer to the linked list used to detect timeout *)
+    close : unit -> unit              (** close the client *)
   }
 
 and session_info =
@@ -91,6 +92,9 @@ end
 
 (** only to please qtest *)
 val fake_client : client
+
+(** close the client *)
+val close : client -> unit
 
 (** Set the session of a client *)
 val set_session : ?session:session -> client -> unit
