@@ -74,7 +74,7 @@ let session_adr info =
 
 let get_client_session client key =
   match Async.(client.session) with
-  | Some l -> Some (LinkedList.get l)
+  | Some l -> Some l
   | None ->
      match key with
      | None -> None
@@ -130,7 +130,7 @@ let start_session ?(session_life_time=3600.0) client key =
           session_info.cell <- session;
           Async.set_session ~session client;
           Mutex.lock mutex_tbl;
-          Hashtbl.add sessions_tbl key session;
+          Hashtbl.replace sessions_tbl key session;
           Mutex.unlock mutex_tbl;
           (session_info, false)
   with e ->
@@ -138,7 +138,7 @@ let start_session ?(session_life_time=3600.0) client key =
 
 let get_session_data (sess : t) key =
   let l = Atomic.get sess.data in
-  Util.search key l
+  try Some (Util.search key l) with Not_found -> None
 
 let do_session_data : t -> (data -> 'a * data) -> 'a =
   fun (sess : t) fn ->
@@ -204,7 +204,9 @@ let start_check
       if create then start_session ~session_life_time client key
       else match get_client_session client key with
            | None -> raise Exit
-           | Some session -> (session, true)
+           | Some session ->
+              let session = LinkedList.get session in
+              (session, true)
     in
     let bad () = raise (Bad session) in
     if not (check session) then bad ();

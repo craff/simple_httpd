@@ -29,7 +29,7 @@ val filter : ?check:(t -> bool) ->
 
 val get_session : ?cookie_policy:cookie_policy -> 'a Request.t -> t option
 
-val get_session_data : t -> 'a key -> 'a
+val get_session_data : t -> 'a key -> 'a option
 val set_session_data : t -> 'a key -> 'a -> unit
 val remove_session_data : t -> 'a key -> unit
 

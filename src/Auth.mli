@@ -24,4 +24,6 @@ module Make(Login:Login) : sig
     ?check_data:(Login.t -> bool)
     -> 'a Route.Filter.t
 
+  val get_session_data : 'a Request.t -> Login.t option
+
 end

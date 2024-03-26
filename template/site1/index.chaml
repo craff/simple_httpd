@@ -2,7 +2,8 @@
 <?global let count_key = Session.new_key () ?>
 <?prelude let cookies, session = Session.start_check request
   let count =
-    try Session.get_session_data session count_key with Not_found -> 0
+    match Session.get_session_data session count_key with
+    | None -> 0 | Some n -> n
   let _ = Session.set_session_data session count_key (count+1) ?>
 <html>
   <body>

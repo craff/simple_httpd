@@ -52,9 +52,11 @@ module Make(Login:Login) = struct
           match Session.get_session ~cookie_policy request with
           | None -> raise Not_found
           | Some session ->
-             ignore (Session.get_session_data session auth_key);
-             redirect (Session.mk_cookies session Login.cookie_policy
-                         (Request.cookies request))
+             match Session.get_session_data session auth_key with
+             | None -> raise Not_found
+             | Some _ ->
+                redirect (Session.mk_cookies session Login.cookie_policy
+                            (Request.cookies request))
         with
         | Not_found ->
            match check_pass () with
@@ -94,6 +96,12 @@ module Make(Login:Login) = struct
 
   exception Login
 
+  let get_session_data request =
+    Log.(f (Req 0)) (fun k -> k "get session in get_session_data");
+    match Session.get_session ~cookie_policy request with
+    | None -> None
+    | Some session -> Session.get_session_data session auth_key
+
   let logout_page ?(destination=Login.login_url) ?page request headers =
     let cookies = Session.delete_session ~cookie_policy request in
     match page with
@@ -122,12 +130,13 @@ module Make(Login:Login) = struct
       let error = (log_code, log_headers) in
       let (_, session) as r = Session.start_check ~cookie_policy ~error request in
       begin
-        try let data = Session.get_session_data session auth_key in
-            if not (check_data data) then
-              let cookies = Session.delete_session ~cookie_policy request in
-              Response.fail_raise ~code:log_code
-                ~headers:log_headers ~cookies "%s" log_msg
-        with Not_found -> raise Login
+        match Session.get_session_data session auth_key with
+        | Some data ->
+           if not (check_data data) then
+             let cookies = Session.delete_session ~cookie_policy request in
+             Response.fail_raise ~code:log_code
+               ~headers:log_headers ~cookies "%s" log_msg
+        | None -> raise Login
       end;
       r
     with Login ->
@@ -143,7 +152,8 @@ module Make(Login:Login) = struct
       try
         let (cookies, session) = Session.start_check ~create:false ~cookie_policy
                                  ~error request in
-        fn request cookies (Session.get_session_data session auth_key)
+        fn request cookies (match Session.get_session_data session auth_key with
+                            | Some d -> d | None -> raise Not_found)
       with Not_found | Headers.Bad_req _ -> raise Login
     with Login ->
       match not_logged with

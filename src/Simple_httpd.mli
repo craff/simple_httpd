@@ -974,7 +974,7 @@ module Session : sig
 
   (** get the session data associated to the given key from a session.
       raises [Not_found] if the key is not present *)
-  val get_session_data : t -> 'a key -> 'a
+  val get_session_data : t -> 'a key -> 'a option
 
   (** update or add the session data associated to the givent key *)
   val set_session_data : t -> 'a key -> 'a -> unit
@@ -1505,6 +1505,9 @@ module Auth : sig
       ?nologin:(Response_code.t * Headers.t * string) ->
       ?check_data:(Login.t -> bool)
       -> 'a Filter.t
+
+    val get_session_data : 'a Request.t -> Login.t option
+
   end
 end
 

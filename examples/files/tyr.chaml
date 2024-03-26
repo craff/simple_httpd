@@ -6,8 +6,8 @@
          let cookies, session = Session.start_check request
          let count =
 	   match Session.get_session_data session count_key with
-           | n -> n
-           | exception Not_found -> 0
+           | Some n -> n
+           | None   -> 0
          let _ = Session.set_session_data session count_key (count+1)?>
   </head>
   <body>
