@@ -82,13 +82,26 @@ let get_client_session client key =
         Mutex.lock mutex_tbl;
         let r = Hashtbl.find_opt sessions_tbl key in
         Mutex.unlock mutex_tbl;
-        Option.map LinkedList.get r
+        r
 
 let get_session (type a) ?(cookie_policy=default_cookie_policy) (req : a Request.t) =
   let key = Option.map Http_cookie.value
               (Request.get_cookie req (session_key cookie_policy))
   in
-  get_client_session (Request.client req) key
+  let client = Request.client req in
+  match client.session with
+  | Some session ->
+     Some (LinkedList.get session)
+  | None ->
+     let session = get_client_session client key in
+     match session with
+     | Some session ->
+        let session_info = LinkedList.get session in
+        let fn clients = client :: clients in
+        Util.update_atomic session_info.clients fn;
+        Some session_info
+     | _ ->
+        None
 
 let start_session ?(session_life_time=3600.0) client key =
   try

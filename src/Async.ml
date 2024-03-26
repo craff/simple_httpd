@@ -653,7 +653,7 @@ let loop id st listens pipe timeout handler () =
 
   let close ?client exn =
     let c = match client with None -> get_client () | Some c -> c in
-    assert c.connected;
+    if c.connected then begin
     LL.remove_cell c.last_seen_cell last_seen;
     begin
       let fn s =
@@ -685,7 +685,8 @@ let loop id st listens pipe timeout handler () =
       (fun k -> k "[%d] closing because exception: %s. connected: %b (%d)"
                   c.id (printexn exn) c.connected
                   (Atomic.get st.nb_connections.(id)));
-    c.connected <- false
+    c.connected <- false;
+    end
   in
 
   let rec remove_timeout t0 =
