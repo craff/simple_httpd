@@ -265,7 +265,12 @@ let delete_session ?(cookie_policy=default_cookie_policy) req =
     | None -> ()
     | Some session -> delete_session session
   end;
-  Cookies.delete_all (select_cookies cookie_policy req)
+  let cookies = Cookies.delete_all (select_cookies cookie_policy req) in
+  List.map (fun c ->
+      let c = Result.get_ok (Http_cookie.update_path (Some cookie_policy.path) c) in
+      let c = Http_cookie.update_secure true c in
+      c) cookies
+
 
 let filter
       ?(check=fun _ -> true)
