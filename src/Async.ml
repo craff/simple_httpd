@@ -743,14 +743,14 @@ let loop id st listens pipe timeout handler () =
           | { pd = NoEvent ; _ } as r ->
              let e =
                if Polly.Events.((err lor hup lor rdhup) land evt <> empty) then
-                 Unix.(getsockopt_error sock)
+                 Util.get_socket_error sock
                else None
              in
              r.pd <- TooSoon e
           | { pd = Wait a ; _ } as p ->
              let e =
                if Polly.Events.((err lor hup lor rdhup) land evt <> empty) then
-                 Unix.(getsockopt_error sock)
+                 Util.get_socket_error sock
                else None
              in
              add_ready (Action(a,p,e));
@@ -758,7 +758,7 @@ let loop id st listens pipe timeout handler () =
           | { pd = TooSoon b ; _ } as p ->
              let e =
                if Polly.Events.((err lor hup lor rdhup) land evt <> empty) then
-                 match Unix.(getsockopt_error sock) with None -> b | e -> e
+                 Util.get_socket_error ?default:b sock
                else b
              in
              p.pd <- TooSoon e
