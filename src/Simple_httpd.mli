@@ -382,6 +382,7 @@ module Mutex : sig
   val try_lock : t -> bool
   val lock : t -> unit
   val unlock : t -> unit
+  val delete : t -> unit
 end
 
 module Semaphore : sig

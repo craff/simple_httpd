@@ -8,6 +8,8 @@ val ssl_sendfile : Ssl.socket -> Unix.file_descr -> int -> int -> int
 
 val setsockopt_cork : Unix.file_descr -> bool -> unit
 
+val get_socket_error : ?default:Unix.error -> Unix.file_descr -> Unix.error option
+
 val file_descr_to_int : Unix.file_descr -> int
 
 val file_descr_of_int : int -> Unix.file_descr

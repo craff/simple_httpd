@@ -54,6 +54,13 @@ external raw_ssl_sendfile : Ssl.socket -> Unix.file_descr -> int -> int -> int
 external get_error : Ssl.socket -> int -> Ssl.ssl_error = "ocaml_ssl_get_error_code"
     [@@noalloc]
 
+let get_socket_error : ?default:Unix.error -> Unix.file_descr -> Unix.error option =
+  fun ?default sock ->
+  match Unix.(getsockopt_error sock) with
+  | None -> default
+  | e -> e
+  | exception Unix.Unix_error(e,_,_) -> Some e
+
 let sendfile out in_ offset count =
   let ret = raw_sendfile out in_ offset count in
   if ret == -1 then sendfile_error ();
