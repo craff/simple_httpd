@@ -265,6 +265,9 @@ let handle_client_ (self:t) (client:Async.client) : unit =
             if Headers.get Headers.Connection r.Response.headers = Some"close" then
               cont := false;
             Response.output_ (Request.meth req) oc r;
+            log (Req 0) (fun k -> k "response code %d sent after %fms" (r.code :> int)
+                                    (1e3 *. (Unix.gettimeofday () -. req.start_time)));
+
           with Sys_error _
              | Unix.Unix_error _ as e ->
                 cont := false;
@@ -273,7 +276,6 @@ let handle_client_ (self:t) (client:Async.client) : unit =
         in
         (* call handler *)
         handler oc req ~resp;
-        log (Req 0) (fun k -> k "response sent after %fms" (1e3 *. (Unix.gettimeofday () -. req.start_time)));
         if !cont then Async.yield ()
       with
       | Headers.Bad_req (c,s,headers,cookies) ->
