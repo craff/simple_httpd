@@ -15,7 +15,7 @@
   (preprocess (per_module
     ((action (run %{bin:chaml} %{input-file})) echo)))
   (modules echo vfs)
-  (libraries simple_httpd))
+  (libraries simple_httpd magic-mime))
 
 (executable
   (name minimal)

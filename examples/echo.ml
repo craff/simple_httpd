@@ -106,17 +106,9 @@ let _ =
     (fun path _req ->
         let ic = open_in path in
         let str = Input.of_chan ic in
-        let mime_type =
-          try
-            let p = Unix.open_process_in (Printf.sprintf "file -i -b %S" path) in
-            try
-              let s = [H.Content_Type, String.trim (input_line p)] in
-              ignore @@ Unix.close_process_in p;
-              s
-            with _ -> ignore @@ Unix.close_process_in p; []
-          with _ -> []
-        in
-        Response.make_stream ~headers:mime_type str
+        let mime_type = Magic_mime.lookup path in
+        let headers = [H.Content_Type, mime_type] in
+        Response.make_stream ~headers str
       )
 
 (** Main pagen using the Html module (deprecated by vfs_pack and many other
