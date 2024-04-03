@@ -61,7 +61,6 @@ type client = private {
     mutable timeout_ref : float;      (** reference for timeout, usually start_time,
                                           except if [Async.reset_timeout] is used*)
     mutable locks : Mutex.t list;     (** all lock, locked by this client *)
-    mutable slocks : Semaphore.t list;(** all semaphore, locked by this client *)
     buf : Buffer.t;                   (** used to parse headers *)
     mutable last_seen_cell : client Util.LinkedList.cell;
     (** pointer to the linked list used to detect timeout *)

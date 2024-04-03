@@ -38,7 +38,6 @@ type client =
   ; mutable start_time : float (* last time request started *)
   ; mutable timeout_ref : float
   ; mutable locks : mutex list
-  ; mutable slocks : semaphore list
   ; buf : Buffer.t (* used to parse headers *)
   ; mutable last_seen_cell : client LL.cell
   ; close : unit -> unit
@@ -85,7 +84,6 @@ let fake_client =
       start_time = 0.0;
       timeout_ref = 0.0;
       locks = [];
-      slocks = [];
       accept_by = 0;
       last_seen_cell = LL.fake_cell;
       close = (fun () -> ())
@@ -140,7 +138,7 @@ let printexn e =
   | e -> (Printexc.to_string e)
 
 type pending_status =
-  |  NoEvent
+  | NoEvent
   | Wait : 'a pending -> pending_status
   | TooSoon of Unix.error option
 
@@ -341,7 +339,9 @@ module Mutex : sig
       | Locked cl ->
          if cl != global_get_client () then
            failwith "unlock by a client that did not lock the mutex";
-         cl.locks <- List.filter (fun x -> x != lk) cl.locks
+         cl.locks <-
+           (try Util.remove_first (fun x -> x == lk) cl.locks
+           with Not_found -> assert false)
       | Unlocked ->
          failwith "unlock a not locked mutex"
       | Deleted ->
@@ -399,8 +399,6 @@ module Semaphore : sig
   let try_decr lk =
     let buf = Bytes.create 8 in
     try assert(Util.read lk.seventfd buf 0 8 = 8);
-        let cl = global_get_client () in
-        cl.slocks <- lk :: cl.slocks;
         true
     with Unix.(Unix_error((EAGAIN | EWOULDBLOCK), _, _)) -> false
 
@@ -547,7 +545,13 @@ type pollResult =
   | Accept of (int * Unix.file_descr * Address.t)
   | Action : 'a pending * socket_info * Unix.error option -> pollResult
   | Yield of ((unit,unit) continuation * client * float)
-  | Wait
+  | Poll
+
+let _print_pollResult ch r = match r with
+  | Yield _ -> Format.fprintf ch "Yield"
+  | Accept _ -> Format.fprintf ch "Accept"
+  | Action _ -> Format.fprintf ch "Action"
+  | Poll -> Format.fprintf ch "Poll"
 
 let loop id st listens pipe timeout handler () =
   let did = Domain.self () in
@@ -572,7 +576,7 @@ let loop id st listens pipe timeout handler () =
   (* Queue for ready sockets *)
   let ready = Queue.create () in
   let add_ready e = Queue.add e ready in
-  add_ready Wait; (* Invariant: queue as always exactly one Wait
+  add_ready Poll; (* Invariant: queue as always exactly one Poll
                      and is never empty, except during poll. *)
 
   (* Managment of sleep *)
@@ -680,13 +684,17 @@ let loop id st listens pipe timeout handler () =
     end;
     pendings.(Util.file_descr_to_int c.sock) <- NoSocket;
     Atomic.decr st.nb_connections.(id);
+    c.connected <- false;
 
     begin
       match c.session with
       | None -> ()
       | Some sess ->
          let sess = LL.get sess in
-         let fn clients = List.filter (fun c' -> c != c') clients in
+         let fn clients =
+           try Util.remove_first (fun c' -> c == c') clients
+           with Not_found -> assert false
+         in
          Util.update_atomic sess.clients fn;
     end;
     begin
@@ -697,7 +705,6 @@ let loop id st listens pipe timeout handler () =
       (fun k -> k "[%d] closing because exception: %s. connected: %b (%d)"
                   c.id (printexn exn) c.connected
                   (Atomic.get st.nb_connections.(id)));
-    c.connected <- false;
     end
   in
 
@@ -777,10 +784,8 @@ let loop id st listens pipe timeout handler () =
         in
         iter_pendings fn sock
       in
-      try
-        ignore (Polly.wait poll_list 1000 select_timeout fn);
-        add_ready Wait
-      with e -> add_ready Wait; raise e
+      Log.f (Sch 1) (fun k -> k "entering poll with timeout: %d" select_timeout);
+      ignore (Polly.wait poll_list 1000 select_timeout fn);
     with
     | exn -> Log.f (Exc 0) (fun k -> k "unexpected poll: %s\n%!" (printexn exn));
              (*check now;*) poll () (* FIXME: which exception *)
@@ -788,8 +793,10 @@ let loop id st listens pipe timeout handler () =
   let step v =
     try
       match v with
-      | Wait ->
-         poll ()
+      | Poll ->
+         poll ();
+         add_ready Poll
+
       | Accept (index, sock, linfo) ->
          let peer = Util.addr_of_sock sock in
          let now = now () in
@@ -797,7 +804,7 @@ let loop id st listens pipe timeout handler () =
                             ; peer
                             ; connected = true; session = None
                             ; start_time = now; timeout_ref = now
-                            ; locks = []; slocks = []
+                            ; locks = []
                             ; acont = N; buf = Buffer.create 4_096
                             ; accept_by = index; last_seen_cell = LL.fake_cell
                             ; close = (fun () -> close ~client Exit)
@@ -970,7 +977,8 @@ let accept_loop status listens pipes maxc =
   in
   let nb_socks = Array.length listens in
   while true do
-    try ignore (Polly.wait poll_list nb_socks 1_000_000 treat)
+    try
+      ignore (Polly.wait poll_list nb_socks 60_000 treat)
     with
     | Unix.Unix_error((EAGAIN|EWOULDBLOCK),_,_) -> ()
     | exn ->
@@ -994,8 +1002,13 @@ let run ~nb_threads ~listens ~maxc ~timeout ~status handler =
   in
   let pipes = Array.map snd pipes in
   let r = Array.init nb_threads fn in
-  let _ = accept_loop status listens pipes maxc in
-  r
+  try
+    let _ = accept_loop status listens pipes maxc in
+    Log.f (Sch 1) (fun k -> k "exit accept_loop");
+    r
+  with exn ->
+    Log.f (Sch 1) (fun k -> k "exn in accept_loop %s" (Printexc.to_string exn));
+    raise exn
 
 let rec ssl_flush s =
   try ignore (Ssl.flush s); 1

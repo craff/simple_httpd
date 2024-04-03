@@ -1,4 +1,11 @@
 
+let remove_first cond l =
+  let rec fn[@tail_mod_cons] = function
+    | x::l -> if cond x then l else x :: fn l
+    | [] -> raise Not_found
+  in
+  fn l
+
 let maxfd : int =
   let ch_in = Unix.open_process_in "ulimit -n" in
   let res = Scanf.(bscanf (Scanning.from_channel ch_in) " %d " (fun d -> d)) in
