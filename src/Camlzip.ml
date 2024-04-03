@@ -201,13 +201,14 @@ let compress_resp_stream_
       in
       resp
       |> Response.update_headers update_headers
-      |> Response.set_body (Stream (body, None))
+      |> Response.set_body (Stream {body; synch=None; close=Input.close})
 
-    | Stream (str, synch) ->
+    | Stream {body; synch; close} ->
       Log.f (Req 2) (fun k->k "encode stream response with deflate");
       resp
       |> Response.update_headers update_headers
-      |> Response.set_body (Stream (encode_deflate_stream_ ~buf_size str, synch))
+      |> Response.set_body (Stream {body = encode_deflate_stream_ ~buf_size body
+                                   ; synch; close})
 
     | String _ | Void | File _ (* TODO ?*) -> resp
   ) else resp

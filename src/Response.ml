@@ -4,7 +4,7 @@ let fail_raise = Headers.fail_raise
 let log = Log.f
 
 type body = String of string
-          | Stream of Input.t * (unit -> unit) option
+          | Stream of { body: Input.t; synch:(unit -> unit) option; close : Input.t -> unit }
            (** flush each part and call f if second arg is [Some f] *)
           | File of
               { fd : Unix.file_descr
@@ -38,12 +38,12 @@ let make_raw ?(cookies=[]) ?(headers=[]) ?(post=fun () -> ()) ~code body : t =
   let body = if body = "" then Void else String body in
   { code; headers; body; post }
 
-let make_raw_stream ?synch ?(cookies=[]) ?(headers=[]) ?(post=fun () -> ())
+let make_raw_stream ?synch ?(close=Input.close) ?(cookies=[]) ?(headers=[]) ?(post=fun () -> ())
       ~code body : t =
   (* do not add content length to response *)
   let headers = Headers.set Headers.Transfer_Encoding "chunked" headers in
   let headers = Headers.set_cookies cookies headers in
-  { code; headers; body=Stream(body,synch); post }
+  { code; headers; body=Stream{body;synch;close}; post }
 
 let make_raw_file ?(cookies=[]) ?(headers=[]) ?(post=fun () -> ())
       ~code ~close size body : t =
@@ -63,15 +63,15 @@ let make_void ?(cookies=[]) ?(headers=[]) ?(post=fun () -> ()) ~code () : t =
 let make_string ?cookies ?headers ?post body =
   make_raw ?cookies ?headers ?post ~code:ok body
 
-let make_stream ?synch  ?cookies ?headers ?post body =
-  make_raw_stream ?synch ?cookies ?headers ?post ~code:ok body
+let make_stream ?synch ?close ?cookies ?headers ?post body =
+  make_raw_stream ?synch ?close ?cookies ?headers ?post ~code:ok body
 
 let make_file ?cookies ?headers ?post ~close n body =
   make_raw_file ?cookies ?headers ?post ~code:ok ~close n body
 
 let make ?cookies ?headers ?post r : t = match r with
   | String body -> make_raw ?cookies ?headers ~code:ok body
-  | Stream(body,synch) -> make_raw_stream ?synch ?cookies ?headers ~code:ok body
+  | Stream{body;synch;close} -> make_raw_stream ?synch ~close ?cookies ?headers ~code:ok body
   | File{size;fd=body;close}->
      make_raw_file ?cookies ?headers ?post ~code:ok ~close size body
   | Void -> make_void ?cookies ?headers ~code:ok ()
@@ -123,7 +123,7 @@ let output_ meth (oc:Output.t) (self:t) : unit =
     begin
       match body with
       | File {size=_; fd; close=true} -> Unix.close fd
-      | Stream (str, _synch) -> Input.close str
+      | Stream{body; close; _} -> close body
       | _ -> ()
     end
   else
@@ -135,11 +135,11 @@ let output_ meth (oc:Output.t) (self:t) : unit =
       | File {size; fd; close=true} ->
          (try Output.sendfile oc size fd; Unix.close fd
         with e -> Unix.close fd; raise e)
-      | Stream (str, synch) ->
+      | Stream {body;synch;close} ->
          (try
-            Output.output_chunked ?synch oc str;
-            Input.close str;
-          with e -> Input.close str; raise e)
+            Output.output_chunked ?synch oc body;
+            close body;
+          with e -> close body; raise e)
     end;
   Output.flush oc;
   self.post ()

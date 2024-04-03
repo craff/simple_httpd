@@ -140,6 +140,8 @@ module type Parameters = sig
   val log_exceptions : int ref
   val log_scheduler : int ref
   val log_authentications : int ref
+  val log_processes : int ref
+  val log_user : int ref
 
   val log_folder : string ref
   val log_basename : string ref
@@ -158,6 +160,8 @@ let args () =
       let log_scheduler  = ref 0
       let log_exceptions = ref 1
       let log_authentications = ref 1
+      let log_processes = ref 1
+      let log_user = ref 1
       let log_folder = ref ""
       let log_basename = ref (Filename.remove_extension
                                 (Filename.basename Sys.argv.(0)))
@@ -176,6 +180,10 @@ let args () =
         " log level for authentications (default 1)");
       ( "--log-scheduler", Set_int log_scheduler,
         " log level for scheduler debug (default 0)");
+      ( "--log-processes", Set_int log_processes,
+        " log level for external processes logs (default 1)");
+      ( "--log-user", Set_int log_user,
+        " log level for user specific logs (default 1)");
       ( "--log-folder", Set_string log_folder, " log folder (default none)");
       ( "--log-basename", Set_string log_basename,
         " log basename (default basename of argv[0])");
@@ -203,6 +211,9 @@ let create ?(listens = [Address.make ()]) (module Params : Parameters) =
   Log.set_log_scheduler !log_scheduler;
   Log.set_log_exceptions !log_exceptions;
   Log.set_log_authentications !log_authentications;
+  Log.set_log_processes !log_processes;
+  Log.set_log_user !log_user;
+
   if !log_folder <> "" then
     Log.set_log_folder ~basename:!log_basename ~perm:!log_perm
       !log_folder (num_threads + 1);

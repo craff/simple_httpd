@@ -24,7 +24,7 @@ let log_line i (time, client, rest) output =
 let get_log i nb_lines output =
   let filename = fname i in
   try
-    let (pid, out) =
+    let (_pid, out) =
       Process.create "tail" [|"tail"; "-n"; string_of_int nb_lines; filename|]
     in
     let ch = Input.of_io out in
@@ -61,7 +61,6 @@ let get_log i nb_lines output =
     in
     while !cont do fn () done;
     Input.close ch;
-    ignore (Process.wait pid);
   with e -> log_line i (0.0, 0,
              Printf.sprintf "Can not read log file %s (exn: %s)\n%!"
                filename (Printexc.to_string e)) output

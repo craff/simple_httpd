@@ -118,7 +118,7 @@ val reset_timeout : client -> unit
 module Io : sig
   type t
 
-  val create : Unix.file_descr -> t
+  val create : ?finalise:(unit -> unit) -> Unix.file_descr -> t
   val close : t -> unit
   val read : t -> Bytes.t -> int -> int -> int
   val write : t -> Bytes.t -> int -> int -> int

@@ -1,5 +1,3 @@
 open Async
 
-val create : string -> string array -> int * Io.t
-
-val wait : ?time:float -> int -> Unix.process_status
+val create : ?wait_interval:float -> string -> string array -> int * Io.t

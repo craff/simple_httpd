@@ -133,3 +133,18 @@
   (ocamlopt_flags -O3)
   (modules serve_files vfs)
   (libraries simple_httpd))
+
+;process stress
+(rule
+  (targets process-stress)
+  (deps (:bin ../examples/echo.exe) stress-prc.sh)
+  (package simple_httpd)
+  (enabled_if (= %{system} "linux"))
+  (action (with-stdout-to %{targets}
+                          (run ./stress-prc.sh %{bin} 15))))
+
+(rule
+  (alias runtest)
+  (package simple_httpd)
+  (enabled_if (= %{system} "linux"))
+  (action (diff process-stress.expect process-stress)))

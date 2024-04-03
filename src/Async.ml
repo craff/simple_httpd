@@ -122,6 +122,7 @@ let sleep : float -> unit = fun t ->
 module IoTmp = struct
 
   type t = { sock : Unix.file_descr
+           ; finalise : unit -> unit (** extra function when closing *)
            ; waiting : bool array
            (* which domain has added the socket to epoll,
               the first time it had a client blocked while trying to lock *) }
@@ -191,35 +192,47 @@ module Log = struct
     | Sch of int
     | Exc of int
     | Aut of int
+    | Prc of int
+    | Usr of int
 
   type log_status =
     { mutable requests : int
     ; mutable scheduler : int
     ; mutable exceptions : int
-    ; mutable authentications : int }
+    ; mutable authentications : int
+    ; mutable processes : int
+    ; mutable user : int }
 
   let log_status =
     { requests = 1
     ; scheduler = 0
     ; exceptions = 1
-    ; authentications = 1}
+    ; authentications = 1
+    ; processes = 1
+    ; user = 1 }
 
-  let set_log_requests        n = log_status.requests   <- n
-  let set_log_scheduler       n = log_status.scheduler  <- n
-  let set_log_exceptions      n = log_status.exceptions <- n
+  let set_log_requests        n = log_status.requests        <- n
+  let set_log_scheduler       n = log_status.scheduler       <- n
+  let set_log_exceptions      n = log_status.exceptions      <- n
   let set_log_authentications n = log_status.authentications <- n
+  let set_log_processes       n = log_status.processes       <- n
+  let set_log_user            n = log_status.user            <- n
 
   let do_log = function
     | Req n -> n < log_status.requests
     | Sch n -> n < log_status.scheduler
     | Exc n -> n < log_status.exceptions
     | Aut n -> n < log_status.authentications
+    | Prc n -> n < log_status.processes
+    | Usr n -> n < log_status.user
 
   let str_log = function
     | Req n -> "Req", n
     | Sch n -> "Sch", n
     | Exc n -> "Exc", n
     | Aut n -> "Aut", n
+    | Prc n -> "Prc", n
+    | Usr n -> "Usr", n
 
   let log_files = ref [||]
   let log_folder = ref ""
@@ -463,7 +476,8 @@ module Io = struct
 
   let close (s:t) =
     (try Unix.(shutdown s.sock SHUTDOWN_ALL); with _ -> ());
-    (try Unix.close s.sock with _ -> ())
+    (try Unix.close s.sock with _ -> ());
+    s.finalise ()
 
   let register (r : t) =
     let i = (Domain.self () :> int) in
@@ -475,12 +489,10 @@ module Io = struct
     let c = cur_client () in
     info.pendings.(Util.file_descr_to_int r.sock) <- (OneSocket { ty = Io; client = c; pd = NoEvent })
 
-  let create sock =
-    let r = { sock
-            ; waiting = Array.make max_domain false }
-    in
-    Gc.finalise close r;
-    r
+  let create ?(finalise=fun () -> ()) sock =
+    { sock
+    ; finalise
+    ; waiting = Array.make max_domain false }
 
   let rec read (io:t) s o l =
   try

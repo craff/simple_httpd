@@ -70,10 +70,10 @@ let make ?(bs=Bytes.create @@ 16 * 1024) ?(close=ignore) ~consume ~fill () : t =
   } in
   self
 
-let of_chan_ ?(buf_size=16 * 1024) ~close ic : t =
+let of_chan ?(buf_size=16 * 1024) ic : t =
   make
     ~bs:(Bytes.create buf_size)
-    ~close:(fun _ -> close ic)
+    ~close:(fun _ -> close_in ic)
     ~consume:(fun self n ->
         self.off <- self.off + n;
         self.len <- self.len - n)
@@ -85,12 +85,10 @@ let of_chan_ ?(buf_size=16 * 1024) ~close ic : t =
       )
     ()
 
-let of_chan = of_chan_ ~close:close_in
-
-let of_fd_ ?(buf_size=16 * 1024) ~close ic : t =
+let of_fd ?(buf_size=16 * 1024) ic : t =
   make
     ~bs:(Bytes.create buf_size)
-    ~close:(fun _ -> close ic)
+    ~close:(fun _ -> Unix.close ic)
     ~consume:(fun self n ->
         self.off <- self.off + n;
         self.len <- self.len - n)
@@ -101,12 +99,10 @@ let of_fd_ ?(buf_size=16 * 1024) ~close ic : t =
         )
     ()
 
-let of_fd = of_fd_ ~close:Unix.close
-
-let of_client_ ?(buf_size=16 * 1024) ~close ic : t =
+let of_client ?(buf_size=16 * 1024) ic : t =
   make
     ~bs:(Bytes.create buf_size)
-    ~close:(fun _ -> close ic)
+    ~close:(fun _ -> Async.Client.close ic)
     ~consume:(fun self n ->
         self.off <- self.off + n;
         self.len <- self.len - n)
@@ -118,14 +114,12 @@ let of_client_ ?(buf_size=16 * 1024) ~close ic : t =
       )
     ()
 
-let of_client = of_client_ ~close:(fun c -> Async.Client.close c)
-
 module Io = Async.Io
 
-let of_io_ ?(buf_size=16 * 1024) ~close (sock:Io.t) : t =
+let of_io ?(buf_size=16 * 1024) (sock:Io.t) : t =
   make
     ~bs:(Bytes.create buf_size)
-    ~close:(fun _ -> close sock)
+    ~close:(fun _ -> Io.close sock)
     ~consume:(fun self n ->
         self.off <- self.off + n;
         self.len <- self.len - n)
@@ -136,8 +130,6 @@ let of_io_ ?(buf_size=16 * 1024) ~close (sock:Io.t) : t =
         )
       )
     ()
-
-let of_io = of_io_ ~close:(fun c -> Io.close c)
 
 let rec iter f (self:t) : unit =
   self.fill_buf();

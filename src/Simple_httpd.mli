@@ -182,7 +182,7 @@ end
 module Io : sig
     type t
 
-    val create : Unix.file_descr -> t
+    val create : ?finalise:(unit -> unit) -> Unix.file_descr -> t
     val close : t -> unit
     val read : t -> Bytes.t -> int -> int -> int
     val write : t -> Bytes.t -> int -> int -> int
@@ -399,25 +399,15 @@ end
 module Process : sig
   (** type to explain which channel of the process you are interested in *)
 
-  (** [create_process cmd args] creates a new process, with the given command
+  (** [create_process ~wait_interval cmd args] creates a new process, with the given command
       name and args. It returns a unix domain socket of type [Io.t] connected
       to the standard input and output of the process. The stderr is connected
       to the stderr of the server.
 
-      Note: there are some issues with the detection of the end of the
-      process. For instance, I had trouble with interfacing with the unix
-      [tail] command, when the file was empty. Some reason are
-      - no real flush unix domain socket
-      - epoll seems to miss the RDHUP event if the process life is too short ?*)
-  val create : string -> string array -> int * Io.t
-
-  (** wait for the given process to terminate. To be robust, it waits [time]
-      seconds (default 0.1s = 100ms) allowing other client to run until retrying
-      [Unix.waitpid [WNOHANG]].
-
-      This function can be used on any process not only those created by
-      {!create}. *)
-  val wait : ?time:float -> int -> Unix.process_status
+      When the Io.t channel is closed, the process is waited for using
+      [Unix.waitpid [WNOHANG; WUNTRACED]], if a loop that yield CPU for
+      wait_interval second (default 0.010s = 10ms). *)
+  val create : ?wait_interval: float -> string -> string array -> int * Io.t
 end
 
 (** Module defining HTML methods (GET,PUT,...) *)
@@ -642,8 +632,12 @@ module Response : sig
       the client to answer a {!Request.t}*)
 
   type body = String of string
-            | Stream of Input.t * (unit -> unit) option
-           (** flush each part and call f if second arg is [Some f] *)
+            | Stream of
+                { body : Input.t
+                ; synch : (unit -> unit) option
+                (** flush each part and call f if synch is [Some f] *)
+                ; close : Input.t -> unit
+                (** close stream with this function at end of input *)}
             | File of
                 { fd : Unix.file_descr
                 ; size : int
@@ -698,6 +692,7 @@ module Response : sig
 
   val make_raw_stream :
     ?synch:(unit->unit) ->
+    ?close:(Input.t->unit) ->
     ?cookies:Cookies.t ->
     ?headers:Headers.t ->
     ?post:(unit -> unit) ->
@@ -748,6 +743,7 @@ module Response : sig
 
   val make_stream :
     ?synch:(unit -> unit) ->
+    ?close:(Input.t->unit) ->
     ?cookies:Cookies.t ->
     ?headers:Headers.t ->
     ?post:(unit -> unit) ->

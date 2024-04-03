@@ -4,8 +4,11 @@
     the client to answer a {!Request.t}*)
 
 type body = String of string
-          | Stream of Input.t * (unit -> unit) option
-           (** flush each part and call f if second arg is [Some f] *)
+          | Stream of  { body : Input.t
+                       ; synch : (unit -> unit) option
+                       ; close : Input.t -> unit}
+                (** flush each part and call f for each part if second arg is [Some f],
+                    use the close function at end of output *)
           | File of
               { fd : Unix.file_descr
               ; size : int
@@ -63,6 +66,7 @@ val make_raw :
 
 val make_raw_stream :
   ?synch:(unit->unit) ->
+  ?close:(Input.t->unit) ->
   ?cookies:Cookies.t ->
   ?headers:Headers.t ->
   ?post:(unit -> unit) ->
@@ -113,6 +117,7 @@ val make_string :
 
 val make_stream :
   ?synch:(unit->unit) ->
+  ?close:(Input.t->unit) ->
   ?cookies:Cookies.t ->
   ?headers:Headers.t ->
   ?post:(unit -> unit) ->

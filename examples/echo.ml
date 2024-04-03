@@ -98,6 +98,21 @@ let _ =
                ~dir_behavior:Dir.Index_or_lists ())
     ~vfs:vfs ~prefix:"vfs"
 
+(** Run a shell command (VERY UNSAFE!) *)
+let _ =
+  Server.add_route_handler ~meth:GET server ~filter
+    Route.(exact "shell" @/ string @/ return)
+    (fun cmd req ->
+      let args = List.fold_left (fun acc (k,v) ->
+                     let acc = if k <> "" then k::acc else acc in
+                     let acc = if v <> "" then v::acc else acc in
+                     acc) [cmd] (Request.query req)
+      in
+      let args = Array.of_list (List.rev args) in
+      let (_, io) = Process.create cmd args in
+      Response.make_stream (Input.of_io io);
+    )
+
 (** Add a route sending a compressed stream for the given file in the current
     directory *)
 let _ =
