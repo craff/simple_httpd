@@ -341,6 +341,8 @@ module Log : sig
     | Sch of int (** log the scheduler: mainly for debugging *)
     | Exc of int (** Exception: 1 => only error that are important *)
     | Aut of int (** Authentications: 1 => all login/logout *)
+    | Prc of int (** Processes: 1: start and stop, 2: details of waitpid *)
+    | Usr of int (** User specific log *)
 
   (** Set log level for requests. [set_log_request n] will show all log called
       with [Req p] when p < n. *)
@@ -354,6 +356,12 @@ module Log : sig
 
   (** same as above for authentications *)
   val set_log_authentications : int -> unit
+
+  (** same as above for processes *)
+  val set_log_processes       : int -> unit
+
+  (** same as above for user specific logs *)
+  val set_log_user             : int -> unit
 
   (** With asynchronous communication, log can be mixed between domains.
       To address this issue, each domain will use a different file inside
@@ -1046,6 +1054,12 @@ module Server : sig
 
     val log_authentications : int ref
     (** log level for authentications *)
+
+    val log_processes : int ref
+    (** log level for processes *)
+
+    val log_user : int ref
+    (** log level for user specific logs *)
 
     val log_folder : string ref
     (** if non empty, one log per domain will be written in the given
