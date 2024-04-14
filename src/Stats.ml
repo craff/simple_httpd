@@ -225,11 +225,11 @@ let filter () =
  	   zoom_graph = Math.min(1,zoom_graph * Math.pow(2, event.deltaY / 250));
            draw_graph('canvas',data);
        }
-       document.getElementById('canvas').addEventListener("wheel", do_zoom);
        function onLoad() {
 	   sort('table',1,true,true);
 	   draw_graph('canvas',data);
 	   setTimeout ( "location.reload ();", 60000);
+           document.getElementById('canvas').addEventListener("wheel", do_zoom);
        }
      </script>
      <?ml match in_head with None -> () | Some f -> f output ?>
