@@ -25,23 +25,12 @@ let create : ?path:string ->
              name:string ->
              string -> t -> t =
   fun ?path ?domain ?expires ?max_age ?secure ?http_only
-      ?same_site ?extension ~name value cookies ->
+      ?(same_site=`Strict) ?extension ~name value cookies ->
   match create ?path ?domain ?expires ?max_age ?secure ?http_only
-          ?same_site ?extension ~name value
+          ~same_site ?extension ~name value
   with
   | Ok c -> add c cookies
   | Error err -> raise (BadCookies err)
 
 let get name cookies =
   List.find (fun c -> Http_cookie.name c = name) cookies
-
-let delete name cookies =
-  try
-    let c = get name cookies in
-    let cookies = List.filter (fun c -> Http_cookie.name c <> name) cookies in
-    Http_cookie.expire c :: cookies
-  with
-    Not_found -> cookies
-
-let delete_all cookies =
-  List.map expire cookies

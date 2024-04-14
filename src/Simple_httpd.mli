@@ -518,13 +518,6 @@ module Cookies : sig
                string -> t -> t
 
   val get : string -> t -> Http_cookie.t
-
-  (** remove a cookie by setting a negative max-age. Does nothing
-      if there are no cookie with that name. *)
-  val delete : string -> t -> t
-
-  (** remove all cookies by setting a negative max-age *)
-  val delete_all : t -> t
 end
 
 (** Module handling HTML requests *)

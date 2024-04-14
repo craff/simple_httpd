@@ -365,7 +365,7 @@ and ocaml_lexer top s n =
             assert (global = "");
             Printf.bprintf out
               "(fun [@warning \"-27\"] request headers ->
-                let [@warning \"-26..27\"] cookies = Request.cookies request in
+                let [@warning \"-26..27\"] cookies = [] in
                 let module M = struct
                   %s
                 end in

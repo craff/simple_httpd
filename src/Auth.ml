@@ -49,25 +49,26 @@ module Make(Login:Login) = struct
       in
       let check () =
         try
-          match Session.get_session ~cookie_policy request with
-          | None -> raise Not_found
+          match Session.check_session_cookie ~cookie_policy request with
+          | None -> assert false
           | Some session ->
-             match Session.get_session_data session auth_key with
-             | None -> raise Not_found
-             | Some _ ->
-                redirect (Session.mk_cookies session Login.cookie_policy
-                            (Request.cookies request))
+             redirect (Session.mk_cookies session Login.cookie_policy
+                         (Request.cookies request))
         with
         | Not_found ->
            match check_pass () with
            | Some cookies -> redirect cookies
-           | None -> ()
-      in
-      check ();
+           | None ->
+              Log.f (Exc 0) (fun k -> k "login delete all COKIES");
+              Session.select_cookies ~delete:true cookie_policy (Request.cookies request)
 
-      match page with
-      | Some page -> page request headers
-      | None ->
+      in
+      let cookies = check () in
+
+      let (headers, _, inp) =
+        match page with
+        | Some page -> page request headers
+        | None ->
          {chaml|<!DOCTYPE html>
            <head>
               <title>login page</title>
@@ -92,7 +93,8 @@ module Make(Login:Login) = struct
                </form>
              </div>
            </body>
-       |chaml} request headers)
+          |chaml} request headers
+      in (headers, cookies, inp))
 
   exception Login
 
@@ -140,7 +142,9 @@ module Make(Login:Login) = struct
       end;
       r
     with Login ->
-         Response.fail_raise ~code:log_code ~headers:log_headers "%s" log_msg
+      let cookies = Session.select_cookies ~delete:true cookie_policy (Request.cookies request) in
+      Log.f (Exc 0) (fun k -> k "check delete all COKIES");
+      Response.fail_raise ~code:log_code ~cookies ~headers:log_headers "%s" log_msg
 
 
   let check_handler ?not_logged fn request =
@@ -159,14 +163,19 @@ module Make(Login:Login) = struct
       match not_logged with
       | Some fn -> fn request
       | None ->
-         Response.fail_raise ~code:Response_code.see_other
+         let cookies = Session.select_cookies ~delete:true cookie_policy (Request.cookies request) in
+         Log.f (Exc 0) (fun k -> k "check_handler delete all COKIES");
+         Response.fail_raise ~code:Response_code.see_other ~cookies
            ~headers:redirect_headers "login please"
 
   let check_filter ?nologin ?(check_data=fun _ -> true) request =
     let (cookies, _) = check ?nologin ~check_data request in
     let fn resp =
+      List.iter (fun c -> Printf.printf "%s: %s\n%!" (Http_cookie.name c) (Http_cookie.value c)) cookies;
       let headers = Headers.set_cookies cookies (Response.headers resp) in
-      Response.set_headers headers resp
+      let resp = Response.set_headers headers resp in
+      List.iter (fun (n,v) -> Printf.printf "%s: %s\n%!" (Headers.to_string n) v) (Response.headers resp);
+      resp
     in (request, fn)
 
 end

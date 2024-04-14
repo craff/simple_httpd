@@ -33,8 +33,12 @@ val get_session_data : t -> 'a key -> 'a option
 val set_session_data : t -> 'a key -> 'a -> unit
 val remove_session_data : t -> 'a key -> unit
 
+val check_session_cookie : ?cookie_policy:cookie_policy -> ?create:bool -> 'a Request.t ->
+                           t option
+
 (** remove all server side and client side session data by expiring the
     session cookies*)
 val delete_session : ?cookie_policy:cookie_policy -> 'a Request.t -> Cookies.t
 
 val mk_cookies : t -> cookie_policy -> Cookies.t -> Cookies.t
+val select_cookies : ?delete:bool -> ?create:t -> cookie_policy -> Cookies.t -> Cookies.t

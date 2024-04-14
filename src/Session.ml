@@ -60,10 +60,7 @@ let default_cookie_policy =
   { path = "/"
   ; base = "Session"
   ; life = 3600.0
-  ; filter = fun c ->
-             let name = Http_cookie.name c in
-             if name.[0] = '_' then None else Some c }
-
+  ; filter = fun _ -> None }
 
 let prefix_sec info =
   if info.path = "/" then "Host" else "Secure"
@@ -168,35 +165,68 @@ let mk_cookies (session : t)  cookie_policy cs =
   let session_key = session_key cookie_policy in
   let session_adr = session_adr cookie_policy in
   let path = cookie_policy.path in
-  let max_age = Int64.of_float session.life_time in
-  let cs = List.filter_map
-            (fun c ->
-              let name = Http_cookie.name c in
-              if name = session_key || name = session_adr then
-                None
-              else
-                Option.map
-                  (fun c -> match Http_cookie.update_max_age (Some max_age) c
-                            with Ok c -> c
-                               | Error _ -> assert false)
-                  (cookie_policy.filter c))
-            cs
-  in
+  let max_age = Int64.of_float cookie_policy.life in
   let cs = Cookies.create ~name:session_key ~max_age ~path ~secure:true
             ~same_site:`Strict session.key cs in
   let cs = Cookies.create ~name:session_adr ~max_age ~path ~secure:true
             ~same_site:`Strict session.addr cs in
   cs
 
-let select_cookies cookie_policy req =
+let select_cookies ?(delete=false) ?create cookie_policy cookies =
   let session_key = session_key cookie_policy in
   let session_adr = session_adr cookie_policy in
-  List.filter_map
+  let cookies =
+    List.filter_map
     (fun c ->
       let name = Http_cookie.name c in
       if name = session_key || name = session_adr then
-        Some c
-      else cookie_policy.filter c) (Request.cookies req)
+        begin
+          let c = Http_cookie.update_path (Some cookie_policy.path) c in
+          let c = try Result.get_ok c with Invalid_argument _ -> assert false in
+          let c = Http_cookie.update_secure true c in
+          let c = Http_cookie.update_same_site (Some `Strict) c in
+          let c = Http_cookie.update_max_age (if delete then Some 0L else
+                                                let max_age =
+                                                  Int64.of_float cookie_policy.life in
+                                                Some max_age) c in
+          let c = try Result.get_ok c with Invalid_argument _ -> assert false in
+          let c = if delete then Http_cookie.update_value "" c  else Ok c in
+          let c = try Result.get_ok c with Invalid_argument _ -> assert false in
+          Some c
+        end
+      else
+        match cookie_policy.filter c with
+        | Some c when delete -> Some (Http_cookie.expire c)
+        | opt -> opt) cookies
+  in
+  match create with
+  | Some session -> mk_cookies session cookie_policy cookies
+  | None         -> cookies
+
+let check_session_cookie ?(cookie_policy=default_cookie_policy) ?(create=false) req =
+  let session =
+    match get_session ~cookie_policy req with
+    | None -> raise Not_found
+    | Some session -> session
+  in
+  let cookies = Request.cookies req in
+  let session_key = session_key cookie_policy in
+  let session_adr = session_adr cookie_policy in
+  let key = Option.map Http_cookie.value
+              (Request.get_cookie req session_key)
+  in
+  match (key, Request.get_cookie req session_adr) with
+  | (Some key, Some addr) when
+         key = session.key &&
+           Http_cookie.value addr = session.addr ->
+     let client = Request.client req in
+     let addr = Util.addr_of_sock client.sock in
+     if addr <> session.addr then raise Not_found;
+     Some session
+  | (None, None) when cookies = [] && create ->
+     None
+  | _ -> raise Not_found
+  | exception _ -> raise Not_found
 
 let start_check
       ?(create=true)
@@ -207,7 +237,6 @@ let start_check
   let cookies = Request.cookies req in
   let client = Request.client req in
   let session_key = session_key cookie_policy in
-  let session_adr = session_adr cookie_policy in
   let key = Option.map Http_cookie.value
               (Request.get_cookie req session_key)
   in
@@ -223,40 +252,28 @@ let start_check
     in
     let bad () = raise (Bad session) in
     if not (check session) then bad ();
-    let cookies =
+    let delete =
       if old then
         begin
-          let session, cookies =
-            match (key, Request.get_cookie req session_adr) with
-            | (Some key, Some addr) when
-                   key = session.key &&
-                     Http_cookie.value addr = session.addr -> (session, cookies)
-            | (None, None) when cookies = [] -> (session, cookies)
-            | _ ->
-               delete_session session;
-               if create then (fst (start_session ~session_life_time client key), [])
-               else raise Exit
-            | exception _ -> bad ()
-          in
-          let addr = Util.addr_of_sock client.sock in
-          if addr <> session.addr then bad ();
-          cookies
+          try
+            ignore (check_session_cookie ~cookie_policy ~create req);
+            false
+          with Not_found ->
+            if not create then raise (Bad session);
+            let _ = start_session ~session_life_time client key in
+            false
         end
-      else
-        begin
-          Cookies.delete_all cookies
-        end
+      else true
     in
-    (mk_cookies session cookie_policy cookies, session)
+    (select_cookies ~delete ~create:session cookie_policy cookies, session)
   with Bad session ->
         delete_session session;
         let (code, headers) = error in
-        let cookies = Cookies.delete_all (select_cookies cookie_policy req) in
+        let cookies = select_cookies ~delete:true cookie_policy (Request.cookies req) in
         Response.fail_raise ~headers ~cookies ~code "Delete session"
      | Exit ->
         let (code, headers) = error in
-        let cookies = Cookies.delete_all (select_cookies cookie_policy req) in
-        Response.fail_raise ~headers ~cookies ~code "Delete session"
+        Response.fail_raise ~headers ~code "No session"
 
 let delete_session ?(cookie_policy=default_cookie_policy) req =
   let session = get_session req in
@@ -265,12 +282,7 @@ let delete_session ?(cookie_policy=default_cookie_policy) req =
     | None -> ()
     | Some session -> delete_session session
   end;
-  let cookies = Cookies.delete_all (select_cookies cookie_policy req) in
-  List.map (fun c ->
-      let c = Result.get_ok (Http_cookie.update_path (Some cookie_policy.path) c) in
-      let c = Http_cookie.update_secure true c in
-      c) cookies
-
+  select_cookies ~delete:true cookie_policy (Request.cookies req)
 
 let filter
       ?(check=fun _ -> true)
