@@ -122,6 +122,7 @@ module IoTmp = struct
   type t = { sock : Unix.file_descr
            ; finalise : unit -> unit (** extra function when closing *)
            ; waiting : bool array
+           ; closing : bool Atomic.t
            (* which domain has added the socket to epoll,
               the first time it had a client blocked while trying to lock *) }
 end
@@ -473,9 +474,12 @@ module Io = struct
   include IoTmp
 
   let close (s:t) =
-    (try Unix.(shutdown s.sock SHUTDOWN_ALL); with _ -> ());
-    (try Unix.close s.sock with _ -> ());
-    s.finalise ()
+    if Atomic.compare_and_set s.closing false true then
+      begin
+        s.finalise ();
+        (try Unix.(shutdown s.sock SHUTDOWN_ALL); with _ -> ());
+        (try Unix.close s.sock with _ -> ())
+      end
 
   let register (r : t) =
     let i = (Domain.self () :> int) in
@@ -488,9 +492,13 @@ module Io = struct
     info.pendings.(Util.file_descr_to_int r.sock) <- (OneSocket { ty = Io; client = c; pd = NoEvent })
 
   let create ?(finalise=fun () -> ()) sock =
-    { sock
-    ; finalise
-    ; waiting = Array.make max_domain false }
+    let r = { sock
+            ; finalise
+            ; waiting = Array.make max_domain false
+            ; closing = Atomic.make false }
+    in
+    Gc.finalise close r;
+    r
 
   let rec read (io:t) s o l =
   try

@@ -13,6 +13,8 @@
 
 module Util = Util
 
+module Sfd = Util.Sfd
+
 module Input = Input
 
 module Output = Output

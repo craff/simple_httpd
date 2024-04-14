@@ -523,3 +523,20 @@ let cleanup l =
   List.iter (function D(k,x) -> k.c x) l
 
 let empty = []
+
+module Sfd = struct
+  type t =
+    { fd : Unix.file_descr
+    ; closing : bool Atomic.t }
+
+  let close { fd; closing } =
+    if Atomic.compare_and_set closing false true then
+      Unix.close fd
+
+  let make fd =
+    let r = { fd; closing = Atomic.make false } in
+    Gc.finalise close r;
+    r
+
+  let get { fd; _ } = fd
+end

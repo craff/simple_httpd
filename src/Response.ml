@@ -4,15 +4,18 @@ let fail_raise = Headers.fail_raise
 let log = Log.f
 
 type body = String of string
-          | Stream of { body: Input.t; synch:(unit -> unit) option; close : Input.t -> unit }
+          | Stream of
+              { inp: Input.t
+              ; synch:(unit -> unit) option
+              ; close : Input.t -> unit }
            (** flush each part and call f if second arg is [Some f] *)
           | File of
-              { fd : Unix.file_descr
+              { fd : Util.Sfd.t
               ; size : int
-              ; close : bool
+              ; close : (Util.Sfd.t -> unit) }
                 (** if using sendfile, one might want to maintain the fd open
                     for another request, sharing file descriptor would limit
-                    the number of open files *)}
+                    the number of open files *)
           | Void
 
 type t = {
@@ -39,17 +42,23 @@ let make_raw ?(cookies=[]) ?(headers=[]) ?(post=fun () -> ()) ~code body : t =
   { code; headers; body; post }
 
 let make_raw_stream ?synch ?(close=Input.close) ?(cookies=[]) ?(headers=[]) ?(post=fun () -> ())
-      ~code body : t =
+      ~code inp : t =
   (* do not add content length to response *)
   let headers = Headers.set Headers.Transfer_Encoding "chunked" headers in
   let headers = Headers.set_cookies cookies headers in
-  { code; headers; body=Stream{body;synch;close}; post }
+  let body = Stream{inp;synch;close} in
+  Gc.finalise (fun _ -> try close inp with _ -> ()) inp;
+  { code; headers; body; post }
 
-let make_raw_file ?(cookies=[]) ?(headers=[]) ?(post=fun () -> ())
-      ~code ~close size body : t =
+let make_raw_file ?(cookies=[]) ?(headers=[]) ?(post=fun () -> ()) ?(close=Util.Sfd.close)
+      ~code size fd : t =
   (* add content length to response *)
   let headers = Headers.set_cookies cookies headers in
-  { code; headers; body=File{size; fd=body; close}; post }
+  let m = Atomic.make false in
+  let close fd = if Atomic.compare_and_set m false true then close fd in
+  let body = File{size; fd; close} in
+  (* Gc.finalise (fun _ -> try Unix.close fd with _ -> ()) close;*)
+  { code; headers; body; post }
 
 let make_void ?(cookies=[]) ?(headers=[]) ?(post=fun () -> ()) ~code () : t =
   let headers = Headers.set_cookies cookies headers in
@@ -66,12 +75,12 @@ let make_string ?cookies ?headers ?post body =
 let make_stream ?synch ?close ?cookies ?headers ?post body =
   make_raw_stream ?synch ?close ?cookies ?headers ?post ~code:ok body
 
-let make_file ?cookies ?headers ?post ~close n body =
-  make_raw_file ?cookies ?headers ?post ~code:ok ~close n body
+let make_file ?cookies ?headers ?post ?close n body =
+  make_raw_file ?cookies ?headers ?post ?close ~code:ok n body
 
 let make ?cookies ?headers ?post r : t = match r with
   | String body -> make_raw ?cookies ?headers ~code:ok body
-  | Stream{body;synch;close} -> make_raw_stream ?synch ~close ?cookies ?headers ~code:ok body
+  | Stream{inp;synch;close} -> make_raw_stream ?synch ~close ?cookies ?headers ~code:ok inp
   | File{size;fd=body;close}->
      make_raw_file ?cookies ?headers ?post ~code:ok ~close size body
   | Void -> make_void ?cookies ?headers ~code:ok ()
@@ -122,8 +131,8 @@ let output_ meth (oc:Output.t) (self:t) : unit =
   if meth = Method.HEAD then
     begin
       match body with
-      | File {size=_; fd; close=true} -> Unix.close fd
-      | Stream{body; close; _} -> close body
+      | File {size=_; fd; close} -> close fd
+      | Stream{inp; close; _} -> close inp
       | _ -> ()
     end
   else
@@ -131,15 +140,14 @@ let output_ meth (oc:Output.t) (self:t) : unit =
       match body with
       | String "" | Void -> ()
       | String s         -> Output.output_str oc s
-      | File {size; fd; close=false} -> Output.sendfile oc size fd
-      | File {size; fd; close=true} ->
-         (try Output.sendfile oc size fd; Unix.close fd
-        with e -> Unix.close fd; raise e)
-      | Stream {body;synch;close} ->
+      | File {size; fd; close} ->
+         (try Output.sendfile oc size (Util.Sfd.get fd); close fd
+          with e -> close fd; raise e)
+      | Stream {inp;synch;close} ->
          (try
-            Output.output_chunked ?synch oc body;
-            close body;
-          with e -> close body; raise e)
+            Output.output_chunked ?synch oc inp;
+            close inp;
+          with e -> close inp; raise e)
     end;
   Output.flush oc;
   self.post ()

@@ -196,18 +196,18 @@ let compress_resp_stream_
       Log.f (Req 2)
         (fun k->k "encode str response with deflate (size %d, threshold %d)"
              (String.length s) compress_above);
-      let body =
+      let inp =
         encode_deflate_stream_ ~buf_size @@ BS.of_string s
       in
       resp
       |> Response.update_headers update_headers
-      |> Response.set_body (Stream {body; synch=None; close=Input.close})
+      |> Response.set_body (Stream {inp; synch=None; close=Input.close})
 
-    | Stream {body; synch; close} ->
+    | Stream {inp; synch; close} ->
       Log.f (Req 2) (fun k->k "encode stream response with deflate");
       resp
       |> Response.update_headers update_headers
-      |> Response.set_body (Stream {body = encode_deflate_stream_ ~buf_size body
+      |> Response.set_body (Stream {inp = encode_deflate_stream_ ~buf_size inp
                                    ; synch; close})
 
     | String _ | Void | File _ (* TODO ?*) -> resp

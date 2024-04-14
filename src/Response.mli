@@ -4,15 +4,15 @@
     the client to answer a {!Request.t}*)
 
 type body = String of string
-          | Stream of  { body : Input.t
+          | Stream of  { inp : Input.t
                        ; synch : (unit -> unit) option
                        ; close : Input.t -> unit}
                 (** flush each part and call f for each part if second arg is [Some f],
                     use the close function at end of output *)
           | File of
-              { fd : Unix.file_descr
+              { fd : Util.Sfd.t
               ; size : int
-              ; close : bool
+              ; close : Util.Sfd.t -> unit
                 (** if using sendfile, one might want to maintain the fd open
                     for another request, sharing file descriptor would limit
                     the number of open files *)}
@@ -80,9 +80,9 @@ val make_raw_file :
   ?cookies:Cookies.t ->
   ?headers:Headers.t ->
   ?post:(unit -> unit) ->
+  ?close:(Util.Sfd.t -> unit) ->
   code:Response_code.t ->
-  close:bool ->
-  int -> Unix.file_descr ->
+  int -> Util.Sfd.t ->
   t
 (** Same as {!make_raw} but with a file_descriptor. The body will be sent with
     Linux sendfile system call.
@@ -128,8 +128,9 @@ val make_file :
   ?cookies:Cookies.t ->
   ?headers:Headers.t ->
   ?post:(unit -> unit) ->
-   close:bool ->
-  int -> Unix.file_descr -> t
+  ?close:(Util.Sfd.t -> unit) ->
+  int ->
+  Util.Sfd.t -> t
 (** Same as {!make} but with a file_descr body. *)
 
 val fail :

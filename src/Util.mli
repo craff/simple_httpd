@@ -95,3 +95,10 @@ val add_replace : 'a key -> 'a -> data -> data
 val remove : 'a key -> data -> data
 val cleanup : data -> unit
 val empty : data
+
+module Sfd : sig
+  type t
+  val make : Unix.file_descr -> t
+  val close : t -> unit
+  val get  : t -> Unix.file_descr
+end

@@ -306,18 +306,18 @@ let add_vfs_ ?addresses ?(filter=(fun x -> (x, fun r -> r)))
              Response.make_raw_file
                ~headers:(cache_control
                          ((Headers.Content_Encoding, "deflate")::info.headers))
-               ~code:ok ~close:true size fd
+               ~code:ok size (Util.Sfd.make fd)
           | Path(f, _) ->
              let fd = Unix.openfile f [O_RDONLY] 0 in
              let size = match info.size with Some s -> s | None -> assert false in
              Response.make_raw_file
                ~headers:(cache_control info.headers)
-               ~code:ok ~close:true size fd
+               ~code:ok size (Util.Sfd.make fd)
           | Fd(fd) ->
              let size = Unix.(fstat fd).st_size in
              Response.make_raw_file
                ~headers:(cache_control info.headers)
-               ~code:ok ~close:true size fd
+               ~code:ok size (Util.Sfd.make fd)
           | String(_, Some sz) when deflate ->
              Response.make_raw
                ~headers:(cache_control (

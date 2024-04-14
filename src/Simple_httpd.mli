@@ -405,7 +405,13 @@ end
 (** Module for creating process to communicate with.
    reading and writing are non blocking. *)
 module Process : sig
-  (** type to explain which channel of the process you are interested in *)
+  (** type describing processed status *)
+  type status = Running | Exited of int | Exn of exn
+
+  (** record holding process information *)
+  type process = private
+    { pid : int
+    ; mutable status : status }
 
   (** [create_process ~wait_interval cmd args] creates a new process, with the given command
       name and args. It returns a unix domain socket of type [Io.t] connected
@@ -415,7 +421,7 @@ module Process : sig
       When the Io.t channel is closed, the process is waited for using
       [Unix.waitpid [WNOHANG; WUNTRACED]], if a loop that yield CPU for
       wait_interval second (default 0.010s = 10ms). *)
-  val create : ?wait_interval: float -> string -> string array -> int * Io.t
+  val create : ?wait_interval: float -> string -> string array -> process * Io.t
 end
 
 (** Module defining HTML methods (GET,PUT,...) *)
@@ -632,6 +638,13 @@ module Response_code : sig
   include module type of Response_code
 end
 
+module Sfd : sig
+  type t
+  val make : Unix.file_descr -> t
+  val close : t -> unit
+  val get  : t -> Unix.file_descr
+end
+
 (** Module handling HTML responses *)
 module Response : sig
   (** {1 Responses}
@@ -641,15 +654,15 @@ module Response : sig
 
   type body = String of string
             | Stream of
-                { body : Input.t
+                { inp : Input.t
                 ; synch : (unit -> unit) option
                 (** flush each part and call f if synch is [Some f] *)
                 ; close : Input.t -> unit
                 (** close stream with this function at end of input *)}
             | File of
-                { fd : Unix.file_descr
+                { fd : Sfd.t
                 ; size : int
-                ; close : bool
+                ; close : Sfd.t -> unit
                   (** if using sendfile, one might want to maintain the fd open
                       for another request, sharing file descriptor would limit
                       the number of open files *)}
@@ -714,9 +727,9 @@ module Response : sig
     ?cookies:Cookies.t ->
     ?headers:Headers.t ->
     ?post:(unit -> unit) ->
+    ?close:(Sfd.t -> unit) ->
     code:Response_code.t ->
-    close:bool ->
-    int -> Unix.file_descr ->
+    int -> Sfd.t ->
     t
   (** Same as {!make_raw} but with a file_descriptor. The body will be sent with
       Linux sendfile system call.
@@ -762,8 +775,8 @@ module Response : sig
     ?cookies:Cookies.t ->
     ?headers:Headers.t ->
     ?post:(unit -> unit) ->
-    close:bool ->
-    int -> Unix.file_descr -> t
+    ?close:(Sfd.t -> unit) ->
+    int -> Sfd.t -> t
   (** Same as {!make} but with a file_descr body. *)
 
   val fail :
