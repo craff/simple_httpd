@@ -59,7 +59,6 @@ module Make(Login:Login) = struct
            match check_pass () with
            | Some cookies -> redirect cookies
            | None ->
-              Log.f (Exc 0) (fun k -> k "login delete all COKIES");
               Session.select_cookies ~delete:true cookie_policy (Request.cookies request)
 
       in
@@ -143,7 +142,6 @@ module Make(Login:Login) = struct
       r
     with Login ->
       let cookies = Session.select_cookies ~delete:true cookie_policy (Request.cookies request) in
-      Log.f (Exc 0) (fun k -> k "check delete all COKIES");
       Response.fail_raise ~code:log_code ~cookies ~headers:log_headers "%s" log_msg
 
 
@@ -164,7 +162,6 @@ module Make(Login:Login) = struct
       | Some fn -> fn request
       | None ->
          let cookies = Session.select_cookies ~delete:true cookie_policy (Request.cookies request) in
-         Log.f (Exc 0) (fun k -> k "check_handler delete all COKIES");
          Response.fail_raise ~code:Response_code.see_other ~cookies
            ~headers:redirect_headers "login please"
 
