@@ -82,7 +82,7 @@ module Make(Login:Login) = struct
                          transform:translate(-50%,-50%);">
                <form action=<?=Login.login_url?>
 		     onsubmit="subf();" method="post">
-                 <table><tr><th><label for="login">Login name</label></tr>
+                 <table><tr><th><label for="login">Login</label></tr>
                         <tr><td><input type="text" name="login" value="" on/></tr>
                         <tr><th><label for="password">Password</label></tr>
                         <tr><td><input type="password" name="password" value="" on/></tr>
