@@ -1,6 +1,6 @@
 
 let remove_first cond l =
-  let rec fn[@tail_mod_cons] = function
+  let[@tail_mod_cons] rec fn = function
     | x::l -> if cond x then l else x :: fn l
     | [] -> raise Not_found
   in
