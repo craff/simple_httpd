@@ -1525,6 +1525,7 @@ module Auth : sig
 
     val get_session_data : 'a Request.t -> Login.t option
 
+    val auth_key : Login.t Session.key
   end
 end
 

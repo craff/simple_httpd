@@ -179,6 +179,8 @@ and attributes mode =
   ; (attrs::attributes mode) one_spaces (ns:: ~? ((ns::name) ':' => ns)) (name::name)
       (value :: ~? [Empty] (spaces '=' spaces (v::value mode)=>v))
     => (ns, Html.attr_of_string name, value) :: attrs
+  ; (mode.str = true) (attrs::attributes mode) one_spaces "<?=" (ocaml::ocaml false) "?>"
+    => (None, Html.attr_of_string "",  (OptCaml (ocaml_pos, ocaml) : value)) :: attrs
 
 and tag_name = (name::name) => Html.tag_of_string name
 

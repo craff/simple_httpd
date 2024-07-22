@@ -7,6 +7,7 @@ type value = Empty
            | Single of string
            | Double of string
            | OCaml of Pos.pos * string
+           | OptCaml of Pos.pos * string
 type attributes = (string option * Html.attr * value) list
 
 type html =
@@ -291,18 +292,19 @@ let print_tag buf args ?(self=false) name attributes =
   let attributes =
     attributes
     |> List.map (fun (nmspace, name, (value : value)) ->
-           let value = match (value : value) with
-             | Empty -> ""
-             | Unquoted s -> "="^s
-             | Single s -> "='"^s^"'"
-             | Double s -> "=\""^s^"\""
-             | OCaml (pos,s) -> args := (pos, s) :: !args; "=\"\001s\""
+           let name = match nmspace with
+             | None -> " "^Html.attr_to_string name
+             | Some s -> " "^s^":"^Html.attr_to_string name
            in
-           let nmspace = match nmspace with
-             | None -> ""
-             | Some s -> s^":"
-           in
-           Format.sprintf " %s%s%s" nmspace (Html.attr_to_string name) value)
+           match (value : value) with
+             | Empty -> name
+             | Unquoted s -> name^"="^s
+             | Single s -> name^"='"^s^"'"
+             | Double s -> name^"=\""^s^"\""
+             | OCaml (pos,s) -> args := (pos, s) :: !args; name^"=\"\001s\""
+             | OptCaml (pos,s) ->
+                let s = Printf.sprintf "Option.value ~default:\"\" %s" s in
+                args := (pos, s) :: !args; " \001s")
     |> String.concat ""
   in
   Printf.bprintf buf "<%s%s%s>" (Html.tag_to_string name) attributes
