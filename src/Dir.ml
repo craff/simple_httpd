@@ -135,7 +135,11 @@ let html_list_dir (module VFS:VFS) ~prefix ~parent d : Html.chaml =
         let size =
           try
             match VFS.read_file fpath with
-            | FI { size = Some f ; _ } -> Printf.sprintf " (%s)" @@ human_size f
+            | FI { size = Some f ; content; _ } ->
+               (match content with
+                | Fd fd -> Unix.close fd
+                | _     -> ());
+               Printf.sprintf " (%s)" @@ human_size f
             | _ -> ""
           with _ -> ""
         in
@@ -273,7 +277,14 @@ let add_vfs_ ?addresses ?(filter=(fun x -> (x, fun r -> r)))
               in
          (Some mtime_str, may_cache)
         in
-        if may_cache then Response.make_raw ~code:not_modified "" else
+        if may_cache then
+          begin
+            (match info.content with
+             | Fd fd -> Unix.close fd
+             | _ -> ());
+            Response.make_raw ~code:not_modified ""
+          end
+        else
         let cache_control h =
           match mtime with
           | None -> (Headers.Cache_Control, "no-store") :: h
@@ -284,6 +295,9 @@ let add_vfs_ ?addresses ?(filter=(fun x -> (x, fun r -> r)))
              :: h
         in
         if VFS.is_directory path then (
+          (match info.content with
+          | Fd fd -> Unix.close fd
+          | _ -> ());
           let parent = Some (Filename.(dirname (prefix // path))) in
           match config.dir_behavior with
             | Lists | Index_or_lists ->
