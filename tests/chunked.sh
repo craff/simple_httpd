@@ -33,23 +33,26 @@ rm data
 
 echo upload1 1>&2
 cat foo_50 | curl -N -X PUT http://localhost:$PORT/data --data-binary @- \
-  -H 'Transfer-Encoding: chunked' --max-time 10 >\dev\null
+  -H 'Transfer-Encoding: chunked' --max-time 10 > /dev/null
 
 wc -c data
+cat foo
 rm data
 
 echo upload2 1>&2
 cat foo_50 | curl -N -X PUT http://localhost:$PORT/data --data-binary @- \
-  -H 'Transfer-Encoding: chunked' --max-time 10 >\dev\null
+  -H 'Transfer-Encoding: chunked' --max-time 10 > /dev/null
 
 wc -c data
+cat foo
 rm data
 
 echo upload3 1>&2
 cat foo_50 | curl -N -X PUT http://localhost:$PORT/data --data-binary @- \
-  -H 'Transfer-Encoding: chunked' --max-time 10 >\dev\null
+  -H 'Transfer-Encoding: chunked' --max-time 10 > /dev/null
 
 wc -c data
+cat foo
 rm data
 
 kill $PID
