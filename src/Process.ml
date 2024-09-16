@@ -18,7 +18,7 @@ let create ?(wait_interval=0.010) cmd args : (process * Io.t) =
     match Unix.(waitpid [WNOHANG; WUNTRACED] pid) with
     | (p, WEXITED e) when p != 0  ->
        proc.status <- Exited e;
-       Log.f (Prc 0) (fun k -> k "terminaed process %s (pid: %d, exit code: %d)"
+       Log.f (Prc 0) (fun k -> k "terminated process %s (pid: %d, exit code: %d)"
                                  cmd pid e);
        false
     | (p, _)                      ->
