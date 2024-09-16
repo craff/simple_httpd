@@ -439,12 +439,21 @@ let read_line_into (self:t) ~buf : unit =
     self.fill_buf();
     if self.len=0 then (
       continue := false;
-    );
+    ) else
     try
       let j, nb = index_rec2 self.bs (self.off + self.len) self.off '\r' 2 '\n' 1 in
       Buffer.add_subbytes buf self.bs self.off (j - self.off); (* without \r\n *)
       self.consume (j-self.off+nb); (* remove \n/stop *)
-      continue := false
+      continue := false;
+      if self.len < 0 then
+        begin
+          (* rare case where buffer stops between \r and \n *)
+          let to_eat = - self.len in
+          self.off <- self.off + self.len;
+          self.len <- 0;
+          self.fill_buf();
+          self.consume to_eat
+        end
     with Not_found ->
       Buffer.add_subbytes buf self.bs self.off self.len;
       self.consume self.len;
@@ -538,7 +547,8 @@ let read_chunked ~buf ~fail ~trailer (bs:t) : t =
       first := false
     ) else (
       let line = read_line ~buf bs in
-      if String.trim line <> "" then raise (fail "expected crlf between chunks";)
+      if String.trim line <> "" then raise (fail
+                                              (Printf.sprintf "expected crlf between chunks got %S" line))
     );
     let line = read_line ~buf bs in
     (* parse chunk length, ignore extensions *)
