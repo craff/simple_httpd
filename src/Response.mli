@@ -57,7 +57,6 @@ val get_post : t -> (unit -> unit)
 val make_raw :
   ?cookies:Cookies.t ->
   ?headers:Headers.t ->
-  ?post:(unit -> unit) ->
   code:Response_code.t ->
   string ->
   t
@@ -69,7 +68,6 @@ val make_raw_stream :
   ?close:(Input.t->unit) ->
   ?cookies:Cookies.t ->
   ?headers:Headers.t ->
-  ?post:(unit -> unit) ->
   code:Response_code.t ->
   Input.t ->
   t
@@ -79,7 +77,6 @@ val make_raw_stream :
 val make_raw_file :
   ?cookies:Cookies.t ->
   ?headers:Headers.t ->
-  ?post:(unit -> unit) ->
   ?close:(Util.Sfd.t -> unit) ->
   code:Response_code.t ->
   int -> Util.Sfd.t ->
@@ -93,7 +90,6 @@ val make_raw_file :
 val make :
   ?cookies:Cookies.t ->
   ?headers:Headers.t ->
-  ?post:(unit -> unit) ->
   body -> t
 (** [make r] turns a body into a response.
 
@@ -105,13 +101,11 @@ val make :
 val make_void :
   ?cookies:Cookies.t ->
   ?headers:Headers.t ->
-  ?post:(unit -> unit) ->
   code:Response_code.t -> unit -> t
 
 val make_string :
   ?cookies:Cookies.t ->
   ?headers:Headers.t ->
-  ?post:(unit -> unit) ->
   string -> t
 (** Same as {!make} but with a string body. *)
 
@@ -120,14 +114,12 @@ val make_stream :
   ?close:(Input.t->unit) ->
   ?cookies:Cookies.t ->
   ?headers:Headers.t ->
-  ?post:(unit -> unit) ->
   Input.t -> t
 (** Same as {!make} but with a stream body. *)
 
 val make_file :
   ?cookies:Cookies.t ->
   ?headers:Headers.t ->
-  ?post:(unit -> unit) ->
   ?close:(Util.Sfd.t -> unit) ->
   int ->
   Util.Sfd.t -> t
@@ -136,7 +128,6 @@ val make_file :
 val fail :
   ?cookies:Cookies.t ->
   ?headers:Headers.t ->
-  ?post:(unit -> unit) ->
   code:Response_code.t ->
   ('a, unit, string, t) format4 -> 'a
 (** Make the current request fail with the given code and message.

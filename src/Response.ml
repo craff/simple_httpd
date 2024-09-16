@@ -35,58 +35,57 @@ let set_code code self = {self with code}
 let set_post post self = {self with post}
 let get_post self = self.post
 
-let make_raw ?(cookies=[]) ?(headers=[]) ?(post=fun () -> ()) ~code body : t =
+let make_raw ?(cookies=[]) ?(headers=[]) ~code body : t =
   (* add content length to response *)
   let headers = Headers.set_cookies cookies headers in
   let body = if body = "" then Void else String body in
+  let post () = () in
   { code; headers; body; post }
 
-let make_raw_stream ?synch ?(close=Input.close) ?(cookies=[]) ?(headers=[]) ?(post=fun () -> ())
-      ~code inp : t =
+let make_raw_stream ?synch ?(close=Input.close) ?(cookies=[]) ?(headers=[]) ~code inp : t =
   (* do not add content length to response *)
   let headers = Headers.set Headers.Transfer_Encoding "chunked" headers in
   let headers = Headers.set_cookies cookies headers in
   let body = Stream{inp;synch;close} in
+  let post () = close inp in
   Gc.finalise (fun _ -> try close inp with _ -> ()) inp;
   { code; headers; body; post }
 
-let make_raw_file ?(cookies=[]) ?(headers=[]) ?(post=fun () -> ()) ?(close=Util.Sfd.close)
-      ~code size fd : t =
+let make_raw_file ?(cookies=[]) ?(headers=[]) ?(close=Util.Sfd.close) ~code size fd : t =
   (* add content length to response *)
   let headers = Headers.set_cookies cookies headers in
-  let m = Atomic.make false in
-  let close fd = if Atomic.compare_and_set m false true then close fd in
+  let post () = close fd in
   let body = File{size; fd; close} in
-  (* Gc.finalise (fun _ -> try Unix.close fd with _ -> ()) close;*)
+  Gc.finalise (fun _ -> close fd) close;
   { code; headers; body; post }
 
-let make_void ?(cookies=[]) ?(headers=[]) ?(post=fun () -> ()) ~code () : t =
+let make_void ?(cookies=[]) ?(headers=[]) ~code () : t =
   let headers = Headers.set_cookies cookies headers in
   let headers = if Headers.(get Content_Type headers = None)
                    &&  Headers.(get Content_Length headers = None)
                 then
                   Headers.(set Content_Length "0" headers) else headers
   in
+  let post () = () in
   { code; headers; body=Void; post }
 
-let make_string ?cookies ?headers ?post body =
-  make_raw ?cookies ?headers ?post ~code:ok body
+let make_string ?cookies ?headers body =
+  make_raw ?cookies ?headers ~code:ok body
 
-let make_stream ?synch ?close ?cookies ?headers ?post body =
-  make_raw_stream ?synch ?close ?cookies ?headers ?post ~code:ok body
+let make_stream ?synch ?close ?cookies ?headers body =
+  make_raw_stream ?synch ?close ?cookies ?headers ~code:ok body
 
-let make_file ?cookies ?headers ?post ?close n body =
-  make_raw_file ?cookies ?headers ?post ?close ~code:ok n body
+let make_file ?cookies ?headers ?close n body =
+  make_raw_file ?cookies ?headers ?close ~code:ok n body
 
-let make ?cookies ?headers ?post r : t = match r with
+let make ?cookies ?headers r : t = match r with
   | String body -> make_raw ?cookies ?headers ~code:ok body
   | Stream{inp;synch;close} -> make_raw_stream ?synch ~close ?cookies ?headers ~code:ok inp
-  | File{size;fd=body;close}->
-     make_raw_file ?cookies ?headers ?post ~code:ok ~close size body
+  | File{size;fd=body;close}-> make_raw_file ?cookies ?headers ~code:ok ~close size body
   | Void -> make_void ?cookies ?headers ~code:ok ()
 
-let fail ?cookies ?headers ?post ~code fmt =
-  Printf.ksprintf (fun msg -> make_raw ?cookies ?headers ?post ~code msg) fmt
+let fail ?cookies ?headers ~code fmt =
+  Printf.ksprintf (fun msg -> make_raw ?cookies ?headers ~code msg) fmt
 
 let pp out self : unit =
   let pp_body out = function
