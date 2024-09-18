@@ -23,3 +23,5 @@ val log_basename : string ref
 val log_perm : int ref
 
 val fname : int -> string
+
+val init_log_folder : int -> unit

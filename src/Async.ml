@@ -274,15 +274,19 @@ module Log = struct
       log_files := a
     with e -> failwith ("set_log_folder: " ^ Printexc.to_string e)
 
+  let init_log_folder nb_dom =
+    if Array.length !log_files < nb_dom then
+      begin
+        log_files := Array.init nb_dom
+                       (fun _ -> stdout, Format.formatter_of_out_channel stdout)
+      end
+
   let f ty k =
     if do_log ty then (
       k (fun fmt->
           let id = Domain.((self() :> int)) in
           let cl = global_get_client () in
-          let ch =
-            if id < Array.length !log_files then get_log id else
-              Format.std_formatter
-          in
+          let ch = get_log id in
           let log,lvl = str_log ty in
           Format.fprintf ch "%.6f %2d %10d %s%d: "
             (Unix.gettimeofday ()) id cl.id log lvl;

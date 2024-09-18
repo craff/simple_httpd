@@ -216,7 +216,10 @@ let create ?(listens = [Address.make ()]) (module Params : Parameters) =
 
   if !log_folder <> "" then
     Log.set_log_folder ~basename:!log_basename ~perm:!log_perm
-      !log_folder (num_threads + 1);
+      !log_folder (num_threads + 1)
+  else
+    Log.init_log_folder (num_threads + 1);
+
   let max_connections = max 4 max_connections in
   if num_threads <= 0 || max_connections < num_threads then
     invalid_arg "bad number of threads or max connections";
