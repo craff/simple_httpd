@@ -329,7 +329,7 @@ let html_to_string html =
        List.iter (fn name) contents;
        if not (allow_ommit name) then print_closing buf name
     | Doctype ->
-       Buffer.add_string buf "<!DOCTYPE html>"
+       Buffer.add_string buf "<!DOCTYPE html>\n" (* newline forced by spec *)
     | SElement(name,attrs) ->
        print_tag buf args ~self:true name attrs;
 
@@ -379,7 +379,7 @@ let top_to_string html =
        List.iter (fn name) contents;
        print_closing cbuf name
     | Doctype ->
-       Buffer.add_string cbuf "<!DOCTYPE html>"
+       Buffer.add_string cbuf "<!DOCTYPE html>\n" (* newline forced by spec *)
     | SElement(name,attrs) ->
        print_tag cbuf args ~self:true name attrs;
   in

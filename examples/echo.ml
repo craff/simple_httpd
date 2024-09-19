@@ -132,7 +132,7 @@ let _ =
   Server.add_route_handler_chaml server ~filter Route.return
     {chaml|
      <!DOCTYPE html>
-     <html>
+     <html lang="en">
        <head>
          <title>index of echo</title>
        </head>

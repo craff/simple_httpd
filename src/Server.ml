@@ -57,7 +57,8 @@ let add_route_handler_stream ?addresses ?meth ?filter self route f =
     self.handlers route ~tr_req f
 
 let add_route_handler_chaml ?addresses ?meth ?filter self route f =
-  let headers = [Headers.Cache_Control, "no-store"] in
+  let headers = [(Headers.Cache_Control, "no-store");
+                 (Headers.Content_Type, "text/html")] in
   let tr_req _oc req ~resp f  =
     let req = Request.read_body_full ~buf:(Request.client req).buf req in
     let (headers, cookies, stream) = f req headers in
