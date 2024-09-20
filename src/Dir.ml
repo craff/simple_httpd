@@ -342,7 +342,7 @@ let add_vfs_ ?addresses ?(filter=(fun x -> (x, fun r -> r)))
                ~headers:(cache_control info.headers)
                ~code:ok s
           | Dynamic f ->
-             let headers = cache_control [] in
+             let headers = cache_control info.headers in
              let headers, cookies, input = f req headers in
              Response.make_raw_stream
                ~headers ~cookies ~code:ok input
