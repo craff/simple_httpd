@@ -22,4 +22,15 @@
 
 include Caqti_connect_sig.S with type 'a future := 'a
 
+(** [with_session] will attach a connection to the request's session, or reuse
+    a previous connection. The data base handle will be closed when the client
+    disconnects all its connection (the timeout is important here).
+
+    The advantage of this approach is that you can use a role that depends on
+    the user session (with permission adapted to the user).
+
+    You can use
+      [with_connection : db_config:Uri.t -> (connection -> 'b) -> 'b]
+    if you want to connect and disconnect for that session or other feature
+    proposed by caqti like pool of connection.  *)
 val with_session : db_config:Uri.t -> 'a Simple_httpd.Request.t -> (connection -> 'b) -> 'b
