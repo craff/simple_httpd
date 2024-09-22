@@ -18,7 +18,6 @@
 open Simple_httpd
 
 module System = struct
-
   type 'a future = 'a
   let (>>=) x f = f x
   let (>|=) x f = f x
@@ -79,29 +78,27 @@ module System = struct
 
   module Unix = struct
     type file_descr = Io.t
-    let mutex = Mutex.create ()
-    let tbl = Hashtbl.create 1024
+    let tbl = Array.init Simple_httpd__Util.maxfd (fun _ -> Atomic.make None)
     let wrap_fd fn fd =
-      let iofd =
-        Mutex.lock mutex;
-        try
-          try
-            let res = Hashtbl.find tbl fd in
-            Mutex.unlock mutex;
-            res
-          with Not_found ->
-            Unix.set_nonblock fd;
-            let finalise () =
-              Simple_httpd.Log.(f (Exc 0)) (fun k -> k "DELETE CONNECTION");
-              Hashtbl.remove tbl fd
-            in
-            let res = Io.create ~finalise fd in
-            Hashtbl.add tbl fd res;
-            Mutex.unlock mutex;
-            res
-        with e -> Mutex.unlock mutex; raise e
+      let nfd = Simple_httpd__Util.file_descr_to_int fd in
+      let rec iofd ()  =
+        match Atomic.get tbl.(nfd) with
+        | Some io -> io
+        | None ->
+           Unix.set_nonblock fd;
+           let finalise () =
+             Atomic.set tbl.(nfd) None
+           in
+           let res = Io.create ~finalise fd in
+           if Atomic.compare_and_set tbl.(nfd) None (Some res) then
+             res
+           else
+             begin
+               Io.close res;
+               iofd ()
+             end
       in
-      fn iofd
+      fn (iofd ())
 
     let poll ?(read=false) ?(write=false) ?(timeout= -1.0) (_fd:file_descr) =
       let _ = timeout in

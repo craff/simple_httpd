@@ -6,11 +6,9 @@ let remove_first cond l =
   in
   fn l
 
-let maxfd : int =
-  let ch_in = Unix.open_process_in "ulimit -n" in
-  let res = Scanf.(bscanf (Scanning.from_channel ch_in) " %d " (fun d -> d)) in
-  ignore (Unix.close_process_in ch_in);
-  res
+external rlimit_cur : unit -> int = "caml_rlimit_cur"
+
+let maxfd : int = rlimit_cur ()
 
 external raw_single_write : Unix.file_descr -> Bytes.t ->
                             (int [@untagged]) -> (int [@untagged]) -> (int [@untagged])

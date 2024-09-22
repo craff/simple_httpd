@@ -18,6 +18,7 @@
 #include <sys/sendfile.h>
 #include <openssl/ssl.h>
 #include <openssl/err.h>
+#include <sys/resource.h>
 
 CAMLprim value caml_sendfile(value out_fd, value in_fd, value offset, value count) {
   CAMLparam0();
@@ -91,7 +92,7 @@ long caml_fast_single_write(value fd, value buf, long ofs,
 CAMLprim value caml_byte_fast_single_write(value fd, value buf, value vofs,
 				   value vlen) {
   CAMLparam0();
-  CAMLreturn(Int_val(caml_fast_single_write(fd,buf,Int_val(vofs),Int_val(vlen))));
+  CAMLreturn(Val_int(caml_fast_single_write(fd,buf,Int_val(vofs),Int_val(vlen))));
 }
 
 CAMLprim void caml_write_error() {
@@ -108,11 +109,20 @@ long caml_fast_read(value fd, value buf, long ofs, long len)
 CAMLprim value caml_byte_fast_read(value fd, value buf, value vofs,
 				   value vlen) {
   CAMLparam0();
-  CAMLreturn(Int_val(caml_fast_read(fd,buf,Int_val(vofs),Int_val(vlen))));
+  CAMLreturn(Val_int(caml_fast_read(fd,buf,Int_val(vofs),Int_val(vlen))));
 }
 
 CAMLprim void caml_read_error() {
   CAMLparam0();
   caml_uerror("read", Nothing);
   CAMLreturn0;
+}
+
+CAMLprim value caml_rlimit_cur() {
+  CAMLparam0();
+  struct rlimit rl;
+  rlim_t res = -1;
+  if (getrlimit(RLIMIT_NOFILE, &rl) == 0)
+    res = rl.rlim_cur;
+  CAMLreturn(Val_int(res));
 }
