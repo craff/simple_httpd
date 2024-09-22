@@ -917,8 +917,20 @@ module Session : sig
       - {!Mutex.t} to protect the above.
    *)
 
-  (** [new_key ()] creates a new key, to associate data to.*)
-  val new_key : unit -> 'a key
+  (** [new_key ()] creates a new key, to associate data.
+
+      The optional argument [cleanup_delete] is called when the session is
+      deleted.
+
+      The optional argument [cleanup_no_client] is clalled when no more client
+      are connected to that session or when the session is deleted. If it
+      returns [false], the data is deleted, otherwise, it is kept.
+
+      [cleanup_delete] is called if and only if [cleanup_no_client] returns
+      [true].  *)
+  val new_key : ?cleanup_delete:('a -> unit) ->
+                ?cleanup_no_client:('a -> bool) ->
+                unit -> 'a key
 
   (** element of this type control the managment of cookies *)
   type cookie_policy =
@@ -934,11 +946,6 @@ module Session : sig
         ; base = "Session"
         ; filter = fun _ -> None } *)
   val default_cookie_policy : cookie_policy
-
-  (** same as above but with a cleanup function called on the associated data
-      when a session holding this data is closed. Typically to close a handle
-      to an external ressource *)
-  val new_key_with_cleanup : ('a -> unit) -> 'a key
 
   val start_check: ?create:bool ->
             ?check:(t -> bool) ->

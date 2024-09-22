@@ -490,7 +490,7 @@ module Io = struct
     let info = all_domain_info.(i) in
     if not r.waiting.(i) then begin
         r.waiting.(i) <- true;
-        Polly.(add info.poll_list r.sock Events.(inp lor out lor et lor rdhup));
+        Polly.(add info.poll_list r.sock Events.(inp lor out lor et lor rdhup lor err lor hup));
       end;
     let c = cur_client () in
     info.pendings.(Util.file_descr_to_int r.sock) <- (OneSocket { ty = Io; client = c; pd = NoEvent })
@@ -707,7 +707,11 @@ let loop id st listens pipe timeout handler () =
            try Util.remove_first (fun c' -> c == c') clients
            with Not_found -> assert false
          in
-         Util.update_atomic sess.clients fn;
+         let remain = Util.update_atomic sess.clients fn in
+         Log.(f (Sch 0) (fun k -> k "removing clients, remain: %d" (List.length remain)));
+         if remain = [] then
+             ignore (Util.update_atomic sess.data Util.cleanup_filter);
+         ()
     end;
     begin
       List.iter Mutex.unlock c.locks;

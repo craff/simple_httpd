@@ -3,8 +3,9 @@ type t
 type data
 type 'a key
 
-val new_key : unit -> 'a key
-val new_key_with_cleanup : ('a -> unit) -> 'a key
+val new_key : ?cleanup_delete:('a -> unit) ->
+              ?cleanup_no_client:('a -> bool) ->
+              unit -> 'a key
 
 (** Managment of sessions using cookies *)
 

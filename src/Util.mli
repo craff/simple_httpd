@@ -78,7 +78,7 @@ end
 
 val remove_first : ('a -> bool) -> 'a list -> 'a list
 
-val update_atomic : 'a Atomic.t -> ('a -> 'a) -> unit
+val update_atomic : 'a Atomic.t -> ('a -> 'a) -> 'a
 val get_update_atomic : 'a Atomic.t -> ('a -> 'b * 'a) -> 'b
 
 val addr_of_sock : Unix.file_descr -> string
@@ -89,11 +89,12 @@ val to_human_int : ?unit:string -> int -> string
 type 'a key
 type data
 
-val new_key : 'a. ('a -> unit) -> 'a key
+val new_key : 'a. ('a -> bool) -> ('a -> unit) -> 'a key
 val search : 'a key -> data -> 'a
 val add_replace : 'a key -> 'a -> data -> data
 val remove : 'a key -> data -> data
-val cleanup : data -> unit
+val cleanup_delete : data -> unit
+val cleanup_filter : data -> data
 val empty : data
 
 module Sfd : sig

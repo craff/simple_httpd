@@ -4,8 +4,8 @@ type t = Async.session_info
 type data = Util.data
 type 'a key = 'a Util.key
 
-let new_key () = Util.new_key (fun _ -> ())
-let new_key_with_cleanup = Util.new_key
+let new_key ?(cleanup_delete=fun _ -> ()) ?(cleanup_no_client=fun _ -> true) () =
+  Util.new_key cleanup_no_client cleanup_delete
 
 module LinkedList = Util.LinkedList
 
@@ -24,14 +24,14 @@ let delete_session session =
     List.iter (fun cl -> Async.set_session cl) clients;
     []
   in
-  Util.update_atomic session.clients fn;
+  let _ = Util.update_atomic session.clients fn in
   Mutex.lock mutex_list;
   (try LinkedList.remove_cell session.cell sessions_list;
        Mutex.unlock mutex_list
    with e ->
      Mutex.unlock mutex_list; raise e);
   List.iter Async.close (Atomic.get session.clients);
-  Util.cleanup (Atomic.get session.data)
+  Util.cleanup_delete (Atomic.get session.data)
 
 let refresh session =
   let now = Unix.gettimeofday () in
@@ -95,7 +95,7 @@ let get_session (type a) ?(cookie_policy=default_cookie_policy) (req : a Request
      | Some session ->
         let session_info = LinkedList.get session in
         let fn clients = client :: clients in
-        Util.update_atomic session_info.clients fn;
+        let _ = Util.update_atomic session_info.clients fn in
         Some session_info
      | _ ->
         None
@@ -118,7 +118,7 @@ let start_session ?(session_life_time=3600.0) client key =
           Mutex.unlock mutex_tbl;
           let session_info = LinkedList.get session in
           let fn clients = client :: clients in
-          Util.update_atomic session_info.clients fn;
+          let _ = Util.update_atomic session_info.clients fn in
           refresh session;
           (session_info, true)
        | None ->

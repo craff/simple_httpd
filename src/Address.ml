@@ -25,7 +25,8 @@ type ssl =
 let all_ssl = Atomic.make []
 
 let add_ssl ssl =
-  Util.update_atomic all_ssl (fun old_ssl -> ssl :: old_ssl)
+  let _ = Util.update_atomic all_ssl (fun old_ssl -> ssl :: old_ssl) in
+  ()
 
 let forward_log
     : (((('a, Format.formatter, unit, unit) format4 -> 'a) -> unit) -> unit) ref

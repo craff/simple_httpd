@@ -438,7 +438,7 @@ let update_atomic a fn =
   let rec gn () =
     let old = Atomic.get a in
     let b = fn old in
-    if Atomic.compare_and_set a old b then ()
+    if Atomic.compare_and_set a old b then b
     else gn ()
   in
   gn ()
@@ -470,19 +470,21 @@ type 'a key0 = ..
 type (_, _) eq_res = Eq : ('a, 'a) eq_res | NEq : ('a, 'b) eq_res
 type 'a key = { f : 'b. 'b key0 -> ('a,'b) eq_res
               ; k : 'a key0
-              ; c : 'a -> unit (* cleanup *)}
+              ; s : 'a -> bool (* cleanup when all client are disconnected,
+                                  if bool is true : keep in the data. *)
+              ; c : 'a -> unit (* cleanup when session is deleted*)}
 type cell = D : 'a key * 'a -> cell
 type data = cell list
 
 
-let new_key : type a. (a -> unit) -> a key = fun c ->
+let new_key : type a. (a -> bool) -> (a -> unit) -> a key = fun s c ->
   let module M = struct
       type 'a key0 += K : a key0
       let k = K
       let f : type b. b key0 -> (a,b) eq_res = function
         | K -> Eq
         | _ -> NEq
-      let r = { f; k; c }
+      let r = { f; k; s; c }
     end
   in
   M.r
@@ -519,8 +521,13 @@ let remove : type a. a key -> data -> data
        | _ -> fn (c::acc) l
   in fn [] l0
 
-let cleanup l =
-  List.iter (function D(k,x) -> k.c x) l
+let cleanup_delete l =
+  List.iter (function D(k,x) ->
+                       let b = k.s x in
+                       if b then k.c x) l
+
+let cleanup_filter l =
+  List.filter (function D(k,x) -> k.s x) l
 
 let empty = []
 

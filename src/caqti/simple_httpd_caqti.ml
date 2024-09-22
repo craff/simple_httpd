@@ -79,10 +79,31 @@ module System = struct
 
   module Unix = struct
     type file_descr = Io.t
+    let mutex = Mutex.create ()
+    let tbl = Hashtbl.create 1024
     let wrap_fd fn fd =
-      Unix.set_nonblock fd;
-      fn (Io.create fd)
-    let poll ?(read=false) ?(write=false) ?(timeout= -1.0) _fd =
+      let iofd =
+        Mutex.lock mutex;
+        try
+          try
+            let res = Hashtbl.find tbl fd in
+            Mutex.unlock mutex;
+            res
+          with Not_found ->
+            Unix.set_nonblock fd;
+            let finalise () =
+              Simple_httpd.Log.(f (Exc 0)) (fun k -> k "DELETE CONNECTION");
+              Hashtbl.remove tbl fd
+            in
+            let res = Io.create ~finalise fd in
+            Hashtbl.add tbl fd res;
+            Mutex.unlock mutex;
+            res
+        with e -> Mutex.unlock mutex; raise e
+      in
+      fn iofd
+
+    let poll ?(read=false) ?(write=false) ?(timeout= -1.0) (_fd:file_descr) =
       let _ = timeout in
       (read, write, not read && not write)
 
@@ -94,3 +115,46 @@ include Caqti_connect.Make_unix (System)
 
 (* level is managed by simple_httpd, put maximum for caqti *)
 let _ = Logs.(set_level ~all:true (Some Debug))
+
+let cleanup_no_client (m, (conn : connection)) =
+  Log.(f (Sch 0) (fun k -> k "cleanup"));
+  let module C : CONNECTION = (val conn) in
+  (try C.disconnect () with _ -> ());
+  Mutex.delete m;
+  false
+
+let db_key = Session.new_key ~cleanup_no_client ()
+
+let create_connection db_config req =
+  Log.(f (Exc 0)) (fun k -> k "CREATE CONNECTION");
+  let conn =
+    match connect db_config with
+    | Ok conn -> conn
+    | Error err -> raise (Caqti_error.Exn err)
+  in
+  let mutex = Mutex.create () in
+  let res = (mutex, conn) in
+  Gc.finalise (fun (mutex, (conn : connection)) ->
+      let module C : CONNECTION = (val conn) in
+      (try C.disconnect () with _ -> ());
+      Mutex.delete mutex) res;
+  (match Session.get_session req with
+   | None -> ()
+   | Some session ->
+        Session.set_session_data session db_key res);
+  res
+
+let get_connection db_config req =
+  match Session.get_session req with
+  | None -> create_connection db_config req
+  | Some session ->
+     match Session.get_session_data session db_key with
+     | None -> create_connection db_config req
+     | Some r -> r
+
+let with_session ~db_config req f =
+  let (m, db) = get_connection db_config req in
+  Mutex.lock m;
+  let res = f db in
+  Mutex.unlock m;
+  res

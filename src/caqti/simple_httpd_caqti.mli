@@ -21,3 +21,5 @@
     with Lwt. *)
 
 include Caqti_connect_sig.S with type 'a future := 'a
+
+val with_session : db_config:Uri.t -> 'a Simple_httpd.Request.t -> (connection -> 'b) -> 'b

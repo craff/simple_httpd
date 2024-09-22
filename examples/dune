@@ -18,6 +18,14 @@
   (libraries simple_httpd magic-mime))
 
 (executable
+  (name caqti)
+  (flags :standard -warn-error -a+8)
+  (preprocess (per_module ((pps ppx_rapper) caqti)))
+  (modules caqti)
+  (libraries simple_httpd simple_httpd.caqti ppx_rapper ppx_rapper.runtime
+             caqti-driver-postgresql))
+
+(executable
   (name minimal)
   (flags :standard -warn-error -a+8)
   (modules minimal)
