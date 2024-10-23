@@ -317,6 +317,7 @@ let handle_client_ (self:t) (client:Async.client) : unit =
            Response.fail ~code:internal_server_error
              "server error: %s" (Async.printexn e)
   done;
+  client.close ();
   log (Sch 0) (fun k->k "done with client, exiting");
   ()
 

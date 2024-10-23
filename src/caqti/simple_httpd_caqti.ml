@@ -123,7 +123,6 @@ let cleanup_no_client (m, (conn : connection)) =
 let db_key = Session.new_key ~cleanup_no_client ()
 
 let create_connection db_config req =
-  Log.(f (Exc 0)) (fun k -> k "CREATE CONNECTION");
   let conn =
     match connect db_config with
     | Ok conn -> conn
@@ -131,15 +130,15 @@ let create_connection db_config req =
   in
   let mutex = Mutex.create () in
   let res = (mutex, conn) in
-  Gc.finalise (fun (mutex, (conn : connection)) ->
-      let module C : CONNECTION = (val conn) in
-      (try C.disconnect () with _ -> ());
-      Mutex.delete mutex) res;
-  (match Session.get_session req with
-   | None -> ()
-   | Some session ->
-        Session.set_session_data session db_key res);
-  res
+  Gc.finalise (fun db -> ignore (cleanup_no_client db)) res;
+  let with_session =
+    match Session.get_session req with
+    | None -> false
+    | Some session ->
+       Session.set_session_data session db_key res;
+        true
+  in
+  (res, with_session)
 
 let get_connection db_config req =
   match Session.get_session req with
@@ -147,11 +146,14 @@ let get_connection db_config req =
   | Some session ->
      match Session.get_session_data session db_key with
      | None -> create_connection db_config req
-     | Some r -> r
+     | Some r -> (r, true)
 
 let with_session ~db_config req f =
-  let (m, db) = get_connection db_config req in
+  let ((m, db as dbt), with_session) = get_connection db_config req in
   Mutex.lock m;
-  let res = f db in
-  Mutex.unlock m;
-  res
+  try
+    let res = f db in
+    Mutex.unlock m;
+    if not with_session then ignore (cleanup_no_client dbt);
+    res
+  with exn -> Mutex.unlock m; raise exn
