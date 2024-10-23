@@ -65,7 +65,7 @@ and session_info =
   ; key : string
   ; life_time : float
   ; clients : client list Atomic.t
-  ; data : Util.data Atomic.t
+  ; data : Key.data Atomic.t
   ; mutable cell : session_info Util.LinkedList.cell
   ; mutable last_refresh : float (* protected by mutex_list in Session.ml *)
   }
@@ -702,15 +702,16 @@ let loop id st listens pipe timeout handler () =
       match c.session with
       | None -> ()
       | Some sess ->
+         Log.(f (Exc 1)) (fun k -> k "Cleaning session");
          let sess = LL.get sess in
          let fn clients =
            try Util.remove_first (fun c' -> c == c') clients
            with Not_found -> assert false
          in
          let remain = Util.update_atomic sess.clients fn in
-         Log.(f (Sch 0) (fun k -> k "removing clients, remain: %d" (List.length remain)));
+         Log.(f (Sch 0) (fun k -> k "removing session clients, remain: %d" (List.length remain)));
          if remain = [] then
-             ignore (Util.update_atomic sess.data Util.cleanup_filter);
+             ignore (Util.update_atomic sess.data Key.cleanup_filter);
          ()
     end;
     begin
@@ -929,15 +930,8 @@ let add_close, close_all =
   let close_all s =
     Printf.eprintf "Exit on signal: %d\n%!" s;
     List.iter Unix.close !to_close;
-    exit 1
   in
   (add_close, close_all)
-
-let _ = Sys.(set_signal sigint  (Signal_handle close_all))
-let _ = Sys.(set_signal sigterm (Signal_handle close_all))
-let _ = Sys.(set_signal sigquit (Signal_handle close_all))
-let _ = Sys.(set_signal sigabrt (Signal_handle close_all))
-
 
 let accept_loop status listens pipes maxc =
   let exception Full in

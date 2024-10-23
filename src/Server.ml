@@ -30,7 +30,9 @@ type t = {
 
   handlers : Route.handlers;
 
-  started_time : float
+  started_time : float;
+
+  restart_file : string;
 }
 
 let listens self = self.listens
@@ -137,6 +139,8 @@ module type Parameters = sig
   val buf_size : int ref
   val ssl_reload_period : int -> unit
 
+  val restart_file : string ref
+
   val log_requests : int ref
   val log_exceptions : int ref
   val log_scheduler : int ref
@@ -156,6 +160,8 @@ let args () =
       let timeout = ref 300.0
       let buf_size = ref (8 * 4_096)
       let ssl_reload_period = Address.set_ssl_reload_period
+
+      let restart_file = ref ""
 
       let log_requests   = ref 1
       let log_scheduler  = ref 0
@@ -189,6 +195,8 @@ let args () =
       ( "--log-basename", Set_string log_basename,
         " log basename (default basename of argv[0])");
       ( "--log-perm", Set_int log_perm, " log permission (default 0o700)");
+      ( "--restart-file", Set_string restart_file,
+        " name of file to save sessions and other information when restarting");
       ( "--max-connections", Set_int max_connections,
         " maximum number of simultaneous connections (default 32)");
       ( "--ssl-reload-period", Int ssl_reload_period,
@@ -234,10 +242,12 @@ let create ?(listens = [Address.make ()]) (module Params : Parameters) =
     Address.register Route.empty_handler listens
   in
   let started_time = Unix.gettimeofday () in
+  let restart_file = !restart_file in
   let self = { listens; buf_size; max_connections; started_time
-             ; handlers; timeout; num_threads; status }
+             ; handlers; timeout; num_threads; status; restart_file }
   in
   self
+
 
 let handle_client_ (self:t) (client:Async.client) : unit =
   let buf = client.buf in
@@ -321,7 +331,69 @@ let handle_client_ (self:t) (client:Async.client) : unit =
   log (Sch 0) (fun k->k "done with client, exiting");
   ()
 
+let save_load (self:t) =
+  let _ =
+    match self.restart_file with
+    | name when name <> "" && Sys.file_exists name ->
+       begin
+         try
+           Log.(f (Exc 0)
+                  (fun k -> k "Restoring session from %s\n%!" name));
+           let ch = open_in name in
+           let rec loop () =
+             let name, _ as version = input_value ch in
+             if name = Session.save_name then
+               begin
+                 Session.load_sessions version ch;
+                 loop ()
+               end
+             else if name = Stats.save_name then
+               begin
+                 Stats.restore version ch;
+                 loop()
+               end
+           in
+           loop ();
+           close_in ch;
+           Sys.remove self.restart_file
+         with exn ->
+               Printf.eprintf "FATAL ERROR: failed to load %s (%s)\n%!"
+                 name (Printexc.to_string exn);
+               exit 1
+       end
+    | _ -> ()
+  in
+  let quit =
+    if self.restart_file = "" then
+      fun signal ->
+         Log.(f (Exc 0)
+                (fun k -> k "Signal %d: closing all clients\n%!" signal));
+         Async.close_all signal;
+         exit 0;
+    else fun signal ->
+         Log.(f (Exc 0)
+                (fun k -> k "Signal %d: closing all clients\n%!" signal));
+         Async.close_all signal;
+         Log.(f (Exc 0)
+                (fun k -> k "Signal %d: saving session in %s\n%!"
+                            signal self.restart_file));
+         let ch = open_out_gen [Open_wronly; Open_trunc; Open_creat; Open_binary]
+                    0o600 self.restart_file in
+         Session.save_sessions ch;
+         Stats.save ch;
+         output_value ch ("END_SAVE", 0);
+         close_out ch;
+         exit 0
+  in
+  let open Sys in
+  let quit = Signal_handle quit in
+  set_signal sigint quit;
+  set_signal sigquit quit;
+  set_signal sigterm quit;
+  set_signal sigabrt quit
+
 let run (self:t) =
+  save_load self ;
   let handler client_sock = handle_client_ self client_sock in
   let maxc = self.max_connections in
   let a = Async.run ~nb_threads:self.num_threads ~listens:self.listens

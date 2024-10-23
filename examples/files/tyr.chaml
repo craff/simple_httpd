@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<?global let count_key : int Session.key = Session.new_key ()?>
+<?global let count_key : int Session.key = Session.new_key "count_key"?>
 <html>
   <head>
     <?prelude

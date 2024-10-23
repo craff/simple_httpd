@@ -7,7 +7,7 @@ open Simple_httpd
     main address and port via command line arguments. *)
 let addr = ref "0.0.0.0"
 let port = ref 2080
-let ssl_port = ref 8443
+let ssl_port = ref 2443
 
 (** the store used to store all files for all sites *)
 let global_top_dir = ref "."
@@ -108,7 +108,7 @@ module Common = struct
     (** Logout *)
     let _ =
       Init.add_route_handler_chaml ~filter
-        Route.(exact "logout" @/ return) Secure.logout_page
+        Route.(exact "logout" @/ return) (Secure.logout_page ~destination:"/")
 
     let _ =
       Init.add_route_handler_chaml ~filter Route.return
@@ -121,8 +121,10 @@ module Common = struct
                         "No Host field in your request"
               | Some h -> h
               let hostname = List.hd (String.split_on_char ':' hostname)
-              let url1 = Printf.sprintf "http://%s:%d/" hostname (!port + 1000)
-              let url2 = Printf.sprintf "http://%s:%d/" hostname (!port + 2000)
+              let port = if Client.is_ssl (Request.client request) then
+                !ssl_port else !port
+              let url1 = Printf.sprintf "//%s:%d/" hostname (port + 1000)
+              let url2 = Printf.sprintf "//%s:%d/" hostname (port + 2000)
            ?>
            <li> <a href=<?=url1?>>First site on <code><?=url1?></code></a>
            <li> <a href=<?=url2?>>Second site on <code><?=url2?></code></a>

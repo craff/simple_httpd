@@ -930,7 +930,9 @@ module Session : sig
       [true].  *)
   val new_key : ?cleanup_delete:('a -> unit) ->
                 ?cleanup_no_client:('a -> bool) ->
-                unit -> 'a key
+                ?save:(out_channel -> 'a -> unit) ->
+                ?load:(in_channel -> 'a) ->
+                string -> 'a key
 
   (** element of this type control the managment of cookies *)
   type cookie_policy =
@@ -1046,6 +1048,13 @@ module Server : sig
     val ssl_reload_period : int -> unit
     (** Set ssl period in seconds at which all ssl certificates are checked for
         renewal (default 1 day)*)
+
+    val restart_file : string ref
+    (** Name of a file where to save information when restarting.
+
+        Note: the file is not encrypted and contains sensitive data. It is
+        normally deleted after a server restart, but you shoud be careful not
+        to let such a file escape. *)
 
     val log_requests : int ref
     (** log level for requests information *)

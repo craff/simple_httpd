@@ -72,7 +72,7 @@ and session_info =
   ; key : string
   ; life_time : float
   ; clients : client list Atomic.t
-  ; data : Util.data Atomic.t
+  ; data : Key.data Atomic.t
   ; mutable cell : session_info Util.LinkedList.cell
   ; mutable last_refresh : float (* protected by mutex_list in Session.ml *)
   }
@@ -94,6 +94,9 @@ val fake_client : client
 
 (** close the client *)
 val close : client -> unit
+
+(** close all clients *)
+val close_all : int -> unit
 
 (** Set the session of a client *)
 val set_session : ?session:session -> client -> unit

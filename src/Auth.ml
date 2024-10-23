@@ -12,7 +12,7 @@ module Make(Login:Login) = struct
 
   let cookie_policy = Login.cookie_policy
 
-  let auth_key = Session.new_key ()
+  let auth_key = Session.new_key ("Login_" ^ Login.login_url)
 
   let login_page : ?destination:string -> ?page:Html.chaml -> Html.chaml =
     (fun ?destination ?page request headers ->
@@ -168,10 +168,8 @@ module Make(Login:Login) = struct
   let check_filter ?nologin ?(check_data=fun _ -> true) request =
     let (cookies, _) = check ?nologin ~check_data request in
     let fn resp =
-      List.iter (fun c -> Printf.printf "%s: %s\n%!" (Http_cookie.name c) (Http_cookie.value c)) cookies;
       let headers = Headers.set_cookies cookies (Response.headers resp) in
       let resp = Response.set_headers headers resp in
-      List.iter (fun (n,v) -> Printf.printf "%s: %s\n%!" (Headers.to_string n) v) (Response.headers resp);
       resp
     in (request, fn)
 

@@ -5,7 +5,9 @@ type 'a key
 
 val new_key : ?cleanup_delete:('a -> unit) ->
               ?cleanup_no_client:('a -> bool) ->
-              unit -> 'a key
+              ?save:(out_channel -> 'a -> unit) ->
+              ?load:(in_channel -> 'a) ->
+              string -> 'a key
 
 (** Managment of sessions using cookies *)
 
@@ -43,3 +45,7 @@ val delete_session : ?cookie_policy:cookie_policy -> 'a Request.t -> Cookies.t
 
 val mk_cookies : t -> cookie_policy -> Cookies.t -> Cookies.t
 val select_cookies : ?delete:bool -> ?create:t -> cookie_policy -> Cookies.t -> Cookies.t
+
+val save_name     : string
+val save_sessions : out_channel -> unit
+val load_sessions : string * int -> in_channel -> unit

@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<?global let count_key = Session.new_key () ?>
+<?global let count_key = Session.new_key "counter" ?>
 <?prelude let cookies, session = Session.start_check request
   let count =
     match Session.get_session_data session count_key with

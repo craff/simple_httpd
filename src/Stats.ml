@@ -35,8 +35,8 @@ let init () = {
     build = Atomic.make 0.;
     send  = Atomic.make 0. }
 
-let global = init ()
-let per_path = Hashtbl.create 128
+let global = ref (init ())
+let per_path = ref (Hashtbl.create 128)
 let graph_size = ref (24 * 60)
 let graph_interval = ref 60
 type graph =
@@ -44,32 +44,53 @@ type graph =
   ; cur : int Atomic.t
   ; mutable tim : float Atomic.t }
 let graph =
-  { tbl = Array.init !graph_size (fun _ -> Atomic.make 0)
+  ref { tbl = Array.init !graph_size (fun _ -> Atomic.make 0)
   ; cur = Atomic.make 0
   ; tim = Atomic.make (Unix.gettimeofday ()) }
+
+let save_name = "STATS"
+
+let save ch =
+  output_value ch (save_name, 1);
+  output_value ch !global;
+  output_value ch !per_path;
+  output_value ch !graph_size;
+  output_value ch !graph_interval;
+  output_value ch !graph
+
+let restore (name, version) ch =
+  assert (name = save_name);
+  match version with
+  | 1 ->
+     global := input_value ch;
+     per_path := input_value ch;
+     graph_size := input_value ch;
+     graph_interval := input_value ch;
+     graph := input_value ch
+  | _ -> assert false
 
 let add_req t1 =
   let int = float !graph_interval in
   let add_time () =
-    let old = Atomic.get graph.tim in
+    let old = Atomic.get !graph.tim in
     let new_ = old +. int in
-    t1 > new_ && Atomic.compare_and_set graph.tim old new_
+    t1 > new_ && Atomic.compare_and_set !graph.tim old new_
   in
   while add_time () do
-    let old = Atomic.get graph.cur in
-    let act = (old + 1) mod Array.length graph.tbl in
-    if Atomic.compare_and_set graph.cur old act
-    then Atomic.set graph.tbl.(act) 0
+    let old = Atomic.get !graph.cur in
+    let act = (old + 1) mod Array.length !graph.tbl in
+    if Atomic.compare_and_set !graph.cur old act
+    then Atomic.set !graph.tbl.(act) 0
   done;
-  Atomic.incr graph.tbl.(Atomic.get graph.cur)
+  Atomic.incr !graph.tbl.(Atomic.get !graph.cur)
 
 let draw_graph size (module Output : Html.Output) =
-  let i0 = Atomic.get graph.cur in
-  let len = Array.length graph.tbl in
+  let i0 = Atomic.get !graph.cur in
+  let len = Array.length !graph.tbl in
   Output.echo "<script>var data = [";
   for i = i0 - size + 1 to i0 do
     let i = if i < 0 then i + len else i in
-    let n = Atomic.get graph.tbl.(i) in
+    let n = Atomic.get !graph.tbl.(i) in
     Output.printf "%d," n
   done;
   Output.echo "];</script>"
@@ -83,27 +104,27 @@ let filter () =
       | Some h -> h
     in
     let path = String.concat "/" (host :: Request.path_components req) in
-    let pp = try Hashtbl.find per_path path
+    let pp = try Hashtbl.find !per_path path
              with Not_found -> let r = init () in
-                               Hashtbl.add per_path path r;
+                               Hashtbl.add !per_path path r;
                                r
     in
-    Atomic.incr global.nbreq;
+    Atomic.incr !global.nbreq;
     Atomic.incr pp.nbreq;
     let t1 = Request.start_time req in
     add_req t1;
     let t2 = now () in
     (req, fun response ->
         let t3 = now () in
-        Atomic.add_float global.parse (t2 -. t1);
-        Atomic.add_float global.build (t3 -. t2);
+        Atomic.add_float !global.parse (t2 -. t1);
+        Atomic.add_float !global.build (t3 -. t2);
         Atomic.add_float pp.parse (t2 -. t1);
         Atomic.add_float pp.build (t3 -. t2);
         let post () =
           let t4 = now () in
-          Atomic.max_float global.maxim (t4 -. t1);
-          Atomic.add_float global.total (t4 -. t1);
-          Atomic.add_float global.send  (t4 -. t3);
+          Atomic.max_float !global.maxim (t4 -. t1);
+          Atomic.add_float !global.total (t4 -. t1);
+          Atomic.add_float !global.send  (t4 -. t3);
           Atomic.max_float pp.maxim (t4 -. t1);
           Atomic.add_float pp.total (t4 -. t1);
           Atomic.add_float pp.send  (t4 -. t3)
@@ -277,10 +298,10 @@ let filter () =
             <button onclick="sort('table',6,true,false);">▼</button>
             <button onclick="sort('table',6,true,true);">▲</button>
 	  </tr>
-	  <?ml stat output "global" global ?>
+	  <?ml stat output "global" !global ?>
 	</thead>
 	<tbody id="table">
-	  <?ml Hashtbl.iter (stat output) per_path ?>
+	  <?ml Hashtbl.iter (stat output) !per_path ?>
 	</tbody>
       </table></body>|chaml} req headers
   in

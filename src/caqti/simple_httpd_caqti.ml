@@ -120,7 +120,7 @@ let cleanup_no_client (m, (conn : connection)) =
   Mutex.delete m;
   false
 
-let db_key = Session.new_key ~cleanup_no_client ()
+let db_key = Session.new_key ~cleanup_no_client "Caqti_db"
 
 let create_connection db_config req =
   let conn =

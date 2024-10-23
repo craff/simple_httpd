@@ -430,6 +430,14 @@ module LinkedList = struct
     in
     gn (Root l) l.head
 
+  let iter fn { head; _ } =
+    let rec loop cell =
+      match cell with
+      | Nil -> ()
+      | Cons{v; next; _} -> fn v; loop next
+    in
+    loop head
+
 end
 
 let update_atomic a fn =
@@ -463,71 +471,6 @@ let to_human ?(unit="o") f =
    else Printf.sprintf "%d%s" (int_of_float f)) unit
 
 let to_human_int ?unit n = to_human ?unit (float n)
-
-type 'a key0 = ..
-type (_, _) eq_res = Eq : ('a, 'a) eq_res | NEq : ('a, 'b) eq_res
-type 'a key = { f : 'b. 'b key0 -> ('a,'b) eq_res
-              ; k : 'a key0
-              ; s : 'a -> bool (* cleanup when all client are disconnected,
-                                  if bool is true : keep in the data. *)
-              ; c : 'a -> unit (* cleanup when session is deleted*)}
-type cell = D : 'a key * 'a -> cell
-type data = cell list
-
-
-let new_key : type a. (a -> bool) -> (a -> unit) -> a key = fun s c ->
-  let module M = struct
-      type 'a key0 += K : a key0
-      let k = K
-      let f : type b. b key0 -> (a,b) eq_res = function
-        | K -> Eq
-        | _ -> NEq
-      let r = { f; k; s; c }
-    end
-  in
-  M.r
-
-let search : type a. a key -> data -> a
-  = fun key l ->
-  let rec fn : data -> a = function
-    | [] -> raise Not_found
-    | D(k,x):: l ->
-       match key.f k.k, x with
-       | Eq, x -> x
-       | NEq, _ -> fn l
-  in fn l
-
-let add_replace : type a. a key -> a -> data -> data
-  = fun key x l ->
-  let rec fn : data -> data -> data = fun acc l ->
-    match l with
-    | [] -> List.rev_append acc [D(key, x)]
-    | D(k,_) as c:: l ->
-       match key.f k.k with
-       | Eq -> List.rev_append acc (D(k,x) :: l)
-       | _ -> fn (c::acc) l
-  in fn [] l
-
-let remove : type a. a key -> data -> data
-  = fun key l0 ->
-  let rec fn : data -> data -> data = fun acc l ->
-    match l with
-    | [] -> l0
-    | D(k,_) as c:: l ->
-       match key.f k.k with
-       | Eq -> List.rev_append acc l
-       | _ -> fn (c::acc) l
-  in fn [] l0
-
-let cleanup_delete l =
-  List.iter (function D(k,x) ->
-                       let b = k.s x in
-                       if b then k.c x) l
-
-let cleanup_filter l =
-  List.filter (function D(k,x) -> k.s x) l
-
-let empty = []
 
 module Sfd = struct
   type t =

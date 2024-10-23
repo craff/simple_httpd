@@ -14,6 +14,8 @@ module type Parameters = sig
   val buf_size : int ref
   val ssl_reload_period : int -> unit
 
+  val restart_file : string ref
+
   val log_requests : int ref
   val log_exceptions : int ref
   val log_scheduler : int ref

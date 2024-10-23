@@ -1,11 +1,16 @@
 open Response_code
 
 type t = Async.session_info
-type data = Util.data
-type 'a key = 'a Util.key
+type data = Key.data
+type 'a key = 'a Key.key
 
-let new_key ?(cleanup_delete=fun _ -> ()) ?(cleanup_no_client=fun _ -> true) () =
-  Util.new_key cleanup_no_client cleanup_delete
+let new_key
+      ?(cleanup_delete=fun _ -> ())
+      ?(cleanup_no_client=fun _ -> true)
+      ?(save=fun ch a -> output_value ch a)
+      ?(load=fun ch -> input_value ch)
+      key_name =
+  Key.new_key cleanup_no_client cleanup_delete save load key_name
 
 module LinkedList = Util.LinkedList
 
@@ -15,6 +20,57 @@ let mutex_tbl = Mutex.create ()
 (* session orderer by expiration data *)
 let sessions_list = LinkedList.create ()
 let mutex_list = Mutex.create ()
+
+let save_session ch session =
+  let open Async in
+  output_value ch true;
+  output_value ch session.addr;
+  output_value ch session.key;
+  output_value ch session.life_time;
+  output_value ch session.last_refresh;
+  Key.save ch (Atomic.get session.data)
+
+let load_session ch =
+  let addr = input_value ch in
+  let key  = input_value ch in
+  let life_time = input_value ch in
+  let last_refresh = input_value ch in
+  let data = Atomic.make (Key.load ch) in
+  let session_info =
+    Async.({ addr; key; clients= Atomic.make []
+             ; data; cell = LinkedList.fake_cell
+             ; life_time; last_refresh})
+  in
+  let session = LinkedList.add_first session_info sessions_list in
+  session_info.cell <- session;
+  Hashtbl.replace sessions_tbl key session
+
+let save_name = "SESSION"
+
+let save_sessions ch =
+  Mutex.lock mutex_tbl;
+  Mutex.lock mutex_list;
+  output_value ch (save_name, 1);
+  Util.LinkedList.iter (save_session ch) sessions_list;
+  output_value ch false;
+  Mutex.unlock mutex_tbl;
+  Mutex.unlock mutex_list
+
+
+let load_sessions (name, version) ch =
+  Mutex.lock mutex_tbl;
+  Mutex.lock mutex_list;
+  assert (name = save_name);
+  let load =
+    match version with
+    | 1 -> load_session
+    | _ -> assert false
+  in
+  while input_value ch do
+    load ch
+  done;
+  Mutex.unlock mutex_tbl;
+  Mutex.unlock mutex_list
 
 let delete_session session =
   Mutex.lock mutex_tbl;
@@ -31,7 +87,7 @@ let delete_session session =
    with e ->
      Mutex.unlock mutex_list; raise e);
   List.iter Async.close (Atomic.get session.clients);
-  Util.cleanup_delete (Atomic.get session.data)
+  Key.cleanup_delete (Atomic.get session.data)
 
 let refresh session =
   let now = Unix.gettimeofday () in
@@ -126,7 +182,7 @@ let start_session ?(session_life_time=3600.0) client key =
           let addr = Util.addr_of_sock client.sock in
           let key = Digest.to_hex
                       (Digest.string (addr ^ string_of_int (Random.int 1_000_000_000))) in
-          let data = Atomic.make Util.empty in
+          let data = Atomic.make Key.empty in
           let now = Unix.gettimeofday () in
           let session_info =
             Async.({ addr; key; clients= Atomic.make [client]
@@ -148,17 +204,17 @@ let start_session ?(session_life_time=3600.0) client key =
 
 let get_session_data (sess : t) key =
   let l = Atomic.get sess.data in
-  try Some (Util.search key l) with Not_found -> None
+  try Some (Key.search key l) with Not_found -> None
 
 let do_session_data : t -> (data -> 'a * data) -> 'a =
   fun (sess : t) fn ->
     Util.get_update_atomic sess.data fn
 
 let set_session_data (sess : t) key x =
-  do_session_data sess (fun l -> (), Util.add_replace key x l)
+  do_session_data sess (fun l -> (), Key.add_replace key x l)
 
 let remove_session_data sess key =
-  do_session_data sess (fun l -> (), Util.remove key l)
+  do_session_data sess (fun l -> (), Key.remove key l)
 
 
 let mk_cookies (session : t)  cookie_policy cs =

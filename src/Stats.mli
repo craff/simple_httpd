@@ -10,3 +10,7 @@
  *)
 val filter : unit -> 'a Route.Filter.t *
                        (?in_head: Html.elt -> ?in_body: Html.elt -> Html.chaml)
+
+val save_name : string
+val save : out_channel -> unit
+val restore : string * int -> in_channel -> unit

@@ -74,6 +74,8 @@ module LinkedList : sig
   val remove_cell : 'a cell -> 'a t -> unit
   val move_first : 'a cell -> 'a t -> unit
   val move_last : 'a cell -> 'a t -> unit
+
+  val iter : ('a -> unit) -> 'a t -> unit
 end
 
 val remove_first : ('a -> bool) -> 'a list -> 'a list
@@ -85,17 +87,6 @@ val addr_of_sock : Unix.file_descr -> string
 
 val to_human : ?unit:string -> float -> string
 val to_human_int : ?unit:string -> int -> string
-
-type 'a key
-type data
-
-val new_key : 'a. ('a -> bool) -> ('a -> unit) -> 'a key
-val search : 'a key -> data -> 'a
-val add_replace : 'a key -> 'a -> data -> data
-val remove : 'a key -> data -> data
-val cleanup_delete : data -> unit
-val cleanup_filter : data -> data
-val empty : data
 
 module Sfd : sig
   type t
