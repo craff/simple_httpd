@@ -2,7 +2,7 @@
 
 SERVER=$1
 PORT=8088
-"$SERVER" . -p $PORT --log-requests 0 &
+"$SERVER" . -p $PORT --log-requests 0 --log-exceptions 0 &
 PID=$!
 
 # need to sleep to make sure server is ready before first curl

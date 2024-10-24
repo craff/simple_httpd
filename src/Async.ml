@@ -927,8 +927,7 @@ let loop id st listens pipe timeout handler () =
 let add_close, close_all =
   let to_close = ref [] in
   let add_close s = to_close := s :: !to_close in
-  let close_all s =
-    Printf.eprintf "Exit on signal: %d\n%!" s;
+  let close_all _ =
     List.iter Unix.close !to_close;
   in
   (add_close, close_all)

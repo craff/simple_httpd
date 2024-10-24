@@ -2,7 +2,7 @@
 
 PORT=8082
 
-./sse_server.exe -p $PORT --log-requests 0 &
+./sse_server.exe -p $PORT --log-requests 0 --log-exceptions 0 &
 PID=$!
 
 sleep 0.1

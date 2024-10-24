@@ -5,7 +5,7 @@ if [ -f data ]; then rm data ; fi
 SERVER=$1
 PORT=8443
 
-"$SERVER" . -p $PORT --log-requests 0 --ssl domain.crt domain.key --upload --max-upload 100000000000 &
+"$SERVER" . -p $PORT --log-requests 0 --log-exceptions 0 --ssl domain.crt domain.key --upload --max-upload 100000000000 &
 PID=$!
 
 sleep 0.1
