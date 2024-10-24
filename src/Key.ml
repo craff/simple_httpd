@@ -88,18 +88,26 @@ let cleanup_filter l =
 let empty = []
 
 let save ch l =
+  let l = cleanup_filter l in
   output_value ch (List.length l);
   List.iter (function D(key, data) ->
                output_value ch key.idx;
-               key.sav ch data) (cleanup_filter l)
+               key.sav ch data) l
 
 let load ch =
   let size = input_value ch in
   let res = ref [] in
   for _ = 1 to size do
     let idx = input_value ch in
-    let R k = get_key idx in
-    let data = input_value ch in
-    res := D(k, data) :: !res
+    try
+      match get_key idx with
+      | R k ->
+         let data = k.lod ch in
+         res := D(k, data) :: !res;
+    with
+      Not_found ->
+        Printf.eprintf "FATAL ERROR: data key: %s not found\n%!" idx;
+        exit 1
+
   done;
   !res

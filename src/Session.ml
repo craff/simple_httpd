@@ -7,8 +7,8 @@ type 'a key = 'a Key.key
 let new_key
       ?(cleanup_delete=fun _ -> ())
       ?(cleanup_no_client=fun _ -> true)
-      ?(save=fun ch a -> output_value ch a)
-      ?(load=fun ch -> input_value ch)
+      ?(save=output_value)
+      ?(load=input_value)
       key_name =
   Key.new_key cleanup_no_client cleanup_delete save load key_name
 
