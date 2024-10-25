@@ -156,7 +156,24 @@ let get_session (type a) ?(cookie_policy=default_cookie_policy) (req : a Request
      | _ ->
         None
 
-let start_session ?(session_life_time=3600.0) client key =
+let get_addresses req client =
+  let addr = Util.addr_of_sock client.Async.sock in
+  let headers = Request.headers req in
+  let addr = match Headers.get Headers.Forwarded headers with
+    | None -> addr
+    | Some a -> addr ^ "F:" ^ a
+  in
+  let addr = match Headers.get Headers.X_Real_IP headers with
+    | None -> addr
+    | Some a -> addr ^ "XRI:" ^ a
+  in
+  let addr = match Headers.get Headers.X_Forwarded_For headers with
+    | None -> addr
+    | Some a -> addr ^ "XFF:" ^ a
+  in
+  addr
+
+let start_session ?(session_life_time=3600.0) addr client key =
   try
     match client.Async.session with
     | Some s ->
@@ -179,7 +196,6 @@ let start_session ?(session_life_time=3600.0) client key =
           (session_info, true)
        | None ->
           Mutex.unlock mutex_tbl;
-          let addr = Util.addr_of_sock client.sock in
           let key = Digest.to_hex
                       (Digest.string (addr ^ string_of_int (Random.int 1_000_000_000))) in
           let data = Atomic.make Key.empty in
@@ -205,6 +221,9 @@ let start_session ?(session_life_time=3600.0) client key =
 let get_session_data (sess : t) key =
   let l = Atomic.get sess.data in
   try Some (Key.search key l) with Not_found -> None
+
+let get_session_key sess = sess.Async.key
+let get_session_addr sess = sess.Async.addr
 
 let do_session_data : t -> (data -> 'a * data) -> 'a =
   fun (sess : t) fn ->
@@ -259,10 +278,12 @@ let select_cookies ?(delete=false) ?create cookie_policy cookies =
   | Some session -> mk_cookies session cookie_policy cookies
   | None         -> cookies
 
+exception Bad_session_cookie
+
 let check_session_cookie ?(cookie_policy=default_cookie_policy) ?(create=false) req =
   let session =
     match get_session ~cookie_policy req with
-    | None -> raise Not_found
+    | None -> raise Bad_session_cookie
     | Some session -> session
   in
   let cookies = Request.cookies req in
@@ -276,51 +297,49 @@ let check_session_cookie ?(cookie_policy=default_cookie_policy) ?(create=false) 
          key = session.key &&
            Http_cookie.value addr = session.addr ->
      let client = Request.client req in
-     let addr = Util.addr_of_sock client.sock in
-     if addr <> session.addr then raise Not_found;
+     let addr = get_addresses req client in
+     if addr <> session.addr then
+       begin
+         delete_session session;
+         raise Bad_session_cookie;
+       end;
      Some session
+  | (Some _, None) ->
+     delete_session session;
+     raise Bad_session_cookie;
   | (None, None) when cookies = [] && create ->
      None
-  | _ -> raise Not_found
-  | exception _ -> raise Not_found
+  | _ -> raise Bad_session_cookie
+  | exception _ -> raise Bad_session_cookie
 
 let start_check
-      ?(create=true)
+      ?(create=false)
       ?(check=fun (_:t) -> true)
       ?(cookie_policy=default_cookie_policy)
       ?(error=(bad_request, [])) req =
   let session_life_time = cookie_policy.life in
   let cookies = Request.cookies req in
-  let client = Request.client req in
   let session_key = session_key cookie_policy in
   let key = Option.map Http_cookie.value
               (Request.get_cookie req session_key)
   in
+  let client = Request.client req in
+  let addr = get_addresses req client in
+
   let exception Bad of t in
   try
-    let (session, old) =
-      if create then start_session ~session_life_time client key
-      else match get_client_session client key with
-           | None -> raise Exit
-           | Some session ->
-              let session = LinkedList.get session in
-              (session, true)
+    let session, delete =
+      match check_session_cookie ~cookie_policy ~create req with
+      | Some session -> (session, false)
+      | None when create ->
+         start_session ~session_life_time addr client key
+      | _ -> raise Exit
+      | exception Bad_session_cookie when create ->
+         start_session ~session_life_time addr client key
+      | exception _ -> raise Exit
     in
     let bad () = raise (Bad session) in
     if not (check session) then bad ();
-    let delete =
-      if old then
-        begin
-          try
-            ignore (check_session_cookie ~cookie_policy ~create req);
-            false
-          with Not_found ->
-            if not create then raise (Bad session);
-            let _ = start_session ~session_life_time client key in
-            false
-        end
-      else true
-    in
     (select_cookies ~delete ~create:session cookie_policy cookies, session)
   with Bad session ->
         delete_session session;

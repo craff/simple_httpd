@@ -57,7 +57,7 @@ module Make(Login:Login) = struct
              redirect (Session.mk_cookies session Login.cookie_policy
                          (Request.cookies request))
         with
-        | Not_found ->
+        | Session.Bad_session_cookie ->
            match check_pass () with
            | Some cookies -> redirect cookies
            | None ->
@@ -136,9 +136,11 @@ module Make(Login:Login) = struct
         match Session.get_session_data session auth_key with
         | Some data ->
            if not (check_data data) then
-             let cookies = Session.delete_session ~cookie_policy request in
-             Response.fail_raise ~code:log_code
-               ~headers:log_headers ~cookies "%s" log_msg
+             begin
+               let cookies = Session.delete_session ~cookie_policy request in
+               Response.fail_raise ~code:log_code
+                 ~headers:log_headers ~cookies "%s" log_msg;
+             end;
         | None -> raise Login
       end;
       r
@@ -154,8 +156,9 @@ module Make(Login:Login) = struct
       let error = (Response_code.see_other,
                    redirect_headers) in
       try
-        let (cookies, session) = Session.start_check ~create:false ~cookie_policy
-                                 ~error request in
+        let (cookies, session) =
+          Session.start_check ~cookie_policy ~error request
+        in
         fn request cookies (match Session.get_session_data session auth_key with
                             | Some d -> d | None -> raise Not_found)
       with Not_found | Headers.Bad_req _ -> raise Login

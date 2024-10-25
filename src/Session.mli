@@ -36,6 +36,8 @@ val get_session_data : t -> 'a key -> 'a option
 val set_session_data : t -> 'a key -> 'a -> unit
 val remove_session_data : t -> 'a key -> unit
 
+exception Bad_session_cookie
+
 val check_session_cookie : ?cookie_policy:cookie_policy -> ?create:bool -> 'a Request.t ->
                            t option
 
@@ -49,3 +51,6 @@ val select_cookies : ?delete:bool -> ?create:t -> cookie_policy -> Cookies.t -> 
 val save_name     : string
 val save_sessions : out_channel -> unit
 val load_sessions : string * int -> in_channel -> unit
+
+val get_session_key : t -> string
+val get_session_addr : t -> string
