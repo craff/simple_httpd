@@ -25,27 +25,53 @@ let rec fn acc =
 
 let to_cstr = String.map (function '-' -> '_' | c -> c)
 
-let filename = ["Filename-Multipart"; ""; "provisional"; "Managment of filenames in multipart encoded data as a fake header"; ""]
+let extra = [
+  ["Filename-Multipart"; "nonstandard"; "";
+   "Managment of filenames in multipart encoded data as a fake header"; ""];
+  ["X-Forwarded-For"; "nonstandard"; "";
+   "Added by Proxy, list of addresses"];
+  ["X-Real-IP"; "nonstandard"; "";
+   "Added by Proxy, original addresses"]]
 
-let lines = List.rev (fn [filename])
+let lines = List.rev (fn extra)
 
 type status =
   Permanent
 | Provisional
 | Deprecated
 | Obsoleted
+| NonStandard
 
-let string_to_status = function
+type typ =
+  List
+| Dictionnary
+| Item
+| NoType
+
+let string_to_type h = function
+    "List" -> List
+  | "Dictionary" -> Dictionnary
+  | "Item" -> Item
+  | "" -> NoType
+  | other ->
+     Printf.eprintf "unsupported type for %s: %s\n%!" h other;
+     assert false
+
+let string_to_status h = function
     "permanent" -> Permanent
   | "provisional" -> Provisional
   | "deprecated" -> Deprecated
   | "obsoleted" -> Obsoleted
-  | _ -> assert false
+  | "nonstandard" -> NonStandard
+  | other ->
+     Printf.eprintf "unsupported status for %s: %s\n%!" h other;
+     assert false
 
 let fields =
   List.filter_map
     (function
-     | (h::_::s::_) ->
-        let s = string_to_status s in
-        if s = Obsoleted then None else Some(h,s)
+     | (h::s::t::_) ->
+        let s = string_to_status h s in
+        let t = string_to_type h t in
+        if s = Obsoleted then None else Some(h,s,t)
      | _ -> assert false) lines

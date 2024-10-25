@@ -2,7 +2,7 @@ open Compile_headers_common
 
 let _ =
   Printf.printf "type header =\n";
-  List.iter (fun (h,_) -> Printf.printf "  | %s\n" (to_cstr h)) fields;
+  List.iter (fun (h,_,_) -> Printf.printf "  | %s\n" (to_cstr h)) fields;
   Printf.printf "\n%!"
 
 type tree = { leaf : string option; nodes : (char * (char * tree)) list; id : int }
@@ -34,7 +34,7 @@ let tree : tree =
   in
   let rec gn tree = function
     | [] -> tree
-    | (h, _) :: l -> gn (fn tree h h) l
+    | (h, _, _) :: l -> gn (fn tree h h) l
   in
   sort (gn (empty ()) fields)
 
@@ -46,7 +46,7 @@ let _ =
   Printf.printf {|
 let to_string = function
 |};
-  List.iter (fun (h,_) -> Printf.printf "  | %s -> %S\n" (to_cstr h) h) fields;
+  List.iter (fun (h,_, _) -> Printf.printf "  | %s -> %S\n" (to_cstr h) h) fields;
   Printf.printf "\n%!"
 
 let _ = Printf.printf "%s" {|
