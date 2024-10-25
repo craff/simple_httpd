@@ -129,6 +129,7 @@ end
 
 type socket_type =
   | Io     (* Io socket *)
+  | Fd     (* Bare file descriptor *)
   | Client (* main socket serving the http connexion *)
   | Pipe   (* pipe to receive the new connection *)
   | Lock   (* mutex *)
@@ -342,8 +343,6 @@ module Mutex : sig
     begin
       match lk.owner with
       | Locked cl ->
-         if cl != global_get_client () then
-           failwith "unlock by a client that did not lock the mutex";
          cl.locks <-
            (try Util.remove_first (fun x -> x == lk) cl.locks
            with Not_found -> assert false)
@@ -485,6 +484,15 @@ module Io = struct
         (try Unix.close s.sock with _ -> ())
       end
 
+  let register_socket fd flags =
+    let i = (Domain.self () :> int) in
+    let info = all_domain_info.(i) in
+    Polly.(add info.poll_list fd flags);
+    let c = cur_client () in
+    info.pendings.(Util.file_descr_to_int fd) <-
+      OneSocket { ty = Fd; client = c; pd = NoEvent };
+    info.poll_list
+
   let register (r : t) =
     let i = (Domain.self () :> int) in
     let info = all_domain_info.(i) in
@@ -493,7 +501,8 @@ module Io = struct
         Polly.(add info.poll_list r.sock Events.(inp lor out lor et lor rdhup lor err lor hup));
       end;
     let c = cur_client () in
-    info.pendings.(Util.file_descr_to_int r.sock) <- (OneSocket { ty = Io; client = c; pd = NoEvent })
+    info.pendings.(Util.file_descr_to_int r.sock) <-
+      OneSocket { ty = Io; client = c; pd = NoEvent }
 
   let create ?(finalise=fun () -> ()) sock =
     let r = { sock
@@ -517,6 +526,17 @@ module Io = struct
   with Unix.(Unix_error((EAGAIN|EWOULDBLOCK),_,_)) ->
         register io;
         schedule_io io.sock (fun () -> write io s o l)
+
+  let poll ?(edge_trigger=true) ?(read=false) ?(write=false) (fd: Unix.file_descr) =
+    let open Polly.Events in
+    let flags = err lor hup in
+    let flags = if edge_trigger then et lor flags else flags in
+    let flags = if read then inp lor rdhup lor flags else flags in
+    let flags = if write then out lor flags else flags in
+    let poll_list = register_socket fd flags in
+    ignore (schedule_io fd (fun () ->
+                Polly.del poll_list fd;
+                1))
 
   let formatter (io:t) =
     let open Format in

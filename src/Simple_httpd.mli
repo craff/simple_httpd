@@ -156,17 +156,6 @@ module Async : sig
   val sleep : float -> unit
   (** Same as above, but with a minimum sleeping time in second *)
 
-  (** [schedule_io sock action] should be called when a non blocking read/write
-      operation would have blocked. When read become possible, [action ()] will
-      be called.  The return value should be (if possible) the number of bytes
-      read or written. It this is meaningless, return a non zero value if some
-      progress was made, while returning 0 will terminates the management of the
-      client.
-
-      A typical application for this is when interacting with a data base in non
-      blocking mode. For just reading a socket, use the {!Io} module below.
-   *)
-  val schedule_io : Unix.file_descr -> (unit -> int) -> int
 end
 
 (** Module that encapsulates non blocking sockets with function similar to
@@ -183,12 +172,29 @@ module Io : sig
     type t
 
     val create : ?finalise:(unit -> unit) -> Unix.file_descr -> t
+    (** Encapsulate a file descriptor in a dedicated data structure *)
+
     val close : t -> unit
+    (** Close io, similar to [Unix.close] *)
+
     val read : t -> Bytes.t -> int -> int -> int
+    (** Read, similar to [Unix.read], but asynchronous *)
+
     val write : t -> Bytes.t -> int -> int -> int
+    (** Read, similar to [Unix.write], but asynchronous *)
 
     val formatter : t -> Format.formatter
-  end
+    (** Provide a formatter to use with the [Format] library *)
+
+    val poll : ?edge_trigger:bool ->
+               ?read:bool ->
+               ?write:bool ->
+               Unix.file_descr -> unit
+    (** Low level polling, release control until the event is available.
+        Usefull for Postgresql. Beware that libpq and other do not support
+        Edge Trigerring, which is true by defaut. read and write are false
+        by default. *)
+end
 
 (** Representation of input streams, can be generated from string, file, ... *)
 module Input : sig

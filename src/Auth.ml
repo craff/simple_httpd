@@ -27,12 +27,14 @@ module Make(Login:Login) = struct
           if Request.meth request <> Method.POST then raise Not_found;
           let login = List.assoc "login" (Request.query request) in
           let password = List.assoc "password" (Request.query request) in
-          let cookies, session = Session.start_check ~cookie_policy ~error request in
           try
             match Login.check ~login ~password with
             | None -> raise Not_found
             | Some t ->
                Log.f (Aut 0) (fun k->k "Login successful for %S" login);
+               let cookies, session = Session.start_check ~create:true ~cookie_policy
+                                        ~error request
+               in
                Session.set_session_data session auth_key t;
                Some cookies
           with Not_found ->

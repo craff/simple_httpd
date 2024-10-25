@@ -126,10 +126,16 @@ module Io : sig
   val write : t -> Bytes.t -> int -> int -> int
 
   val formatter : t -> Format.formatter
+
+  val poll : ?edge_trigger:bool ->
+             ?read:bool ->
+             ?write:bool ->
+             Unix.file_descr -> unit
 end
 
 type socket_type =
   | Io
+  | Fd
   | Client
   | Pipe
   | Lock
