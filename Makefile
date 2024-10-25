@@ -25,7 +25,7 @@ clean: remove
 	curl https://www.iana.org/assignments/http-fields/field-names.csv -o src/field-names.csv
 
 ./src/chaml/entities.json:
-	curl https://html.spec.whatwg.org/entities.json -o $>
+	curl https://html.spec.whatwg.org/entities.json -o ./src/chaml/entities.json
 
 ${TAGTABLES}:
 	cd src/chaml; python3 ../gen/tags.py "https://dev.w3.org/html5/spec-LC/index.html"
