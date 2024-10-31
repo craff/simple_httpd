@@ -171,16 +171,15 @@ let html ?log_size ?in_head ?in_body self req headers =
            <li><?= string_of_int nfd ?> opened file descriptors
            <?ml
              for i = 0 to num_threads do
+               let did = (status.domain_ids.(i-1) :> int) in
                if i = 0 then
-                 echo {html|<li>Thread <?= string_of_int i ?> accepting clients</li>|html}
+                 echo {html|<li>Thread <?= string_of_int did ?> accepting clients</li>|html}
                else
                  begin
-                   let did = status.domain_ids.(i-1) in
                    let pps = Async.all_domain_info.((did :> int)).pendings in
                    echo {html|<li><?=
-                      Printf.sprintf "Thread %d: %d connections (%d)" i
-                                   (Atomic.get (status.nb_connections.(i-1)))
-                                   (did :> int) ?>|html};
+                      Printf.sprintf "Thread %d: %d connections" did
+                                   (Atomic.get (status.nb_connections.(i-1)))?>|html};
                  end
               done
            ?></ul>
