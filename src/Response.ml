@@ -48,7 +48,7 @@ let make_raw_stream ?synch ?(close=Input.close) ?(cookies=[]) ?(headers=[]) ~cod
   let headers = Headers.set_cookies cookies headers in
   let body = Stream{inp;synch;close} in
   let post () = close inp in
-  Gc.finalise (fun _ -> try close inp with _ -> ()) inp;
+  Gc.finalise (fun inp -> try close inp with _ -> ()) inp;
   { code; headers; body; post }
 
 let make_raw_file ?(cookies=[]) ?(headers=[]) ?(close=Util.Sfd.close) ~code size fd : t =
@@ -56,7 +56,8 @@ let make_raw_file ?(cookies=[]) ?(headers=[]) ?(close=Util.Sfd.close) ~code size
   let headers = Headers.set_cookies cookies headers in
   let post () = close fd in
   let body = File{size; fd; close} in
-  Gc.finalise (fun _ -> close fd) close;
+  (* make sure fd is collected *)
+  Gc.finalise (function File{fd; close; _}  -> close fd | _ -> assert false) body;
   { code; headers; body; post }
 
 let make_void ?(cookies=[]) ?(headers=[]) ~code () : t =
