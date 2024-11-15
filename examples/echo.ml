@@ -146,7 +146,7 @@ let _ =
            <li><pre>/upload/:path (PUT)</pre> to upload a file</li>
            <li><pre>/zcat/:path (GET)</pre> to download a file (deflate transfer-encoding)</li>
            <li><pre><a href="/stats/">/stats (GET)</a></pre> to access statistics</li>
-           <li><pre><a href="/stats/">/statuss (GET)</a></pre> to get server status</li>
+           <li><pre><a href="/stats/">/status (GET)</a></pre> to get server status</li>
            <li><pre><a href="/vfs/">/vfs (GET)</a></pre> to access a VFS
              embedded in the binary</li>
 	 </ul>
