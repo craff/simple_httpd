@@ -160,14 +160,15 @@ let get_query s : string =
 
 let split_query s = get_non_query_path s, get_query s
 
+(*
 let split_on_slash s : _ list =
-  let l = ref [] in
-  let i = ref 0 in
-  let n = String.length s in
-  while !i < n do
+   let l = ref [] in
+   let i = ref 0 in
+   let n = String.length s in
+   while !i < n do
     match String.index_from s !i '/' with
-    | exception Not_found ->
-      if !i < n then (
+     | exception Not_found ->
+       if !i < n then (
         (* last component *)
         l := String.sub s !i (n - !i) :: !l;
       );
@@ -177,11 +178,31 @@ let split_on_slash s : _ list =
         l := String.sub s !i (j - !i) :: !l;
       );
       i := j+1;
+   done;
+   List.rev !l
+ *)
+
+let split_on_slash s : _ list =
+  let l = ref [] in
+  let n = String.length s in
+  let j = ref n in
+  for i = n - 1 downto 0 do
+    if String.unsafe_get s i = '/' then
+      begin
+        let len = !j - i - 1 in
+        if len > 0 then
+          l := String.sub s (i+1) len :: !l;
+        j := i
+      end
   done;
-  List.rev !l
+  if !j = n then [s] else
+    if !j > 0 then String.sub s 0 !j :: !l
+    else !l
 
 (*$= & ~printer:Q.Print.(list string)
   ["a"; "b"] (split_on_slash "/a/b")
+  ["a"; "b"] (split_on_slash "/a/b/")
+  ["a"; "b"] (split_on_slash "/a/b//")
   ["coucou"; "lol"] (split_on_slash "/coucou/lol")
   ["a"; "b"; "c"] (split_on_slash "/a/b//c/")
   ["a"; "b"] (split_on_slash "//a/b/")
@@ -488,3 +509,32 @@ module Sfd = struct
 
   let get { fd; _ } = fd
 end
+
+
+let fast_concat sep ls =
+  let rec size acc ls =
+    match ls with
+    | [] -> assert false
+    | [h] -> acc + String.length h
+    | h::r -> size (acc + 1 + String.length h) r
+  in
+  match ls with
+  | [] -> ""
+  | [h] -> h
+  | ls ->
+     let b = Bytes.create (size 0 ls) in
+     let rec loop offset ls =
+       match ls with
+       | [] -> assert false
+       | [h] ->
+          Bytes.blit (Bytes.unsafe_of_string h) 0 b offset (String.length h)
+       | h::ls ->
+          let len = String.length h in
+          Bytes.blit (Bytes.unsafe_of_string h) 0 b offset len;
+          let offset = offset + len in
+          Bytes.set b offset sep;
+          let offset = offset + 1 in
+          loop offset ls
+     in
+     loop 0 ls;
+     Bytes.unsafe_to_string b

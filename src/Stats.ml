@@ -103,7 +103,7 @@ let filter () =
       | None -> "?"
       | Some h -> h
     in
-    let path = String.concat "/" (host :: Request.path_components req) in
+    let path = Util.fast_concat '/' (host :: Request.path_components req) in
     let pp = try Hashtbl.find !per_path path
              with Not_found -> let r = init () in
                                Hashtbl.add !per_path path r;

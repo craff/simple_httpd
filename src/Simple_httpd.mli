@@ -1391,26 +1391,38 @@ module Dir : sig
          } -> file_info
 
   module type VFS = sig
+    type path
+    (** type of path for the VFS *)
+
+    val path : string list -> path
+    (** convert url components to path *)
+
+    val concat : path -> string -> path
+    (** extend a path *)
+
+    val to_string : ?prefix:string -> path -> string
+    (** convert a path back to a url, or string for log *)
+
     val descr : string
     (** Description of the VFS *)
 
-    val is_directory : string -> bool
+    val is_directory : path -> bool
 
-    val contains : string -> bool
+    val contains : path -> bool
     (** [file_exists vfs path] returns [true] if [path] points to a file
         or directory inside [vfs]. *)
 
-    val list_dir : string -> string array
+    val list_dir : path -> string array
     (** List directory. This only returns basenames, the files need
         to be put in the directory path using [Filename.concat]. *)
 
-    val delete : string -> unit
+    val delete : path -> unit
     (** Delete path *)
 
-    val create : string -> (bytes -> int -> int -> unit) * (unit -> unit)
+    val create : path -> (bytes -> int -> int -> unit) * (unit -> unit)
     (** Create a file and obtain a pair [write, close] *)
 
-    val read_file : string -> file_info
+    val read_file : path -> file_info
     (** Read content of a file *)
 
   end

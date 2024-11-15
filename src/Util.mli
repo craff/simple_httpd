@@ -94,3 +94,5 @@ module Sfd : sig
   val close : t -> unit
   val get  : t -> Unix.file_descr
 end
+
+val fast_concat : char -> string list -> string
