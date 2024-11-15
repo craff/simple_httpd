@@ -11,12 +11,6 @@
  *)
 
 
-(** Connection status. Holds the number of clients per domain.  *)
-type status = {
-    nb_connections : int Atomic.t array;
-    domain_ids : Domain.id array;
-  }
-
 (** Simple_httpd notion of mutex. You must be careful with server wide mutex:
     a DoS attack could try to hold such a mutex. A mutex per session may be a good
     idea. A mutex per client is useless (client are treated sequentially).
@@ -55,6 +49,7 @@ type client = private {
                                           adress:port that received the connection *)
     mutable ssl  : Ssl.socket option; (** An eventual ssl context
                                           modified once after ssl negociation *)
+    mutable cont : bool;              (** Read the next request *)
     mutable session : session option; (** Session *)
     mutable acont : any_continuation; (** internal use *)
     mutable start_time : float;       (** start of request *)
@@ -115,6 +110,9 @@ val register_starttime : client -> float
 (** reset the timeout if you know a request requires time. *)
 val reset_timeout : client -> unit
 
+(** Tell the client not to try to read the next request *)
+val stop_client : client -> unit
+
 (** Module with function similar to Unix.read and Unix.single_write
     but that will perform scheduling *)
 module Io : sig
@@ -151,7 +149,7 @@ exception TimeOut
 val schedule_io : Unix.file_descr -> (unit -> int) -> int
 
 val run : nb_threads:int -> listens:Address.t array -> maxc:int ->
-          timeout:float -> status:status ->
+          timeout:float -> set_domains:(Domain.id array -> unit) ->
             (client -> unit) -> unit Domain.t array
 
 val printexn : exn -> string
@@ -185,6 +183,7 @@ module Log : sig
 end
 
 type socket_infos
+type pollResult
 
 type domain_info =
   { mutable cur_client : client (* the client currently running *)
@@ -192,6 +191,8 @@ type domain_info =
   ; poll_list : Polly.t
   ; bytes : Bytes.t (* a preallocated buffer *)
   ; last_seen : client Util.LinkedList.t
+  ; ready : pollResult Queue.t
+  ; nb_connections : int Atomic.t (* -1 for the accepting domain, -2 for unused domain *)
   }
 
 val all_domain_info : domain_info array

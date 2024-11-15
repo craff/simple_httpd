@@ -66,7 +66,6 @@ let get_log i nb_lines output =
                filename (Printexc.to_string e)) output
 
 let html ?log_size ?in_head ?in_body self req headers =
-  let status = status self in
   let log_size =
     match log_size with
     | Some nb -> nb
@@ -170,18 +169,14 @@ let html ?log_size ?in_head ?in_body self req headers =
            <li><?= df ?>
            <li><?= string_of_int nfd ?> opened file descriptors
            <?ml
-             for i = 0 to num_threads do
-               let did = (status.domain_ids.(i-1) :> int) in
-               if i = 0 then
-                 echo {html|<li>Thread <?= string_of_int did ?> accepting clients</li>|html}
-               else
-                 begin
-                   let pps = Async.all_domain_info.((did :> int)).pendings in
-                   echo {html|<li><?=
-                      Printf.sprintf "Thread %d: %d connections" did
-                                   (Atomic.get (status.nb_connections.(i-1)))?>|html};
-                 end
-              done
+             for i = 0 to num_threads - 1 do
+               let did = ((Server.domains self).(i) :> int) in
+               let dinfo = Async.all_domain_info.((did :> int)) in
+               let pps = dinfo.pendings in
+               echo {html|<li><?=
+                   Printf.sprintf "Thread %d: %d connections" did
+                                  (Atomic.get (dinfo.nb_connections))?>|html};
+             done
            ?></ul>
      <?ml
      if !Log.log_folder <> "" then

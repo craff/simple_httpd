@@ -56,8 +56,6 @@ let make_raw_file ?(cookies=[]) ?(headers=[]) ?(close=Util.Sfd.close) ~code size
   let headers = Headers.set_cookies cookies headers in
   let post () = close fd in
   let body = File{size; fd; close} in
-  (* make sure fd is collected *)
-  Gc.finalise (function File{fd; close; _}  -> close fd | _ -> assert false) body;
   { code; headers; body; post }
 
 let make_void ?(cookies=[]) ?(headers=[]) ~code () : t =

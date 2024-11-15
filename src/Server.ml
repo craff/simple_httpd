@@ -26,24 +26,24 @@ type t = {
 
   buf_size: int;
 
-  status : Async.status;
-
   handlers : Route.handlers;
 
   started_time : float;
 
   restart_file : string;
+
+  mutable domains : Domain.id Array.t;
 }
 
 let listens self = self.listens
-
-let status self = self.status
 
 let num_threads self = self.num_threads
 
 let max_connections self = self.max_connections
 
 let started_time self = self.started_time
+
+let domains self = self.domains
 
 let add_route_handler ?addresses ?meth ?filter
     self route f : unit =
@@ -232,19 +232,14 @@ let create ?(listens = [Address.make ()]) (module Params : Parameters) =
   let max_connections = max 4 max_connections in
   if num_threads <= 0 || max_connections < num_threads then
     invalid_arg "bad number of threads or max connections";
-  let status = Async.{
-        nb_connections = Array.init num_threads (fun _ -> Atomic.make 0);
-        domain_ids = Array.init num_threads (fun _ -> Domain.self ());
-          (* will be changed when the threads are spawn *)
-    }
-  in
   let (listens, handlers) =
     Address.register Route.empty_handler listens
   in
   let started_time = Unix.gettimeofday () in
   let restart_file = !restart_file in
+  let domains = [||] in (* set when running the server *)
   let self = { listens; buf_size; max_connections; started_time
-             ; handlers; timeout; num_threads; status; restart_file }
+             ; handlers; timeout; num_threads; restart_file; domains }
   in
   self
 
@@ -253,22 +248,22 @@ let handle_client_ (self:t) (client:Async.client) : unit =
   let buf = client.buf in
   let oc  = Output.create ~buf_size:self.buf_size client in
   let is = Input.of_client ~buf_size:self.buf_size client in
-  let cont = ref true in
-  while !cont do
-    match Request.parse_req_start ~client ~buf is with
-    | None ->
-      cont := false (* client is done *)
+  while client.cont do
+    try
+      match Request.parse_req_start ~client ~buf is with
+      | None ->
+         Async.stop_client client (* client is done *)
 
-    | Some req ->
-      log (Req 1) (fun k->k "req: %s" (Format.asprintf "@[%a@]" Request.pp_ req));
+      | Some req ->
+       try
+         log (Req 1) (fun k->k "req: %s" (Format.asprintf "@[%a@]" Request.pp_ req));
 
-      if Request.close_after_req req then cont := false;
+         if Request.close_after_req req then Async.stop_client client;
 
-      try
-        (* is there a handler for this path? *)
-        let (req, filter, handler) = Route.find self.handlers req in
-        (* handle expect/continue *)
-        begin match Request.get_header ~f:String.trim req Headers.Expect with
+         (* is there a handler for this path? *)
+         let (req, filter, handler) = Route.find self.handlers req in
+         (* handle expect/continue *)
+         begin match Request.get_header ~f:String.trim req Headers.Expect with
           | Some "100-continue" ->
             log (Req 1) (fun k->k "send back: 100 CONTINUE");
             Response.output_ (Request.meth req) oc (Response.make_raw ~code:continue "");
@@ -286,22 +281,15 @@ let handle_client_ (self:t) (client:Async.client) : unit =
         (* how to reply *)
         let resp r =
           let r = filter r in
-          try
-            if Headers.get Headers.Connection r.Response.headers = Some"close" then
-              cont := false;
-            Response.output_ (Request.meth req) oc r;
-            log (Req 0) (fun k -> k "response code %d sent after %fms" (r.code :> int)
+          if Headers.get Headers.Connection r.Response.headers = Some "close" then
+            Async.stop_client client;
+          Response.output_ (Request.meth req) oc r;
+          log (Req 0) (fun k -> k "response code %d sent after %fms" (r.code :> int)
                                     (1e3 *. (Unix.gettimeofday () -. req.start_time)));
-
-          with Sys_error _
-             | Unix.Unix_error _ as e ->
-                cont := false;
-                log (Exc 1) (fun k -> k "fail to output response (%s)"
-                                           (Async.printexn e))
         in
         (* call handler *)
         handler oc req ~resp;
-        if !cont then Async.yield ()
+        if client.cont then Async.yield ()
       with
       | Headers.Bad_req (c,s,headers,cookies) ->
          log (Req 0) (fun k -> k "not 200 status: %d (%s)" (c :> int) s);
@@ -310,22 +298,19 @@ let handle_client_ (self:t) (client:Async.client) : unit =
            try Response.output_ (Request.meth req) oc res
            with Sys_error _ | Unix.Unix_error _ -> ()
          end;
-         if not ((c :> int) < 500) then cont := false else Async.yield ()
-
+         if not ((c :> int) < 500) then Async.stop_client client else Async.yield ()
+      with
       | Sys_error _ | Unix.Unix_error _
         | Ssl.Write_error _ | Ssl.Read_error _
         | Async.ClosedByHandler | Async.TimeOut as e ->
          log (Exc 1) (fun k -> k "probably broken connection (%s)"
                                     (Async.printexn e));
-         cont := false; (* connection broken somehow *)
+         Async.stop_client client (* connection broken somehow *)
 
       | e ->
          log (Exc 0) (fun k -> k "internal server error (%s)"
                                     (Async.printexn e));
-         cont := false;
-         Response.output_ (Request.meth req) oc @@
-           Response.fail ~code:internal_server_error
-             "server error: %s" (Async.printexn e)
+         Async.stop_client client
   done;
   client.close ();
   log (Sch 0) (fun k->k "done with client, exiting");
@@ -396,8 +381,9 @@ let run (self:t) =
   save_load self ;
   let handler client_sock = handle_client_ self client_sock in
   let maxc = self.max_connections in
+  let set_domains ds = self.domains <- ds in
   let a = Async.run ~nb_threads:self.num_threads ~listens:self.listens
-            ~maxc ~timeout:self.timeout ~status:self.status
-            handler
+        ~maxc ~timeout:self.timeout ~set_domains
+        handler
   in
   Array.iter (fun d -> Domain.join d) a

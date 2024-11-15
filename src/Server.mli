@@ -54,9 +54,6 @@ val create :  ?listens:Address.t list -> (module Parameters) -> t
 val listens : t -> Address.t array
 (** Addresses and ports on which the server listens. *)
 
-val status : t -> Async.status
-(** Returns server status *)
-
 val started_time : t -> float
 (** Returns the time the server started *)
 
@@ -71,6 +68,8 @@ val max_connections : t -> int
     Here are the main function to explain what you server should to depending
     on the url send by the client.
 *)
+
+val domains : t -> Domain.id Array.t
 
 val add_route_handler :
   ?addresses:Address.t list ->

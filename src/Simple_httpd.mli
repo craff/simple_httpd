@@ -141,12 +141,6 @@ module Async : sig
       be identified as one session using session cookies.
    *)
 
-  (** Connection status. Holds the number of clients per domain.  *)
-  type status = {
-      nb_connections : int Atomic.t array ;
-      domain_ids : Domain.id array
-    }
-
   val yield : unit -> unit
   (** let other threads run. Should be called for treatment that take time
       before sending results or reading data and when the other primitives
@@ -1148,9 +1142,6 @@ module Server : sig
 
   val listens : t -> Address.t array
   (** Addresses and ports on which the server listens. *)
-
-  val status : t -> Async.status
-  (** Returns server status *)
 
   val started_time : t -> float
   (** Returns the time the server started *)

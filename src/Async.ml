@@ -2,11 +2,6 @@ open Effect
 open Effect.Deep
 module LL = Util.LinkedList
 
-type status = {
-    nb_connections : int Atomic.t array;
-    domain_ids : Domain.id array;
-  }
-
 let max_domain = 1024
 
 let new_id =
@@ -33,6 +28,7 @@ type client =
   ; accept_by : int (* index of the socket that accepted the connection in the
                        listens table *)
   ; mutable ssl : Ssl.socket option
+  ; mutable cont : bool (* set to false to stop reading request *)
   ; mutable session : session option
   ; mutable acont : any_continuation
   ; mutable start_time : float (* last time request started *)
@@ -78,6 +74,7 @@ let fake_client =
       peer = "";
       connected = false;
       session = None;
+      cont = true;
       acont = N;
       id = -1;
       buf = Buffer.create 16;
@@ -95,7 +92,7 @@ let set_session ?session client =
   client.session <- session
 
 type _ Effect.t +=
-   | Io  : { sock: Unix.file_descr; fn: (unit -> int) }
+   | Io  : { sock: Unix.file_descr; fn: (unit -> int); read : bool }
            -> int Effect.t
    | Yield : unit Effect.t
    | Sleep : float -> unit Effect.t
@@ -105,6 +102,8 @@ type _ Effect.t +=
 type 'a pending =
   { fn : unit -> 'a
   ; cont : ('a, unit) continuation
+  ; read : bool
+
   }
 
 let apply c f1 f2 =
@@ -135,14 +134,28 @@ type socket_type =
   | Lock   (* mutex *)
   | Decr   (* semaphore *)
 
+let _print_socket_type = function
+  | Io -> "Io"
+  | Fd -> "Fd"
+  | Client -> "Client"
+  | Pipe -> "Pipe"
+  | Lock -> "Lock"
+  | Decr -> "Decr"
+
 let printexn e =
   match e with
   | e -> (Printexc.to_string e)
 
+type sock_error =
+  | RdHup
+  | Hup
+  | Err of Unix.error
+  | NoError
+
 type pending_status =
   | NoEvent
   | Wait : 'a pending -> pending_status
-  | TooSoon of Unix.error option
+  | TooSoon of sock_error
 
 type socket_info =
   { ty : socket_type
@@ -152,8 +165,15 @@ type socket_info =
 
 type socket_infos =
   | NoSocket
+  | PipeSocket of socket_info
   | OneSocket of socket_info
-  | QueueSocket of socket_info list
+  | QueueSocket of socket_info Queue.t
+
+type pollResult =
+  | Accept of (int * Unix.file_descr * Address.t)
+  | Action : 'a pending * socket_info * sock_error -> pollResult
+  | Yield of ((unit,unit) continuation * client * float)
+  | Poll
 
 type domain_info =
   { mutable cur_client : client (* the client currently running *)
@@ -170,7 +190,10 @@ type domain_info =
   ; poll_list : Polly.t
   ; bytes : Bytes.t (* a preallocated buffer *)
   ; last_seen : client LL.t
+  ; ready : pollResult Queue.t
+  ; nb_connections : int Atomic.t (* -1 for the accepting domain, -2 for unused domain *)
   }
+
 
 let fake_domain_info =
   { cur_client = fake_client
@@ -178,6 +201,8 @@ let fake_domain_info =
   ; poll_list = Polly.create ()
   ; bytes = Bytes.create 0
   ; last_seen = LL.create ()
+  ; ready = Queue.create ()
+  ; nb_connections = Atomic.make (-2)
   }
 
 let all_domain_info = Array.make max_domain fake_domain_info
@@ -302,7 +327,9 @@ module Log = struct
   let _ = Address.forward_log := f (Exc 0)
 end
 
-let yield () = perform Yield
+let yield () =
+  let q = all_domain_info.((Domain.self () :> int)).nb_connections in
+  if Atomic.get q > 1 then perform Yield
 
 module Mutex : sig
     type t = mutex
@@ -417,10 +444,11 @@ let rec read c s o l =
     apply c Util.read Ssl.read s o l
   with Unix.(Unix_error((EAGAIN|EWOULDBLOCK),_,_))
      | Ssl.(Read_error(Error_want_read|Error_want_write
-                        |Error_want_connect|Error_want_accept|Error_zero_return)) ->        perform_read c s o l
+                      |Error_want_connect|Error_want_accept|Error_zero_return)) ->
+        perform_read c s o l
 
 and perform_read c s o l =
-  perform (Io {sock = c.sock; fn = (fun () -> read c s o l) })
+  perform (Io {sock = c.sock; fn = (fun () -> read c s o l); read = true })
 
 let rec write c s o l =
   try
@@ -431,7 +459,7 @@ let rec write c s o l =
      perform_write c s o l
 
 and perform_write c s o l =
-  perform (Io {sock = c.sock; fn = (fun () -> write c s o l) })
+  perform (Io {sock = c.sock; fn = (fun () -> write c s o l); read = false })
 
 (* Note: sendfile together with SSL, not really efficient *)
 let ssl_sendfile c fd o l =
@@ -447,13 +475,13 @@ let rec sendfile c fd o l =
   with Unix.(Unix_error((EAGAIN|EWOULDBLOCK),_,_))
      | Ssl.(Write_error(Error_want_read|Error_want_write
                         |Error_want_connect|Error_want_accept|Error_zero_return)) ->
-          perform_sendfile c fd o l
+        perform_sendfile c fd o l
 
 and perform_sendfile c fd o l =
-  perform (Io {sock = c.sock; fn = (fun () -> sendfile c fd o l) })
+  perform (Io {sock = c.sock; fn = (fun () -> sendfile c fd o l); read = false })
 
 let schedule_io sock fn =
-  perform (Io {sock; fn })
+  perform (Io {sock; fn; read = false })
 
 let cur_client () =
   let i = all_domain_info.((Domain.self () :> int)) in
@@ -467,6 +495,9 @@ let register_starttime cl =
   Util.LinkedList.move_first cl.last_seen_cell ll;
   r
 
+let stop_client (cl:client) =
+  cl.cont <- false
+
 let reset_timeout cl =
   let r = now () in
   cl.timeout_ref <- r;
@@ -476,21 +507,13 @@ let reset_timeout cl =
 module Io = struct
   include IoTmp
 
-  let close (s:t) =
-    if Atomic.compare_and_set s.closing false true then
-      begin
-        s.finalise ();
-        (try Unix.(shutdown s.sock SHUTDOWN_ALL); with _ -> ());
-        (try Unix.close s.sock with _ -> ())
-      end
-
   let register_socket fd flags =
     let i = (Domain.self () :> int) in
     let info = all_domain_info.(i) in
     Polly.(add info.poll_list fd flags);
     let c = cur_client () in
     info.pendings.(Util.file_descr_to_int fd) <-
-      OneSocket { ty = Fd; client = c; pd = NoEvent };
+      OneSocket { ty = Io; client = c; pd = NoEvent };
     info.poll_list
 
   let register (r : t) =
@@ -503,6 +526,24 @@ module Io = struct
     let c = cur_client () in
     info.pendings.(Util.file_descr_to_int r.sock) <-
       OneSocket { ty = Io; client = c; pd = NoEvent }
+
+  let unregister (r : t) =
+    let i = (Domain.self () :> int) in
+    let info = all_domain_info.(i) in
+    if r.waiting.(i) then begin
+        r.waiting.(i) <- false;
+        Polly.(del info.poll_list r.sock)
+      end;
+    info.pendings.(Util.file_descr_to_int r.sock) <- NoSocket
+
+  let close (s:t) =
+    if Atomic.compare_and_set s.closing false true then
+      begin
+        s.finalise ();
+        unregister s;
+        (try Unix.(shutdown s.sock SHUTDOWN_ALL); with Unix.Unix_error _ -> ());
+        (try Unix.close s.sock with Unix.Unix_error _ -> ());
+      end
 
   let create ?(finalise=fun () -> ()) sock =
     let r = { sock
@@ -573,21 +614,14 @@ let connect addr port reuse maxc =
     sock
   with e -> (try Unix.close sock; with _ -> ()); raise e
 
-type pollResult =
-  | Accept of (int * Unix.file_descr * Address.t)
-  | Action : 'a pending * socket_info * Unix.error option -> pollResult
-  | Yield of ((unit,unit) continuation * client * float)
-  | Poll
-
 let _print_pollResult ch r = match r with
   | Yield _ -> Format.fprintf ch "Yield"
   | Accept _ -> Format.fprintf ch "Accept"
   | Action _ -> Format.fprintf ch "Action"
   | Poll -> Format.fprintf ch "Poll"
 
-let loop id st listens pipe timeout handler () =
+let loop listens pipe timeout handler () =
   let did = Domain.self () in
-  st.domain_ids.(id) <- did;
 
   let poll_list = Polly.create () in
   Polly.(add poll_list pipe Events.(inp lor et));
@@ -596,17 +630,20 @@ let loop id st listens pipe timeout handler () =
   (* table of all sockets *)
   let pendings = Array.make Util.maxfd NoSocket in
   let pipe_info = { ty = Pipe; client = fake_client; pd = NoEvent } in
-  pendings.(Util.file_descr_to_int pipe) <- OneSocket pipe_info;
+  pendings.(Util.file_descr_to_int pipe) <- PipeSocket pipe_info;
 
   let bytes = Bytes.create (16 * 4_096) in
   let last_seen = LL.create () in
-  let dinfo = { cur_client = fake_client; pendings ; poll_list; bytes; last_seen} in
+  let ready = Queue.create () in
+  let dinfo = { cur_client = fake_client
+              ; pendings ; poll_list; bytes
+              ; last_seen; ready
+              ; nb_connections = Atomic.make 0} in
   let get_client () = dinfo.cur_client in
   all_domain_info.((did :> int)) <- dinfo;
 
 
   (* Queue for ready sockets *)
-  let ready = Queue.create () in
   let add_ready e = Queue.add e ready in
   add_ready Poll; (* Invariant: queue as always exactly one Poll
                      and is never empty, except during poll. *)
@@ -631,7 +668,6 @@ let loop id st listens pipe timeout handler () =
       | (t,cont,cl)::l when t <= now ->
          if cl.connected then
            begin
-             Log.f (Sch 2) (fun k -> k "[%d] end sleep" cl.id);
              add_ready (Yield(cont,cl,now));
            end;
          fn l
@@ -644,14 +680,18 @@ let loop id st listens pipe timeout handler () =
   (* O(1) *)
 
   let en_queue socket info =
+    let fd = Util.file_descr_to_int socket in
     let q =
-      match pendings.(Util.file_descr_to_int socket) with
-      | NoSocket -> []
+      match pendings.(fd) with
+      | NoSocket ->
+         let q = Queue.create () in
+         pendings.(fd) <- QueueSocket q;
+         q
       | QueueSocket q -> q
-      | OneSocket _ -> assert false
+      | OneSocket _ | PipeSocket _ -> assert false
     in
 
-    pendings.(Util.file_descr_to_int socket) <- QueueSocket (info::q)
+    Queue.add info q
   in
 
   let add_lock : Mutex.t -> (Mutex.t -> unit) -> (unit, unit) continuation -> unit =
@@ -660,7 +700,7 @@ let loop id st listens pipe timeout handler () =
     cl.acont <- C cont;
     let fn () = fn lk in
     let info = { ty = Lock ; client = cl
-               ; pd = Wait { fn; cont }
+               ; pd = Wait { fn; cont; read = false }
                }
     in
     (* may be another client is already waiting *)
@@ -679,7 +719,7 @@ let loop id st listens pipe timeout handler () =
     cl.acont <- C cont;
     let fn () = fn lk in
     let info = { ty = Decr ; client = cl
-               ; pd = Wait { fn; cont }
+               ; pd = Wait { fn; cont; read = false }
                }
     in
     (* may be another client is already waiting *)
@@ -693,10 +733,16 @@ let loop id st listens pipe timeout handler () =
   in
 
   let iter_pendings fn s =
-    match pendings.(Util.file_descr_to_int s) with
+    let fd = Util.file_descr_to_int s in
+    match pendings.(fd) with
     | NoSocket -> ()
-    | OneSocket i -> fn i
-    | QueueSocket q -> List.iter fn q
+    | OneSocket i | PipeSocket i -> fn i
+    | QueueSocket q ->
+       match Queue.take_opt q with
+       | None -> assert false
+       | Some i ->
+          if Queue.is_empty q then pendings.(fd) <- NoSocket;
+          fn i
   in
 
   let close ?client exn =
@@ -712,24 +758,21 @@ let loop id st listens pipe timeout handler () =
         (try Unix.shutdown s SHUTDOWN_ALL with _ -> ());
         (try Unix.close s with _ -> ())
       in
-      try apply c gn fn with Unix.Unix_error _ -> ()
+      apply c gn fn;
     end;
-    pendings.(Util.file_descr_to_int c.sock) <- NoSocket;
-    Atomic.decr st.nb_connections.(id);
+    Atomic.decr dinfo.nb_connections;
     c.connected <- false;
 
     begin
       match c.session with
       | None -> ()
       | Some sess ->
-         Log.(f (Exc 1)) (fun k -> k "Cleaning session");
          let sess = LL.get sess in
          let fn clients =
            try Util.remove_first (fun c' -> c == c') clients
            with Not_found -> assert false
          in
          let remain = Util.update_atomic sess.clients fn in
-         Log.(f (Sch 0) (fun k -> k "removing session clients, remain: %d" (List.length remain)));
          if remain = [] then
              ignore (Util.update_atomic sess.data Key.cleanup_filter);
          ()
@@ -739,9 +782,9 @@ let loop id st listens pipe timeout handler () =
       c.locks <- []
     end;
     Log.(f (Exc 1))
-      (fun k -> k "[%d] closing because exception: %s. connected: %b (%d)"
-                  c.id (printexn exn) c.connected
-                  (Atomic.get st.nb_connections.(id)));
+      (fun k -> k "closing because exception: %s. connected: %b (%d)"
+                  (printexn exn) c.connected
+                  (Atomic.get dinfo.nb_connections));
     end
   in
 
@@ -751,7 +794,6 @@ let loop id st listens pipe timeout handler () =
       let client = LL.get cell in
       if client.timeout_ref < t0 then
         begin
-          Log.(f (Exc 1)) (fun k -> k "[%d] timout: closing" client.id);
           close ~client TimeOut;
           remove_timeout t0
         end
@@ -767,16 +809,23 @@ let loop id st listens pipe timeout handler () =
       let select_timeout =
         match Queue.is_empty ready, !sleeps with
         | false, _ -> 0.0
-        | _, (t,_,_)::_ -> min timeout (t -. now)
+        | _, (t,_,_)::_ -> min timeout (t -. now +. 5e-4)
         | _ -> timeout
       in
       let select_timeout = int_of_float (1e3 *. select_timeout) in
       let fn _ sock evt =
+        let treat_error () =
+          if Polly.Events.(rdhup land evt <> empty) then
+            RdHup
+          else if Polly.Events.(hup land evt <> empty) then
+            Hup
+          else if Polly.Events.(err land evt <> empty) then
+            match Util.get_socket_error sock with
+            | Some e -> Err e
+            | None -> NoError
+          else NoError
+        in
         let fn info =
-          (match info with
-           | { ty = (Io | Lock | Decr); _ } ->
-              pendings.(Util.file_descr_to_int sock) <- NoSocket;
-           | _ -> ());
           match info with
           | { ty = Pipe; _ } ->
              begin
@@ -796,28 +845,13 @@ let loop id st listens pipe timeout handler () =
                   | e -> Log.f (Exc 0) (fun k -> k "unexpected accept recv: %s"
                                                    (Printexc.to_string e))
              end
-          | { pd = NoEvent ; _ } as r ->
-             let e =
-               if Polly.Events.((err lor hup lor rdhup) land evt <> empty) then
-                 Util.get_socket_error sock
-               else None
-             in
-             r.pd <- TooSoon e
+          | { pd = NoEvent | TooSoon _ ; _ } as r ->
+             let e = treat_error () in
+             if e <> NoError then r.pd <- TooSoon e;
           | { pd = Wait a ; _ } as p ->
-             let e =
-               if Polly.Events.((err lor hup lor rdhup) land evt <> empty) then
-                 Util.get_socket_error sock
-               else None
-             in
+             let e = treat_error () in
              add_ready (Action(a,p,e));
              p.pd <- NoEvent;
-          | { pd = TooSoon b ; _ } as p ->
-             let e =
-               if Polly.Events.((err lor hup lor rdhup) land evt <> empty) then
-                 Util.get_socket_error ?default:b sock
-               else b
-             in
-             p.pd <- TooSoon e
         in
         iter_pendings fn sock
       in
@@ -839,7 +873,7 @@ let loop id st listens pipe timeout handler () =
          let now = now () in
          let rec client = { sock; ssl = None; id = new_id ()
                             ; peer
-                            ; connected = true; session = None
+                            ; connected = true; session = None; cont = true
                             ; start_time = now; timeout_ref = now
                             ; locks = []
                             ; acont = N; buf = Buffer.create 4_096
@@ -850,14 +884,14 @@ let loop id st listens pipe timeout handler () =
          client.last_seen_cell <- LL.add_first client dinfo.last_seen;
          dinfo.cur_client <- client;
          let info = { ty = Client; client; pd = NoEvent } in
+         pendings.(Util.file_descr_to_int sock) <- OneSocket info;
          Log.f (Req 1)
            (fun k -> k "[%d] accept connection from %s" client.id client.peer);
          Unix.set_nonblock sock;
          Unix.(setsockopt_float sock SO_RCVTIMEO timeout);
          Unix.(setsockopt_float sock SO_SNDTIMEO timeout);
          Unix.(setsockopt sock TCP_NODELAY true); (* not clearly usefull *)
-         en_queue sock info;
-         Polly.(add poll_list sock Events.(inp lor out lor et lor rdhup));
+         Polly.(add poll_list sock Events.(inp lor out lor et lor rdhup lor hup lor err));
          begin
            match linfo.ssl with
            | Some ctx ->
@@ -868,15 +902,15 @@ let loop id st listens pipe timeout handler () =
                 with
                 | Ssl.(Accept_error(Error_want_read|Error_want_write
                                    |Error_want_connect|Error_want_accept|Error_zero_return)) ->
-                   perform (Io {sock; fn })
+                   perform (Io {sock; fn; read = false })
               in
               ignore (fn ());
               client.ssl <- Some chan;
-              Log.f (Req 2) (fun k -> k "[%d] ssl connection established" client.id);
+              Log.f (Req 2) (fun k -> k "ssl connection established");
            | None -> ()
          end;
          handler client; close EndHandling
-      | Action ({ fn; cont; _ }, p, e) ->
+      | Action ({ fn; cont; read }, p, e) ->
          p.pd <- NoEvent;
          let cl = p.client in
          if cl.connected then
@@ -884,13 +918,21 @@ let loop id st listens pipe timeout handler () =
              dinfo.cur_client <-cl;
              cl.acont <- N;
              match e with
-             | Some e ->
+             | Hup ->
+                discontinue cont Unix.(Unix_error(EPIPE, "Hup", "error_in_poll"))
+             | Err e ->
                 let msg = Unix.error_message e in
-                Log.f (Sch 0) (fun k ->
-                    k "[%d] discontinue io %s" cl.id msg);
                 discontinue cont (Unix.Unix_error(e, msg, "error_in_poll"))
-             | None ->
-                Log.f (Sch 0) (fun k -> k "[%d] continue io" cl.id);
+             | RdHup ->
+                if read then
+                  begin
+                    discontinue cont Unix.(Unix_error(ECONNRESET, "RdHup", "error_in_poll"))
+                  end
+                else
+                  cl.cont <- false;
+                let n = fn () in
+                continue cont n;
+             | NoError ->
                 let n = fn () in
                 continue cont n;
            end
@@ -899,7 +941,6 @@ let loop id st listens pipe timeout handler () =
            begin
              dinfo.cur_client <- cl;
              cl.acont <- N;
-             Log.f (Sch 0) (fun k -> k "[%d] continue yield" cl.id);
              continue cont ();
            end
     with e -> (try close e
@@ -925,23 +966,29 @@ let loop id st listens pipe timeout handler () =
         | Decr(lk, fn) ->
            Some (fun (cont : (c,_) continuation) ->
                add_decr lk fn cont)
-        | Io {sock; fn; _} ->
+        | Io {sock; fn; read } ->
            Some (fun (cont : (c,_) continuation) ->
                (get_client ()).acont <- C cont;
-               let fn info =
-                 match info.pd with
-                 | NoEvent ->
-                    info.pd <- Wait { fn; cont }
-                 | TooSoon e ->
-                    add_ready (Action({ fn; cont }, info, e))
-                 | Wait _ -> assert false
-               in
-               iter_pendings fn sock)
+               let info = pendings.(Util.file_descr_to_int sock) in
+               begin
+                 match info with
+                 | NoSocket | QueueSocket _ | PipeSocket _ -> assert false
+                 | OneSocket info ->
+                    match info.pd with
+                    | NoEvent ->
+                       info.pd <- Wait { fn; cont; read }
+                    | TooSoon e ->
+                       add_ready (Action({ fn; cont; read }, info, e))
+                    | Wait _ -> assert false
+               end)
         | _ -> None
     )}
   in
   while true do
-    step_handler (Queue.take ready)
+    try
+      step_handler (Queue.take ready)
+    with e -> Log.(f (Exc 0)) (fun k -> k "Uncaught exception in main loop: %s"
+                                          (Printexc.to_string e))
   done
 
 let add_close, close_all =
@@ -952,12 +999,13 @@ let add_close, close_all =
   in
   (add_close, close_all)
 
-let accept_loop status listens pipes maxc =
+let accept_loop (domains : Domain.id Array.t) listens pipes maxc =
   let exception Full in
   let poll_list = Polly.create () in
   let nb = Array.length pipes in
   let tbl = Hashtbl.create (nb * 4) in
   let pipe_buf = Bytes.create 8 in
+  let nbc i =  all_domain_info.((domains.(i) :> int)).nb_connections in
   Array.iteri (fun i (s,_) ->
       add_close s;
       Hashtbl.add tbl s i;
@@ -965,10 +1013,10 @@ let accept_loop status listens pipes maxc =
 
   let get_best () =
     let index = ref 0 in
-    let c = ref (Atomic.get status.nb_connections.(0)) in
+    let c = ref (Atomic.get (nbc 0)) in
     let t = ref !c in
     for i = 1 to nb - 1 do
-      let c' = Atomic.get status.nb_connections.(i) in
+      let c' = Atomic.get (nbc i) in
       t := !t + c';
       if c' < !c then (index := i; c := c')
     done;
@@ -987,8 +1035,7 @@ let accept_loop status listens pipes maxc =
         Bytes.set_int32_ne pipe_buf 0 (Int32.of_int (Util.file_descr_to_int lsock));
         Bytes.set_int32_ne pipe_buf 4 (Int32.of_int index);
         assert(Util.single_write pipe pipe_buf 0 8 = 8);
-        Log.f (Req 2) (fun k -> k "send accepted socket to domain %d" did);
-        Atomic.incr status.nb_connections.(did);
+        Atomic.incr (nbc did);
       with
       | Full ->
          Log.f (Exc 0) (fun k -> k "handler: reject too many clients");
@@ -1015,7 +1062,7 @@ let accept_loop status listens pipes maxc =
        Log.f (Exc 1) (fun k -> k "epoll_wait: %s" (printexn exn))
   done
 
-let run ~nb_threads ~listens ~maxc ~timeout ~status handler =
+let run ~nb_threads ~listens ~maxc ~timeout ~set_domains handler =
   let open Address in
   let listens =
     Array.map (fun l ->
@@ -1027,12 +1074,14 @@ let run ~nb_threads ~listens ~maxc ~timeout ~status handler =
   let fn id =
     let (r, _) = pipes.(id) in
     Unix.set_nonblock r;
-    Domain.spawn (loop id status listens_r r timeout handler)
+    Domain.spawn (loop listens_r r timeout handler)
   in
   let pipes = Array.map snd pipes in
   let r = Array.init nb_threads fn in
+  let domains = Array.map (fun d -> Domain.get_id d) r in
+  set_domains domains;
   try
-    let _ = accept_loop status listens pipes maxc in
+    let _ = accept_loop domains listens pipes maxc in
     Log.f (Sch 1) (fun k -> k "exit accept_loop");
     r
   with exn ->
