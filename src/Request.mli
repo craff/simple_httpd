@@ -6,9 +6,9 @@ type 'body t = { meth: Method.t (** The method of this request *)
                ; host: string (** The host header *)
                ; client: Async.client
                (** information about the client used by the scheduler *)
-               ; headers: Headers.t (** Request headers *)
-               ; cookies: Cookies.t (** Request cookies *)
-               ; http_version: int*int (** protocol set in the request *)
+               ; mutable headers: Headers.t (** Request headers *)
+               ; mutable cookies: Cookies.t (** Request cookies *)
+               ; http_version: int (** minor version of protocol set in the request *)
                ; path: string (** full path of the request *)
                ; path_components: string list  (** the part of the path that precedes [query] and is split on ["/"]. *)
                ; query: (string*string) list (** the query parameters in ["?foo=bar,x=y"] *)
@@ -16,8 +16,6 @@ type 'body t = { meth: Method.t (** The method of this request *)
                (** headers of each part of a multipart encoded body *)
                ; body: 'body (** The body (its current state, depending on the stage of treatment *)
                ; start_time: float (** unix time when the request was started *)
-               ; trailer: (Headers.t * Cookies.t) option ref (** trailer after a chunked body.
-                                                                 this is only updated after the body was fully parsed. *)
                }
 (** A request with method, path, host, headers, and a body, sent by a client.
 
@@ -94,10 +92,6 @@ val start_time : _ t -> float
 
 val reset_timeout : _ t -> unit
 (** reset the timeout for a request if it needs time *)
-
-val trailer : _ t -> (Headers.t * Cookies.t) option
-(** trailer, read after a chunked body. Only maeningfull after the body stream
-    we fully read and closed *)
 
 val limit_body_size : max_size:int -> Input.t t -> Input.t t
 (** Limit the body size to [max_size] bytes, or return a [413] error. *)

@@ -4,17 +4,15 @@ type 'body t = {
     meth: Method.t;
     host: string;
     client: Async.client;
-    headers: Headers.t;
-    cookies: Cookies.t;
-    http_version: int*int;
+    mutable headers: Headers.t;
+    mutable cookies: Cookies.t;
+    http_version: int;
     path: string;
     path_components: string list;
     query: (string*string) list;
     multipart_headers: ((string*Headers.header)*string) list;
     body: 'body;
     start_time: float;
-    trailer : (Headers.t * Cookies.t) option ref;
-    (* updated after ready chunked body *)
   }
 
 let fail_raise = Headers.fail_raise
@@ -29,7 +27,6 @@ let path_components self = self.path_components
 let body self = self.body
 let client self = self.client
 let start_time self = self.start_time
-let trailer self = !(self.trailer)
 
 let query self = self.query
 let multipart_headers self = self.multipart_headers
@@ -60,8 +57,8 @@ let get_cookie_int self h =
 (** Should we close the connection after this request? *)
 let close_after_req (self:_ t) : bool =
   match self.http_version with
-  | 1, 1 -> get_header self Headers.Connection = Some"close"
-  | 1, 0 -> not (get_header self Headers.Connection = Some"keep-alive")
+  | 1 -> get_header self Headers.Connection = Some"close"
+  | 0 -> not (get_header self Headers.Connection = Some"keep-alive")
   | _ -> false
 
 let pp_comp_ out comp =
@@ -134,12 +131,11 @@ let parse_req_start ~client ~buf (bs:Input.t)
     in
     let req = {
         meth; query; host; client; path; path_components; multipart_headers;
-        headers; cookies; http_version=(major, minor); body=bs; start_time;
-        trailer = ref None;
+        headers; cookies; http_version=minor; body=bs; start_time;
       } in
     Some req
   with
-  | Headers.Bad_req _ as e -> raise e
+  | Headers.Bad_req _ | Unix.Unix_error _ as e -> raise e
   | Input.FailParse n ->
      log (Exc 1) (fun k->k "Invalid request line at %d: %S" n (Input.current bs));
      fail_raise ~code:bad_request "Invalid request line"
@@ -215,7 +211,9 @@ let parse_body_ ~tr_stream ~buf (req:Input.t t) : Input.t t =
       | exception _ -> fail_raise ~code:bad_request "invalid Content-Length"
     in
     let trailer bs =
-      req.trailer := Some (Headers.parse_ ~buf bs)
+      let headers, cookies = Headers.parse_ ~buf bs in
+      req.headers <- req.headers @ headers;
+      req.cookies <- req.cookies @ cookies;
     in
     let enctype =
       try

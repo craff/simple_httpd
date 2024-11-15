@@ -609,10 +609,6 @@ module Request : sig
   val reset_timeout : _ t -> unit
   (** reset the timeout for a request if it needs time *)
 
-  val trailer : _ t -> (Headers.t * Cookies.t) option
-  (** trailer, read after a chunked body. Only meaningfull after the body stream
-      is fully read and closed *)
-
   val close_after_req : _ t -> bool
   (** Tells if we are supposed to close the connection after answering the request *)
 
