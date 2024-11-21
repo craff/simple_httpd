@@ -12,6 +12,7 @@
 #include <sys/eventfd.h>
 #include <sys/types.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
 #include <netinet/tcp.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
@@ -20,13 +21,17 @@
 #include <openssl/err.h>
 #include <sys/resource.h>
 
-CAMLprim value caml_sendfile(value out_fd, value in_fd, value offset, value count) {
+CAMLprim value caml_byte_sendfile(value out_fd, value in_fd, value offset, value count) {
   CAMLparam0();
   ssize_t off = Int_val(offset);
   // printf("sendfile %d %d\n",off,Int_val(count)); fflush(stdout);
   ssize_t w = sendfile(Int_val(out_fd),Int_val(in_fd),&off,Int_val(count));
   // printf("sendfile %d %d\n",off,w); fflush(stdout);
   CAMLreturn(Val_int(w));
+}
+
+long caml_sendfile(long out_fd, long in_fd, long off, long count) {
+  return(sendfile(out_fd,in_fd,&off,count));
 }
 
 CAMLprim void caml_sendfile_error() {
@@ -36,8 +41,9 @@ CAMLprim void caml_sendfile_error() {
 }
 
 #define SSL_val(v) (*((SSL **)Data_custom_val(v)))
+#define SSL_CTX_val(v) (*((SSL_CTX **)Data_custom_val(v)))
 
-CAMLprim value caml_ssl_sendfile (value out_fd, value in_fd, value offset, value count) {
+CAMLprim value caml_byte_ssl_sendfile (value out_fd, value in_fd, value offset, value count) {
   CAMLparam1(out_fd);
   ERR_clear_error();
   ssize_t w = SSL_sendfile(SSL_val(out_fd),Int_val(in_fd),
@@ -45,17 +51,48 @@ CAMLprim value caml_ssl_sendfile (value out_fd, value in_fd, value offset, value
   CAMLreturn(Val_int(w));
 }
 
-CAMLprim void caml_setsockopt_cork(value socket, value val)
+long caml_ssl_sendfile (value out_fd, long in_fd, long offset, long count) {
+  ERR_clear_error();
+  return(SSL_sendfile(SSL_val(out_fd),in_fd,offset,count, 0));
+}
+
+CAMLprim value caml_ssl_check_ktls(value out_fd) {
+  CAMLparam1(out_fd);
+  SSL *ssl = SSL_val(out_fd);
+  int tx = BIO_get_ktls_send(SSL_get_wbio(ssl));
+  int rx = BIO_get_ktls_recv(SSL_get_wbio(ssl));
+  CAMLreturn(Int_val(rx && tx));
+}
+
+CAMLprim void caml_ssl_ctx_set_ciphersuites(value ctx_val, value suites) {
+  CAMLparam2(ctx_val, suites);
+  SSL_CTX *ctx = SSL_CTX_val(ctx_val);
+  SSL_CTX_set_ciphersuites(ctx, String_val(suites));
+  SSL_CTX_set_options(ctx, SSL_OP_ENABLE_KTLS);
+  #ifdef SSL_OP_ENABLE_KTLS_TX_ZEROCOPY_SENDFILE
+  SSL_CTX_set_options(ctx, SSL_OP_ENABLE_KTLS_TX_ZEROCOPY_SENDFILE);
+  #endif
+  #ifdef SSL_OP_ENABLE_KTLS_RX_ZEROCOPY_SENDFILE
+  SSL_CTX_set_options(ssl, SSL_OP_ENABLE_KTLS_RX_ZEROCOPY_SENDFILE);
+  #endif
+  CAMLreturn0;
+}
+
+CAMLprim value caml_byte_setsockopt_cork(long socket, value val)
 {
-  CAMLparam1(socket);
+  CAMLparam0();
   int optval;
   socklen_t optsize;
   optsize = sizeof(optval);
   optval = Int_val(val);
 
-  if (setsockopt(Int_val(socket), IPPROTO_TCP, TCP_CORK, &optval, optsize))
-     caml_uerror("setsocketopt_cork", Nothing);
-  CAMLreturn0;
+  CAMLreturn(Val_int(setsockopt(Int_val(socket), IPPROTO_TCP, TCP_CORK, &optval, optsize)));
+}
+
+long caml_setsockopt_cork(long socket, long val)
+{
+  socklen_t optsize = sizeof(val);
+  return(setsockopt(socket, IPPROTO_TCP, TCP_CORK, &val, optsize));
 }
 
 CAMLprim value caml_eventfd(value initval, value flags)
@@ -83,10 +120,10 @@ CAMLprim value caml_efd_semaphore()
   CAMLreturn(Val_int(EFD_SEMAPHORE));
 }
 
-long caml_fast_single_write(value fd, value buf, long ofs,
+long caml_fast_single_write(long fd, value buf, long ofs,
                                       long len)
 {
-  return write(Int_val(fd), &Byte(buf, ofs), len);
+  return write(fd, &Byte(buf, ofs), len);
 }
 
 CAMLprim value caml_byte_fast_single_write(value fd, value buf, value vofs,
@@ -101,9 +138,9 @@ CAMLprim void caml_write_error() {
   CAMLreturn0;
 }
 
-long caml_fast_read(value fd, value buf, long ofs, long len)
+long caml_fast_read(long fd, value buf, long ofs, long len)
 {
-  return read(Int_val(fd), &Byte(buf, ofs), len);
+  return read(fd, &Byte(buf, ofs), len);
 }
 
 CAMLprim value caml_byte_fast_read(value fd, value buf, value vofs,
@@ -124,5 +161,27 @@ CAMLprim value caml_rlimit_cur() {
   rlim_t res = -1;
   if (getrlimit(RLIMIT_NOFILE, &rl) == 0)
     res = rl.rlim_cur;
+  CAMLreturn(Val_int(res));
+}
+
+CAMLprim value caml_file_type(value name) {
+  CAMLparam1(name);
+  struct stat st;
+
+  long res = stat(String_val(name), &st);
+
+  if (res == -1) res = 0;
+  else {
+    switch (st.st_mode & S_IFMT) {
+    case S_IFBLK:  res = 1; break;
+    case S_IFCHR:  res = 2; break;
+    case S_IFDIR:  res = 3; break;
+    case S_IFIFO:  res = 4; break;
+    case S_IFLNK:  res = 5; break;
+    case S_IFREG:  res = 6; break;
+    case S_IFSOCK: res = 7; break;
+    default:       res = 8; break;
+    }
+  }
   CAMLreturn(Val_int(res));
 }

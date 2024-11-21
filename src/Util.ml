@@ -1,4 +1,11 @@
 
+let _ =
+  if Sys.(os_type <> "Unix") then failwith "unsupported OS"
+
+let file_descr_to_int : Unix.file_descr -> int = Obj.magic
+
+let file_descr_of_int : int -> Unix.file_descr = Obj.magic
+
 let remove_first cond l =
   let[@tail_mod_cons] rec fn = function
     | x::l -> if cond x then l else x :: fn l
@@ -10,7 +17,7 @@ external rlimit_cur : unit -> int = "caml_rlimit_cur"
 
 let maxfd : int = rlimit_cur ()
 
-external raw_single_write : Unix.file_descr -> Bytes.t ->
+external raw_single_write : (int [@untagged]) -> Bytes.t ->
                             (int [@untagged]) -> (int [@untagged]) -> (int [@untagged])
   = "caml_byte_fast_single_write" "caml_fast_single_write" [@@noalloc]
 
@@ -19,11 +26,11 @@ external write_error : unit -> 'a = "caml_write_error"
 let single_write fd buf ofs len =
   if ofs < 0 || len < 0 || ofs+len > Bytes.length buf then
     invalid_arg "single_write";
-  let ret = raw_single_write fd buf ofs len in
+  let ret = raw_single_write (file_descr_to_int fd) buf ofs len in
   if ret == -1 then write_error();
   ret
 
-external raw_read : Unix.file_descr -> Bytes.t ->
+external raw_read : (int [@untagged]) -> Bytes.t ->
                     (int [@untagged]) -> (int [@untagged]) -> (int [@untagged])
   = "caml_byte_fast_read" "caml_fast_read" [@@noalloc]
 
@@ -32,7 +39,7 @@ external read_error : unit -> 'a = "caml_read_error"
 let read fd buf ofs len =
   if ofs < 0 || len < 0 || ofs+len > Bytes.length buf then
     invalid_arg "read";
-  let ret = raw_read fd buf ofs len in
+  let ret = raw_read (file_descr_to_int fd) buf ofs len in
   if ret == -1 then read_error();
   ret
 
@@ -46,15 +53,28 @@ let read fd buf ofs len =
   let is_ascii_char c = Char.code c < 128
 *)
 
-external setsockopt_cork : Unix.file_descr -> bool -> unit = "caml_setsockopt_cork"
+external raw_setsockopt_cork : (int [@untagged]) -> (bool [@untagged]) -> (int [@untagged])
+  = "caml_byte_setsockopt_cork" "caml_setsockopt_cork" [@@noalloc]
 
-external raw_sendfile : Unix.file_descr -> Unix.file_descr -> int -> int -> int
-  = "caml_sendfile" [@@noalloc]
+let setsockopt_cork fd v =
+  if raw_setsockopt_cork (file_descr_to_int fd) v < 0 then
+    raise Unix.(Unix_error(ENOTSOCK,"setsockopt_cork",""))
+
+external raw_sendfile : (int [@untagged]) -> (int [@untagged]) ->
+                        (int [@untagged]) -> (int [@untagged]) -> (int [@untagged])
+  = "caml_byte_sendfile" "caml_sendfile" [@@noalloc]
 
 external sendfile_error : unit -> 'a = "caml_sendfile_error"
 
-external raw_ssl_sendfile : Ssl.socket -> Unix.file_descr -> int -> int -> int
-  = "caml_ssl_sendfile" [@@noalloc]
+external raw_ssl_sendfile : Ssl.socket -> (int [@untagged])
+                            -> (int [@untagged]) -> (int [@untagged]) -> (int [@untagged])
+  = "caml_byte_ssl_sendfile" "caml_ssl_sendfile" [@@noalloc]
+
+external ssl_check_ktls : Ssl.socket -> bool
+  = "caml_ssl_check_ktls" [@@noalloc]
+
+external ssl_ctx_set_ciphersuites : Ssl.context -> string -> unit
+  = "caml_ssl_ctx_set_ciphersuites" [@@noalloc]
 
 external get_error : Ssl.socket -> int -> Ssl.ssl_error = "ocaml_ssl_get_error_code"
     [@@noalloc]
@@ -67,22 +87,15 @@ let get_socket_error : ?default:Unix.error -> Unix.file_descr -> Unix.error opti
   | exception Unix.Unix_error(e,_,_) -> Some e
 
 let sendfile out in_ offset count =
-  let ret = raw_sendfile out in_ offset count in
+  let ret = raw_sendfile (file_descr_to_int out)
+              (file_descr_to_int in_) offset count in
   if ret == -1 then sendfile_error ();
   ret
 
 let ssl_sendfile out in_ offset count =
-  let ret = raw_ssl_sendfile out in_ offset count in
+  let ret = raw_ssl_sendfile out (file_descr_to_int in_) offset count in
   if ret <= 0 then raise Ssl.(Write_error (get_error out ret));
   ret
-
-let file_descr_to_int : Unix.file_descr -> int =
-  if Sys.(os_type <> "Unix") then failwith "unsupported OS"
-  else Obj.magic
-
-let file_descr_of_int : int -> Unix.file_descr =
-  if Sys.(os_type <> "Unix") then failwith "unsupported OS"
-  else Obj.magic
 
 let percent_encode ?(skip=fun _->false) s =
   let buf = Buffer.create (String.length s) in
@@ -159,28 +172,6 @@ let get_query s : string =
   | exception Not_found -> ""
 
 let split_query s = get_non_query_path s, get_query s
-
-(*
-let split_on_slash s : _ list =
-   let l = ref [] in
-   let i = ref 0 in
-   let n = String.length s in
-   while !i < n do
-    match String.index_from s !i '/' with
-     | exception Not_found ->
-       if !i < n then (
-        (* last component *)
-        l := String.sub s !i (n - !i) :: !l;
-      );
-      i := n (* done *)
-    | j ->
-      if j > !i then  (
-        l := String.sub s !i (j - !i) :: !l;
-      );
-      i := j+1;
-   done;
-   List.rev !l
- *)
 
 let split_on_slash s : _ list =
   let l = ref [] in
@@ -538,3 +529,16 @@ let fast_concat sep ls =
      in
      loop 0 ls;
      Bytes.unsafe_to_string b
+
+type file_type =
+  | Inexistant
+  | Block
+  | Chr
+  | Dir
+  | Fifo
+  | Flnk
+  | Freg
+  | Sock
+  | Unknown
+
+external file_type : string -> file_type = "caml_file_type"
