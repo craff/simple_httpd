@@ -940,46 +940,35 @@ let loop listens pipe timeout handler () =
 
   in
   let step_handler v =
-    try_with step v
-      { effc = (fun (type c) (eff: c Effect.t) ->
-        match eff with
-        | Yield ->
-           Some (fun (cont : (c,_) continuation) ->
-               let c = get_client () in
-               c.acont <- C cont;
-               add_ready (Yield(cont, c, now ())))
-        | Sleep(t) ->
-           Some (fun (cont : (c,_) continuation) ->
-               add_sleep t cont)
-        | Lock(lk, fn) ->
-           Some (fun (cont : (c,_) continuation) ->
-               add_lock lk fn cont)
-        | Decr(lk, fn) ->
-           Some (fun (cont : (c,_) continuation) ->
-               add_decr lk fn cont)
-        | Io {sock; fn; read } ->
-           Some (fun (cont : (c,_) continuation) ->
-               (get_client ()).acont <- C cont;
-               let info = pendings.(Util.file_descr_to_int sock) in
-               begin
-                 match info with
-                 | NoSocket | QueueSocket _ | PipeSocket _ -> assert false
-                 | OneSocket info ->
-                    match info.pd with
-                    | NoEvent ->
-                       info.pd <- Wait { fn; cont; read }
-                    | TooSoon e ->
-                       add_ready (Action({ fn; cont; read }, info, e))
-                    | Wait _ -> assert false
-               end)
-        | _ -> None
-    )}
+    match step v with
+    | v -> v
+    | effect Yield, cont ->
+       let c = get_client () in
+       c.acont <- C cont;
+       add_ready (Yield(cont, c, now ()))
+    | effect Sleep t, cont ->
+       add_sleep t cont
+    | effect Lock(lk, fn), cont ->
+       add_lock lk fn cont
+    | effect Decr(lk, fn), cont ->
+       add_decr lk fn cont
+    | effect Io {sock; fn; read}, cont ->
+       (get_client ()).acont <- C cont;
+       let info = pendings.(Util.file_descr_to_int sock) in
+       begin
+         match info with
+         | NoSocket | QueueSocket _ | PipeSocket _ -> assert false
+         | OneSocket info ->
+            match info.pd with
+            | NoEvent ->
+               info.pd <- Wait { fn; cont; read }
+            | TooSoon e ->
+               add_ready (Action({ fn; cont; read }, info, e))
+            | Wait _ -> assert false
+       end
   in
   while true do
-    try
-      step_handler (Queue.take ready)
-    with e -> Log.(f (Exc 0)) (fun k -> k "Uncaught exception in main loop: %s"
-                                          (Printexc.to_string e))
+    step_handler (Queue.take ready)
   done
 
 let add_close, close_all =

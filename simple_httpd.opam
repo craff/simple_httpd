@@ -17,7 +17,7 @@ depends: [
   "http-cookie"
   "polly"
   "magic-mime"
-  "ocaml" { >= "5.00.0" }
+  "ocaml" { >= "5.03.0" }
   "odoc" {with-doc}
   "qtest" { >= "2.9" & with-test}
   "conf-libcurl" {with-test}
