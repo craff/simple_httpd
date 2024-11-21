@@ -135,9 +135,7 @@ let output_bytes = add_bytes
 
 let sendfile oc n fd =
   let r = ref 0 in
-  Util.setsockopt_cork oc.fd.sock true;
   flush oc;
   while !r < n  do
     r := !r + Async.sendfile oc.fd fd !r (n - !r);
-  done; (* without cork, it may not send the last bytes ?*)
-  Util.setsockopt_cork oc.fd.sock false
+  done; (* without cork, it may not send the last bytes*)
