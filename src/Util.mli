@@ -5,6 +5,8 @@ val single_write : Unix.file_descr -> Bytes.t -> int -> int -> int
 val read : Unix.file_descr -> Bytes.t -> int -> int -> int
 val sendfile : Unix.file_descr -> Unix.file_descr -> int -> int -> int
 val ssl_sendfile : Ssl.socket -> Unix.file_descr -> int -> int -> int
+val ssl_check_ktls : Ssl.socket -> bool
+val ssl_ctx_set_ciphersuites : Ssl.context -> string -> unit
 
 val setsockopt_cork : Unix.file_descr -> bool -> unit
 
@@ -42,7 +44,7 @@ val parse_query : string -> (string*string) list
 (** Parse a query as a list of ['&'] or [';'] separated [key=value] pairs.
     The order might not be preserved. 0.3 *)
 
-val pp_date : Format.formatter -> Unix.tm -> unit
+val pp_date : Unix.tm -> string
 (** Print date (given in GMT) in the expected format for http (for instance
     for expiration date of cookies. *)
 
@@ -96,3 +98,16 @@ module Sfd : sig
 end
 
 val fast_concat : char -> string list -> string
+
+type file_type =
+  | Inexistant
+  | Block
+  | Chr
+  | Dir
+  | Fifo
+  | Flnk
+  | Freg
+  | Sock
+  | Unknown
+
+val file_type : string -> file_type
