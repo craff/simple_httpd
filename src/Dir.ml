@@ -85,34 +85,49 @@ type vfs = (module VFS)
 
 let vfs_of_dir (top:string) : vfs =
   let module M = struct
-    type path = string
+    type path = string * Util.file_type
     let path l =
       if contains_dotdot l then
         Response.fail_raise ~code:forbidden "Path is forbidden";
-      Util.fast_concat '/' (top :: l)
-    let concat p f = Filename.concat p f
-    let to_string ?(prefix="") p = if prefix = "" then "/" ^ p
+      let name = Util.fast_concat '/' (top :: l) in
+      let ft = Util.file_type name in
+      (name, ft)
+    let concat (p, _) f = (Filename.concat p f, Util.Unknown)
+    let to_string ?(prefix="") (p, _) = if prefix = "" then "/" ^ p
                      else "/" ^ Filename.concat prefix p
     let descr = top
-    let is_directory f = Sys.is_directory f
-    let contains f = Sys.file_exists f
-    let list_dir f = Sys.readdir f
-    let create f =
+    let is_directory (_,ft) = (ft = Util.Dir)
+    let contains (_,ft) = (ft <> Util.Inexistant)
+    let list_dir (f, _) = Sys.readdir f
+    let create (f, _) =
       let oc = open_out_bin f in
       let write = output oc in
       let close() = close_out oc in
       write, close
-    let delete f = Sys.remove f
-    let read_file f =
+    let delete (f, _) = Sys.remove f
+    let cache = Hashtbl.create 1024
+    let read_file (f, _) =
       let oc = Unix.openfile f [O_RDONLY] 0 in
       let stats = Unix.fstat oc in
-      let content = Fd(oc) in
-      let size = if stats.st_kind = S_REG then
-                   Some stats.st_size else None
-      in
       let mtime = Some stats.st_mtime in
-      let mime =  Magic_mime.lookup f in
-      let headers = [(Headers.Content_Type, mime)] in
+      let content = Fd(oc) in
+      let mtime2, size, headers =
+        try Hashtbl.find cache f with Not_found -> None, None, []
+      in
+      let size, headers =
+        if mtime2 <> mtime then
+          begin
+            let size = if stats.st_kind = S_REG then
+                         Some stats.st_size else None
+            in
+            let mime =  Magic_mime.lookup f in
+            let headers = [(Headers.Content_Type, mime)] in
+            Hashtbl.replace cache f (mtime, size, headers);
+            size, headers
+          end
+        else
+          size,headers
+      in
       FI { content; size; mtime; headers }
   end in
   (module M)
@@ -135,12 +150,11 @@ let html_list_dir (module VFS:VFS) ~prefix ~parent d : Html.chaml =
 
   let file_to_elt (f : string) : string =
     let fpath = VFS.concat d f in
-    if true (*not @@ contains_dot fpath*) then (
-      if not @@ VFS.contains fpath then (
-        {html|<li><?= f ?> [invalid file]</li>|html}
-      ) else (
-        let size =
-          try
+    if not @@ VFS.contains fpath then (
+      {html|<li><?= f ?> [invalid file]</li>|html}
+    ) else (
+      let size =
+        try
             match VFS.read_file fpath with
             | FI { size = Some f ; content; _ } ->
                (match content with
@@ -148,15 +162,14 @@ let html_list_dir (module VFS:VFS) ~prefix ~parent d : Html.chaml =
                 | _     -> ());
                Printf.sprintf " (%s)" @@ human_size f
             | _ -> ""
-          with _ -> ""
-        in
-        let tpath = VFS.to_string ~prefix fpath in
-        {html|<li><a href=<?=encode_path tpath?> >
+        with _ -> ""
+      in
+      let tpath = VFS.to_string ~prefix fpath in
+      {html|<li><a href=<?=encode_path tpath?> >
                   <?= f ?></a>
-            <?= if VFS.is_directory fpath then " dir" else ""?>
-            <?= size ?></li>|html}
-      )
-    ) else ""
+       <?= if VFS.is_directory fpath then " dir" else ""?>
+       <?= size ?></li>|html}
+    )
   in
   {chaml|<!DOCTYPE html>
    <html><?=head?>
@@ -280,7 +293,7 @@ let add_vfs_ ?addresses ?(filter=(fun x -> (x, fun r -> r)))
                       _ -> false)
                 | None -> false
               in
-         (Some mtime_str, may_cache)
+         (Some (t, mtime_str), may_cache)
         in
         if may_cache then
           begin
@@ -293,9 +306,9 @@ let add_vfs_ ?addresses ?(filter=(fun x -> (x, fun r -> r)))
         let cache_control h =
           match mtime with
           | None -> (Headers.Cache_Control, "no-store") :: h
-          | Some mtime ->
-             (Headers.ETag, mtime)
-             :: (Headers.Date, Util.date_of_epoch (Request.start_time req))
+          | Some (mtime, mtime_str) ->
+             (Headers.ETag, mtime_str)
+             :: (Headers.Age, string_of_float (Request.start_time req -. mtime))
              :: (Headers.Cache_Control, "public,no-cache")
              :: h
         in
