@@ -146,7 +146,7 @@ let _ = Csv.save "timings/bench_chaml.csv" !csv
 
 (* ======================== TEST of static files ====================== *)
 
-let files = ["foo_1k", 1; "foo_100k", 2; "foo_10M", 10]
+let files = ["foo_1k", 1; "foo_100k", 2; "foo_10M", 2 ]
 let values = List.(flatten (map (fun file -> map (fun n -> (file,n)) nb_conn) files))
 
 let _ = csv := []
