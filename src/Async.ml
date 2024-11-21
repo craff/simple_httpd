@@ -304,7 +304,8 @@ module Log = struct
     if Array.length !log_files < nb_dom then
       begin
         log_files := Array.init nb_dom
-                       (fun _ -> stdout, Format.formatter_of_out_channel stdout)
+                       (fun _ -> let stdout = Unix.out_channel_of_descr Unix.stdout in
+                                 (stdout, Format.formatter_of_out_channel stdout))
       end
 
   let f ty k =
