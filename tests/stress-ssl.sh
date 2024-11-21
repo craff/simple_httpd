@@ -2,7 +2,7 @@
 
 SERVER=$1
 PORT=8444
-"$SERVER" . -p $PORT --log-requests 0 --log-exceptions 0 --ssl domain.crt domain.key > /dev/null &
+"$SERVER" . -p $PORT --log-requests 0 --log-exceptions 0 -c 200 --ssl domain.crt domain.key &
 PID=$!
 
 # need to sleep to make sure server is ready before first curl

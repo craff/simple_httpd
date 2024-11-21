@@ -15,9 +15,9 @@ rsync ../examples/files/foo.html /var/www/nginx/
 
 #vegeta tests
 
-duration=15s
+duration=2s
 
-dune exec -- ../examples/echo.exe -c 2100 --log-requests 0 &
+dune exec -- ../examples/echo.exe --port 8080 --log-requests 0 --log-exceptions 0 -c 2100 -j 8 &
 PID=$!
 
 sleep 1
@@ -25,7 +25,7 @@ sleep 1
 echo "simple_httpd chaml"
 
 echo 'GET http://localhost:8080/vfs/bar.html' \
-	| vegeta attack -rate 1000 -duration $duration > timings/res.bin
+	| vegeta -cpus 8 attack -rate 1000 -duration $duration > timings/res.bin
 
 cat timings/res.bin | vegeta report > timings/chaml_report.txt
 cat timings/res.bin | vegeta report -type=hist[100us,200us,300us,400us,500us,750us,1ms,2ms,3ms,4ms,5ms] > timings/chaml.txt
@@ -34,7 +34,7 @@ cat timings/res.bin | vegeta plot > timings/chaml.html
 echo "simple_httpd static"
 
 echo 'GET http://localhost:8080/vfs/foo.html' \
-	| vegeta attack -rate 1000 -duration $duration > timings/res.bin
+	| vegeta -cpus 8 attack -rate 1000 -duration $duration > timings/res.bin
 
 kill $PID
 
@@ -44,8 +44,8 @@ cat timings/res.bin | vegeta plot > timings/sh.html
 
 echo "apache php"
 
-echo 'GET http://localhost/nginx/bar.php' \
-	| vegeta attack -rate 1000 -duration $duration > timings/res.bin
+echo 'GET http://localhost:80/nginx/bar.php' \
+	| vegeta -cpus 8 attack -rate 1000 -duration $duration > timings/res.bin
 
 cat timings/res.bin | vegeta report > timings/apache_php_report.txt
 cat timings/res.bin | vegeta report -type=hist[100us,200us,300us,400us,500us,750us,1ms,2ms,3ms,4ms,5ms,1s,5s,10s,1m] > timings/apache_php.txt
@@ -54,7 +54,7 @@ cat timings/res.bin | vegeta plot > timings/apache_php.html
 echo "nginx php"
 
 echo 'GET http://localhost:7080/bar.php' \
-	| vegeta attack -rate 1000 -duration $duration > timings/res.bin
+	| vegeta -cpus 8 attack -rate 1000 -duration $duration > timings/res.bin
 
 cat timings/res.bin | vegeta report > timings/nginx_php_report.txt
 cat timings/res.bin | vegeta report -type=hist[100us,200us,300us,400us,500us,750us,1ms,2ms,3ms,4ms,5ms,1s,5s,10s,1m] > timings/nginx_php.txt
@@ -62,8 +62,8 @@ cat timings/res.bin | vegeta plot > timings/nginx_php.html
 
 echo "apache static"
 
-echo 'GET http://localhost/nginx/foo.html' \
-	| vegeta attack -rate 1000 -duration $duration > timings/res.bin
+echo 'GET http://localhost:80/nginx/foo.html' \
+	| vegeta -cpus 8 attack -rate 1000 -duration $duration > timings/res.bin
 
 cat timings/res.bin | vegeta report > timings/apache_report.txt
 cat timings/res.bin | vegeta report -type=hist[100us,200us,300us,400us,500us,750us,1ms,2ms,3ms,4ms,5ms,1s,5s,10s,1m] > timings/apache.txt
@@ -72,13 +72,13 @@ cat timings/res.bin | vegeta plot > timings/apache.html
 echo "nginx static"
 
 echo 'GET http://localhost:7080/foo.html' \
-	| vegeta attack -rate 1000 -duration $duration > timings/res.bin
+	| vegeta -cpus 8 attack -rate 1000 -duration $duration > timings/res.bin
 
 cat timings/res.bin | vegeta report > timings/nginx_report.txt
 cat timings/res.bin | vegeta report -type=hist[100us,200us,300us,400us,500us,750us,1ms,2ms,3ms,4ms,5ms,1s,5s,10s,1m] > timings/nginx.txt
 cat timings/res.bin | vegeta plot > timings/nginx.html
 
-dune exec -- ../examples/echo.exe -c 2100 --port 8443 --log-requests 0 --ssl ../_build/default/tests/domain.crt ../_build/default/tests/domain.key &
+dune exec -- ../examples/echo.exe -c 2100 --port 8443  --log-requests 0 --log-exceptions 0 --ssl ../_build/default/tests/domain.crt ../_build/default/tests/domain.key -j 8 &
 PID=$!
 
 sleep 1
@@ -86,7 +86,7 @@ sleep 1
 echo "simple_httpd ssl chaml"
 
 echo 'GET https://localhost:8443/vfs/bar.html' \
-	| vegeta attack -insecure -rate 1000 -duration $duration > timings/res.bin
+	| vegeta -cpus 8 attack -insecure -rate 1000 -duration $duration > timings/res.bin
 
 cat timings/res.bin | vegeta report > timings/chaml_report_ssl.txt
 cat timings/res.bin | vegeta report -type=hist[100us,200us,300us,400us,500us,750us,1ms,2ms,3ms,4ms,5ms] > timings/chaml_ssl.txt
@@ -95,7 +95,7 @@ cat timings/res.bin | vegeta plot > timings/chaml_ssl.html
 echo "simple_httpd ssl static"
 
 echo 'GET https://localhost:8443/vfs/foo.html' \
-	| vegeta attack -insecure -rate 1000 -duration $duration > timings/res.bin
+	| vegeta -cpus 8 attack -insecure -rate 1000 -duration $duration > timings/res.bin
 
 kill $PID
 
@@ -105,8 +105,8 @@ cat timings/res.bin | vegeta plot > timings/sh_ssl.html
 
 echo "apache ssl php"
 
-echo 'GET https://localhost/nginx/bar.php' \
-	| vegeta attack -insecure -rate 1000 -duration $duration > timings/res.bin
+echo 'GET https://localhost:443/nginx/bar.php' \
+	| vegeta -cpus 8 attack -insecure -rate 1000 -duration $duration > timings/res.bin
 
 cat timings/res.bin | vegeta report > timings/apache_php_report_ssl.txt
 cat timings/res.bin | vegeta report -type=hist[100us,200us,300us,400us,500us,750us,1ms,2ms,3ms,4ms,5ms,1s,5s,10s,1m] > timings/apache_php_ssl.txt
@@ -115,7 +115,7 @@ cat timings/res.bin | vegeta plot > timings/apache_php_ssl.html
 echo "nginx ssl php"
 
 echo 'GET https://localhost:7443/bar.php' \
-	| vegeta attack -insecure -rate 1000 -duration $duration > timings/res.bin
+	| vegeta -cpus 8 attack -insecure -rate 1000 -duration $duration > timings/res.bin
 
 cat timings/res.bin | vegeta report > timings/nginx_php_report_ssl.txt
 cat timings/res.bin | vegeta report -type=hist[100us,200us,300us,400us,500us,750us,1ms,2ms,3ms,4ms,5ms,1s,5s,10s,1m] > timings/nginx_php_ssl.txt
@@ -123,8 +123,8 @@ cat timings/res.bin | vegeta plot > timings/nginx_php_ssl.html
 
 echo "apache ssl static"
 
-echo 'GET https://localhost/nginx/foo.html' \
-	| vegeta attack -insecure -rate 1000 -duration $duration > timings/res.bin
+echo 'GET https://localhost:443/nginx/foo.html' \
+	| vegeta -cpus 8 attack -insecure -rate 1000 -duration $duration > timings/res.bin
 
 cat timings/res.bin | vegeta report > timings/apache_report_ssl.txt
 cat timings/res.bin | vegeta report -type=hist[100us,200us,300us,400us,500us,750us,1ms,2ms,3ms,4ms,5ms,1s,5s,10s,1m] > timings/apache_ssl.txt
@@ -133,7 +133,7 @@ cat timings/res.bin | vegeta plot > timings/apache_ssl.html
 echo "nginx ssl static"
 
 echo 'GET https://localhost:7443/foo.html' \
-	| vegeta attack -insecure -rate 1000 -duration $duration > timings/res.bin
+	| vegeta -cpus 8 attack -insecure -rate 1000 -duration $duration > timings/res.bin
 
 cat timings/res.bin | vegeta report > timings/nginx_report_ssl.txt
 cat timings/res.bin | vegeta report -type=hist[100us,200us,300us,400us,500us,750us,1ms,2ms,3ms,4ms,5ms,1s,5s,10s,1m] > timings/nginx_ssl.txt

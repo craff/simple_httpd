@@ -71,7 +71,7 @@ let _ =
         Log.f (Req 0) (fun k->k "start upload %S, headers:\n%s\n\n%!" path
                      (Format.asprintf "%a" Headers.pp (Request.headers req)));
         try
-          let oc = open_out @@ "/tmp/" ^ path in
+          let oc = open_out @@ "/home/raffalli/tmp/store/" ^ path in
           Input.to_chan oc (Request.body req);
           flush oc;
           Response.make_string "uploaded file"
