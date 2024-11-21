@@ -251,7 +251,7 @@ let parse_query s : _ list =
         l = parse_query s)
 *)
 
-let pp_date fmt date =
+let pp_date date =
   let open Unix in
   let day = match date.tm_wday with
     | 0 -> "Sun"
@@ -278,14 +278,12 @@ let pp_date fmt date =
     |11 -> "Dec"
     | _ -> invalid_arg "print_date"
   in
-  Format.fprintf fmt "%s, %02d %s %04d %02d:%02d:%02d GMT"
+  Printf.sprintf "%s, %02d %s %04d %02d:%02d:%02d GMT"
     day date.tm_mday month (date.tm_year+1900) date.tm_hour date.tm_min date.tm_sec
 
 let date_of_epoch time =
   let tm = (Unix.gmtime time) in
-  let buf = Buffer.create 32 in
-  Format.fprintf (Format.formatter_of_buffer buf) "%a%!" pp_date tm;
-  Buffer.contents buf
+  pp_date tm
 
 let _ = Unix.putenv "TZ" "UTC" (* we do not use localtime, only gmtime *)
 
