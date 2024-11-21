@@ -750,17 +750,7 @@ let loop listens pipe timeout handler () =
     let c = match client with None -> get_client () | Some c -> c in
     if c.connected then begin
     LL.remove_cell c.last_seen_cell last_seen;
-    begin
-      let fn s =
-        (try Ssl.shutdown s with _ -> ());
-        (try Unix.close (Ssl.file_descr_of_socket s) with _ -> ())
-      in
-      let gn s =
-        (try Unix.shutdown s SHUTDOWN_ALL with _ -> ());
-        (try Unix.close s with _ -> ())
-      in
-      apply c gn fn;
-    end;
+    (try Unix.close c.sock with _ -> ());
     Atomic.decr dinfo.nb_connections;
     c.connected <- false;
 
