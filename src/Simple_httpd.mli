@@ -16,7 +16,7 @@ module Util : sig
       Can raise [Invalid_argument "percent_decode"] if string is not valid
       percent encodings. *)
 
-  val pp_date : Format.formatter -> Unix.tm -> unit
+  val pp_date : Unix.tm -> string
   (** Print date (given in GMT) in the expected format for http (for instance
       for expiration date of cookies. *)
 
