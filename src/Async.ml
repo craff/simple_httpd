@@ -1008,20 +1008,22 @@ let accept_loop (domains : Domain.id Array.t) listens pipes maxc =
     while !continue do
       let to_close = ref None in
       try
+        let lsock, _ = Unix.accept sock in
         let index = try Hashtbl.find tbl sock with Not_found -> assert false in
         let (did, pipe) = get_best () in
-        let (lsock, _) = Unix.accept sock in
         to_close := Some lsock;
         Bytes.set_int32_ne pipe_buf 0 (Int32.of_int (Util.file_descr_to_int lsock));
         Bytes.set_int32_ne pipe_buf 4 (Int32.of_int index);
         assert(Util.single_write pipe pipe_buf 0 8 = 8);
         Atomic.incr (nbc did);
       with
+      | Unix.(Unix_error((EAGAIN|EWOULDBLOCK),_,_)) ->
+         (* Should not append, but we observerd it and no need to handle,
+            we will go back in the loop next time *) ()
       | Full ->
          Log.f (Exc 0) (fun k -> k "handler: reject too many clients");
          let (lsock, _) = Unix.accept sock in
          Unix.close lsock
-      | Unix.Unix_error((EAGAIN|EWOULDBLOCK),_,_) -> continue := false
       | exn ->
          begin
            match !to_close with
