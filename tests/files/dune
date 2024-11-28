@@ -5,10 +5,22 @@
     (bash "dd if=/dev/random of=%{targets} bs=1k count=1")))
 
 (rule
+  (targets foo_5k)
+  (enabled_if (= %{system} "linux"))
+  (action
+    (bash "dd if=/dev/random of=%{targets} bs=1k count=1")))
+
+(rule
   (targets foo_10k)
   (enabled_if (= %{system} "linux"))
   (action
     (bash "dd if=/dev/random of=%{targets} bs=1k count=10")))
+
+(rule
+  (targets foo_50k)
+  (enabled_if (= %{system} "linux"))
+  (action
+    (bash "dd if=/dev/random of=%{targets} bs=1k count=50")))
 
 (rule
   (targets foo_100k)
@@ -17,16 +29,34 @@
     (bash "dd if=/dev/random of=%{targets} bs=1k count=100")))
 
 (rule
+  (targets foo_500k)
+  (enabled_if (= %{system} "linux"))
+  (action
+    (bash "dd if=/dev/random of=%{targets} bs=1k count=500")))
+
+(rule
   (targets foo_1M)
   (enabled_if (= %{system} "linux"))
   (action
     (bash "dd if=/dev/random of=%{targets} bs=1M count=1")))
 
 (rule
+  (targets foo_5M)
+  (enabled_if (= %{system} "linux"))
+  (action
+    (bash "dd if=/dev/random of=%{targets} bs=1M count=5")))
+
+(rule
   (targets foo_10M)
   (enabled_if (= %{system} "linux"))
   (action
     (bash "dd if=/dev/random of=%{targets} bs=1M count=10")))
+
+(rule
+  (targets foo_50M)
+  (enabled_if (= %{system} "linux"))
+  (action
+    (bash "dd if=/dev/random of=%{targets} bs=1M count=50")))
 
 (rule
   (targets foo_100M)

@@ -113,7 +113,9 @@
 ; produce an embedded FS
 (rule
   (targets vfs.ml)
-  (deps (source_tree files))
+  (deps files/foo_1k files/foo_5k files/foo_10k files/foo_50k
+        files/foo_100k files/foo_500k files/foo_1M files/foo_5M
+	files/foo_10M files/foo_50M files/foo_100M)
   (enabled_if (= %{system} "linux"))
   (action (run %{bin:vfs_pack} -o %{targets}
   	       -v
@@ -125,7 +127,7 @@
   (name bench)
   (flags :standard -warn-error -3)
   (modules bench)
-  (libraries unix csv))
+  (libraries unix str csv))
 
 (executable
   (name serve_files)

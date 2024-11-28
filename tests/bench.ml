@@ -22,24 +22,29 @@ let add_column csv title fn data =
   in
   fn [] csv data
 
+let err_regexp = Str.regexp "errors.*"
+
 let measure server cmd values =
   let s = match server with
     | Some server ->
        let args = Array.of_list (String.split_on_char ' ' server) in
        let chs = Unix.open_process_args_out args.(0) args in
        let pid = Unix.process_out_pid chs in
-       Unix.sleep 1;
        Some(chs,pid)
     | None -> None
   in
 
   let fn v =
     let res = ref 0.0 in
+    Unix.sleepf 0.2;
     let ch = Unix.open_process_in (cmd v) in
     try
       while true do
         let line = input_line ch in
-        Printf.eprintf "%s\n%!" line;
+        (try
+          ignore (Str.search_forward err_regexp line 0);
+          Printf.printf "%s\n%!" (Str.matched_string line);
+          with Not_found -> ());
         (try Scanf.sscanf line "Requests/sec: %f" (fun f -> Printf.printf "%f\n%!" f; res := f)
         with _ -> ());
       done;
@@ -146,7 +151,7 @@ let _ = Csv.save "timings/bench_chaml.csv" !csv
 
 (* ======================== TEST of static files ====================== *)
 
-let files = ["foo_1k", 1; "foo_100k", 1; "foo_10M", 1 ]
+let files = ["foo_1k", 1; "foo_50k", 1; "foo_500k", 1 ]
 let values = List.(flatten (map (fun file -> map (fun n -> (file,n)) nb_conn) files))
 
 let _ = csv := []
@@ -168,7 +173,7 @@ let _ = csv := add_column !csv "simple_httpd vfs_path" string_of_float data
 let data =
   Printf.printf "measure vfs_pack ssl\n%!";
   measure
-    (Some "../_build/default/tests/serve_files.exe --port 9443 --log-requests 0 --log-exceptions 0 --ssl ../_build/default/tests/domain.crt ../_build/default/tests/domain.key -c 2100 -j 8 --port=9443 --dir /var/www/nginx -c 2100 -j 8 --timeout 10")
+    (Some "../_build/default/tests/serve_files.exe --port 9443 --log-requests 0 --log-exceptions 0 --ssl ../_build/default/tests/domain.crt ../_build/default/tests/domain.key -c 2100 -j 8 --port=9443 --dir /var/www/nginx --timeout 10")
     (fun ((file, d), c) ->
       Printf.sprintf "wrk -t8 -c%d --timeout 10 -d%d https://localhost:9443/%s"
         c d file)
