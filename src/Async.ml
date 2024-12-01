@@ -443,8 +443,7 @@ let rec read c s o l =
   try
     apply c Util.read Ssl.read s o l
   with Unix.(Unix_error((EAGAIN|EWOULDBLOCK),_,_))
-     | Ssl.(Read_error(Error_want_read|Error_want_write
-                      |Error_want_connect|Error_want_accept|Error_zero_return)) ->
+     | Ssl.(Read_error(Error_want_read|Error_want_write)) ->
         perform (Io {sock = c.sock; read = true });
         read c s o l
 
@@ -453,8 +452,7 @@ let rec write c s o l =
   try
     apply c Util.single_write Ssl.write s o l
   with Unix.(Unix_error((EAGAIN|EWOULDBLOCK),_,_))
-    | Ssl.(Write_error(Error_want_read|Error_want_write
-                       |Error_want_connect|Error_want_accept|Error_zero_return)) ->
+    | Ssl.(Write_error(Error_want_read|Error_want_write)) ->
        perform (Io {sock = c.sock; read = false });
        write c s o l
 
@@ -470,8 +468,7 @@ let rec sendfile c fd o l =
   try
     apply c Util.sendfile ssl_sendfile fd o l
   with Unix.(Unix_error((EAGAIN|EWOULDBLOCK),_,_))
-     | Ssl.(Write_error(Error_want_read|Error_want_write
-                        |Error_want_connect|Error_want_accept|Error_zero_return)) ->
+     | Ssl.(Write_error(Error_want_read|Error_want_write)) ->
         perform (Io {sock = c.sock; read = false });
         sendfile c fd o l
 
@@ -909,8 +906,7 @@ let loop listens pipe timeout handler () =
                     try
                       Ssl.accept chan; 1
                     with
-                    | Ssl.(Accept_error(Error_want_read|Error_want_write
-                                   |Error_want_connect|Error_want_accept|Error_zero_return)) ->
+                    | Ssl.(Accept_error(Error_want_read|Error_want_write)) ->
                        perform (Io {sock; read = false });
                        fn ()
                   in
