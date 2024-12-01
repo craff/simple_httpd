@@ -135,7 +135,10 @@ let parse_req_start ~client ~buf (bs:Input.t)
       } in
     Some req
   with
-  | Headers.Bad_req _ | Unix.Unix_error _ as e -> raise e
+  | Headers.Bad_req _ | Unix.Unix_error _ | Ssl.Read_error _
+    | Ssl.Write_error _ as e ->
+     log (Exc 1) (fun k->k "exn in request %s" (Async.printexn e));
+     raise e
   | Input.FailParse n ->
      log (Exc 1) (fun k->k "Invalid request line at %d: %S" n (Input.current bs));
      fail_raise ~code:bad_request "Invalid request line"
