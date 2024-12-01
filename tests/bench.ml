@@ -45,7 +45,8 @@ let measure server cmd values =
           ignore (Str.search_forward err_regexp line 0);
           Printf.printf "%s\n%!" (Str.matched_string line);
           with Not_found -> ());
-        (try Scanf.sscanf line "Requests/sec: %f" (fun f -> Printf.printf "%f\n%!" f; res := f)
+        (try Scanf.sscanf line "finished in %f%[ms], %f "
+               (fun _ _ f -> Printf.printf "%s\n%!" line; res := f)
         with _ -> ());
       done;
       assert false
@@ -64,7 +65,7 @@ let nb_conn = [10;50;100;200;300;400;500;600;800;1000;1200;1500;2000]
 (* ======================== TEST of .chaml ====================== *)
 let csv = ref []
 
-let files = ["bar.html", 1]
+let files = ["bar.html", 50_000]
 let values = List.(flatten (map (fun file -> map (fun n -> (file,n)) nb_conn) files))
 
 let _ = csv := add_column !csv "file" fst (List.map fst values)
@@ -75,7 +76,7 @@ let data =
   measure
     (Some "../_build/default/examples/echo.exe --port 8080 -c 2100 -j 8 --log-requests 0 --log-exceptions 0")
     (fun ((file, d), c) ->
-      Printf.sprintf "wrk -t8 -c%d --timeout 10 -d%d http://localhost:8080/vfs/%s"
+      Printf.sprintf "h2load --h1 -m 8 -c %d -n %d http://localhost:8080/vfs/%s"
         c d file)
     values
 
@@ -86,7 +87,7 @@ let data =
   measure
     (Some "../_build/default/examples/echo.exe --port 8443 -c 2100 -j 8 --ssl ../_build/default/tests/domain.crt ../_build/default/tests/domain.key -c 2100 -j 8 --port=8443 --log-requests 0 --log-exceptions 0")
     (fun ((file, d), c) ->
-      Printf.sprintf "wrk -t8 -c%d --timeout 10 -d%d https://localhost:8443/vfs/%s"
+      Printf.sprintf "h2load --h1 -m 8 -c %d -n %d https://localhost:8443/vfs/%s"
         c d file)
     values
 
@@ -97,7 +98,7 @@ let data =
   measure
     (Some "../_build/default/examples/echo.exe -c 2100 -j 8 --ktls --ssl ../_build/default/tests/domain.crt ../_build/default/tests/domain.key -c 2100 -j 8 --port=8444 --log-requests 0 --log-exceptions 0")
     (fun ((file, d), c) ->
-      Printf.sprintf "wrk -t8 -c%d --timeout 10 -d%d https://localhost:8444/vfs/%s"
+      Printf.sprintf "h2load --h1 -m 8 -c %d -n %d https://localhost:8444/vfs/%s"
         c d file)
     values
 
@@ -108,7 +109,7 @@ let data =
   measure None
     (fun ((file, d), c) ->
       let file = Filename.remove_extension file ^ ".php" in
-      Printf.sprintf "wrk -t8 -c%d --timeout 10 -d%d http://localhost:80/nginx/%s"
+      Printf.sprintf "h2load --h1 -m 8 -c %d -n %d http://localhost:80/nginx/%s"
         c d file)
     values
 
@@ -119,7 +120,7 @@ let data =
   measure None
     (fun ((file, d), c) ->
       let file = Filename.remove_extension file ^ ".php" in
-      Printf.sprintf "wrk -t8 -c%d --timeout 10 -d%d https://localhost:443/nginx/%s"
+      Printf.sprintf "h2load --h1 -m 8 -c %d -n %d https://localhost:443/nginx/%s"
         c d file)
     values
 
@@ -130,7 +131,7 @@ let data =
   measure None
     (fun ((file, d), c) ->
       let file = Filename.remove_extension file ^ ".php" in
-      Printf.sprintf "wrk -t8 -c%d --timeout 10 -d%d http://localhost:7080/%s"
+      Printf.sprintf "h2load --h1 -m 8 -c %d -n %d http://localhost:7080/%s"
         c d file)
     values
 
@@ -141,7 +142,7 @@ let data =
   measure None
     (fun ((file, d), c) ->
       let file = Filename.remove_extension file ^ ".php" in
-      Printf.sprintf "wrk -t8 -c%d --timeout 10 -d%d https://localhost:7443/%s"
+      Printf.sprintf "h2load --h1 -m 8 -c %d -n %d https://localhost:7443/%s"
         c d file)
     values
 
@@ -151,7 +152,7 @@ let _ = Csv.save "timings/bench_chaml.csv" !csv
 
 (* ======================== TEST of static files ====================== *)
 
-let files = ["foo_1k", 1; "foo_50k", 1; "foo_500k", 1 ]
+let files = ["foo_1k", 50_000; "foo_50k", 10_000; "foo_500k", 2_000 ]
 let values = List.(flatten (map (fun file -> map (fun n -> (file,n)) nb_conn) files))
 
 let _ = csv := []
@@ -164,7 +165,7 @@ let data =
   measure
     (Some "../_build/default/tests/serve_files.exe --port 9080 --log-requests 0 --log-exceptions 0 --dir /var/www/nginx -c 2100 -j 8 --timeout 10")
     (fun ((file, d), c) ->
-      Printf.sprintf "wrk -t8 -c%d --timeout 10 -d%d http://localhost:9080/%s"
+      Printf.sprintf "h2load --h1 -m 8 -c %d -n %d http://localhost:9080/%s"
         c d file)
     values
 
@@ -175,7 +176,7 @@ let data =
   measure
     (Some "../_build/default/tests/serve_files.exe --port 9443 --log-requests 0 --log-exceptions 0 --ssl ../_build/default/tests/domain.crt ../_build/default/tests/domain.key -c 2100 -j 8 --port=9443 --dir /var/www/nginx --timeout 10")
     (fun ((file, d), c) ->
-      Printf.sprintf "wrk -t8 -c%d --timeout 10 -d%d https://localhost:9443/%s"
+      Printf.sprintf "h2load --h1 -m 8 -c %d -n %d https://localhost:9443/%s"
         c d file)
     values
 
@@ -186,7 +187,7 @@ let data =
   measure
     (Some "../_build/default/tests/serve_files.exe --log-requests 0 --ktls --ssl ../_build/default/tests/domain.crt ../_build/default/tests/domain.key -c 2100 -j 8 --port=9444 --dir /var/www/nginx -c 2100 -j 8 --timeout 10")
     (fun ((file, d), c) ->
-      Printf.sprintf "wrk -t8 -c%d --timeout 10 -d%d https://localhost:9444/%s"
+      Printf.sprintf "h2load --h1 -m 8 -c %d -n %d https://localhost:9444/%s"
         c d file)
     values
 
@@ -197,7 +198,7 @@ let data =
   measure
     (Some "../_build/default/src/bin/http_of_dir.exe --log-requests 0 --log-exceptions 0 -c 2100 -j 8 --port=8080 --timeout 10 /var/www/nginx")
     (fun ((file, d), c) ->
-      Printf.sprintf "wrk -t8 -c%d --timeout 10 -d%d http://localhost:8080/%s"
+      Printf.sprintf "h2load --h1 -m 8 -c %d -n %d http://localhost:8080/%s"
         c d file)
     values
 
@@ -208,7 +209,7 @@ let data =
   measure
     (Some "../_build/default/src/bin/http_of_dir.exe --log-requests 0 --log-exceptions 0 --ssl ../_build/default/tests/domain.crt ../_build/default/tests/domain.key -c 2100 -j 8 --port=8443 --timeout 10 /var/www/nginx")
     (fun ((file, d), c) ->
-      Printf.sprintf "wrk -t8 -c%d --timeout 10 -d%d https://localhost:8443/%s"
+      Printf.sprintf "h2load --h1 -m 8 -c %d -n %d https://localhost:8443/%s"
         c d file)
     values
 
@@ -219,7 +220,7 @@ let data =
   measure
     (Some "../_build/default/src/bin/http_of_dir.exe --log-requests 0 --ktls --ssl ../_build/default/tests/domain.crt ../_build/default/tests/domain.key -c 2100 -j 8 --port=8444 --timeout 10 /var/www/nginx")
     (fun ((file, d), c) ->
-      Printf.sprintf "wrk -t8 -c%d --timeout 10 -d%d https://localhost:8444/%s"
+      Printf.sprintf "h2load --h1 -m 8 -c %d -n %d https://localhost:8444/%s"
         c d file)
     values
 
@@ -229,7 +230,7 @@ let data =
   Printf.printf "measure nginx\n%!";
   measure None
     (fun ((file, d), c) ->
-      Printf.sprintf "wrk -t8 -c%d --timeout 10 -d%d http://localhost:7080/%s"
+      Printf.sprintf "h2load --h1 -m 8 -c %d -n %d http://localhost:7080/%s"
         c d file)
     values
 
@@ -240,7 +241,7 @@ let data =
   Printf.printf "measure nginx ssl\n%!";
   measure None
     (fun ((file, d), c) ->
-      Printf.sprintf "wrk -t8 -c%d --timeout 10 -d%d https://localhost:7443/%s"
+      Printf.sprintf "h2load --h1 -m 8 -c %d -n %d https://localhost:7443/%s"
         c d file)
     values
 
@@ -250,7 +251,7 @@ let data =
   Printf.printf "measure apache\n%!";
   measure None
     (fun ((file, d), c) ->
-      Printf.sprintf "wrk -t8 -c%d --timeout 10 -d%d http://localhost:80/nginx/%s"
+      Printf.sprintf "h2load --h1 -m 8 -c %d -n %d http://localhost:80/nginx/%s"
         c d file)
     values
 
@@ -260,7 +261,7 @@ let data =
   Printf.printf "measure apache ssl\n%!";
   measure None
     (fun ((file, d), c) ->
-      Printf.sprintf "wrk -t8 -c%d --timeout 10 -d%d https://localhost:443/nginx/%s"
+      Printf.sprintf "h2load --h1 -m 8 -c %d -n %d https://localhost:443/nginx/%s"
         c d file)
     values
 
