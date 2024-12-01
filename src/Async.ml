@@ -92,16 +92,15 @@ let set_session ?session client =
   client.session <- session
 
 type _ Effect.t +=
-   | Io  : { sock: Unix.file_descr; fn: (unit -> int); read : bool }
-           -> int Effect.t
+   | Io  : { sock: Unix.file_descr; read : bool }
+           -> unit Effect.t
    | Yield : unit Effect.t
    | Sleep : float -> unit Effect.t
-   | Lock  : mutex * (mutex -> unit) -> unit Effect.t
-   | Decr  : semaphore * (semaphore -> unit) -> unit Effect.t
+   | Lock  : mutex -> unit Effect.t
+   | Decr  : semaphore -> unit Effect.t
 
-type 'a pending =
-  { fn : unit -> 'a
-  ; cont : ('a, unit) continuation
+type pending =
+  { cont : (unit, unit) continuation
   ; read : bool
 
   }
@@ -154,7 +153,7 @@ type sock_error =
 
 type pending_status =
   | NoEvent
-  | Wait : 'a pending -> pending_status
+  | Wait : pending -> pending_status
   | TooSoon of sock_error
 
 type socket_info =
@@ -171,7 +170,7 @@ type socket_infos =
 
 type pollResult =
   | Accept of (int * Unix.file_descr * Address.t)
-  | Action : 'a pending * socket_info * sock_error -> pollResult
+  | Action : pending * socket_info * sock_error -> pollResult
   | Yield of ((unit,unit) continuation * client * float)
   | Poll
 
@@ -392,7 +391,7 @@ module Mutex : sig
     with Unix.(Unix_error((EAGAIN | EWOULDBLOCK), _, _)) -> false
 
   let rec lock : t -> unit = fun lk ->
-    if not (try_lock lk) then perform (Lock (lk, lock))
+    if not (try_lock lk) then (perform (Lock lk); lock lk)
 end
 
 module Semaphore : sig
@@ -435,7 +434,7 @@ module Semaphore : sig
     with Unix.(Unix_error((EAGAIN | EWOULDBLOCK), _, _)) -> false
 
   let rec decr : t -> unit = fun lk ->
-    if not (try_decr lk) then perform (Decr (lk, decr))
+    if not (try_decr lk) then (perform (Decr lk); decr lk)
 end
 
 module Ssl = struct include Ssl include Ssl.Runtime_lock end
@@ -446,10 +445,9 @@ let rec read c s o l =
   with Unix.(Unix_error((EAGAIN|EWOULDBLOCK),_,_))
      | Ssl.(Read_error(Error_want_read|Error_want_write
                       |Error_want_connect|Error_want_accept|Error_zero_return)) ->
-        perform_read c s o l
+        perform (Io {sock = c.sock; read = true });
+        read c s o l
 
-and perform_read c s o l =
-  perform (Io {sock = c.sock; fn = (fun () -> read c s o l); read = true })
 
 let rec write c s o l =
   try
@@ -457,10 +455,8 @@ let rec write c s o l =
   with Unix.(Unix_error((EAGAIN|EWOULDBLOCK),_,_))
     | Ssl.(Write_error(Error_want_read|Error_want_write
                        |Error_want_connect|Error_want_accept|Error_zero_return)) ->
-     perform_write c s o l
-
-and perform_write c s o l =
-  perform (Io {sock = c.sock; fn = (fun () -> write c s o l); read = false })
+       perform (Io {sock = c.sock; read = false });
+       write c s o l
 
 (* Note: sendfile together with SSL, not really efficient *)
 let ssl_sendfile c fd o l =
@@ -476,13 +472,11 @@ let rec sendfile c fd o l =
   with Unix.(Unix_error((EAGAIN|EWOULDBLOCK),_,_))
      | Ssl.(Write_error(Error_want_read|Error_want_write
                         |Error_want_connect|Error_want_accept|Error_zero_return)) ->
-        perform_sendfile c fd o l
+        perform (Io {sock = c.sock; read = false });
+        sendfile c fd o l
 
-and perform_sendfile c fd o l =
-  perform (Io {sock = c.sock; fn = (fun () -> sendfile c fd o l); read = false })
-
-let schedule_io sock fn =
-  perform (Io {sock; fn; read = false })
+let schedule_io sock =
+  perform (Io {sock; read = false })
 
 let cur_client () =
   let i = all_domain_info.((Domain.self () :> int)) in
@@ -560,14 +554,16 @@ module Io = struct
     Util.read io.sock  s o l
   with Unix.(Unix_error((EAGAIN|EWOULDBLOCK),_,_)) ->
     register io;
-    schedule_io io.sock (fun () -> read io s o l)
+    schedule_io io.sock;
+    read io s o l
 
   let rec write (io:t) s o l =
   try
     Util.single_write io.sock s o l
   with Unix.(Unix_error((EAGAIN|EWOULDBLOCK),_,_)) ->
         register io;
-        schedule_io io.sock (fun () -> write io s o l)
+        schedule_io io.sock;
+        write io s o l
 
   let poll ?(edge_trigger=true) ?(read=false) ?(write=false) (fd: Unix.file_descr) =
     let open Polly.Events in
@@ -576,9 +572,8 @@ module Io = struct
     let flags = if read then inp lor rdhup lor flags else flags in
     let flags = if write then out lor flags else flags in
     let poll_list = register_socket fd flags in
-    ignore (schedule_io fd (fun () ->
-                Polly.del poll_list fd;
-                1))
+    ignore (schedule_io fd);
+    Polly.del poll_list fd
 
   let formatter (io:t) =
     let open Format in
@@ -695,13 +690,12 @@ let loop listens pipe timeout handler () =
     Queue.add info q
   in
 
-  let add_lock : Mutex.t -> (Mutex.t -> unit) -> (unit, unit) continuation -> unit =
-    fun lk fn cont ->
+  let add_lock : Mutex.t -> (unit, unit) continuation -> unit =
+    fun lk cont ->
     let cl = get_client () in
     cl.acont <- C cont;
-    let fn () = fn lk in
     let info = { ty = Lock ; client = cl
-               ; pd = Wait { fn; cont; read = false }
+               ; pd = Wait { cont; read = false }
                }
     in
     (* may be another client is already waiting *)
@@ -714,13 +708,12 @@ let loop listens pipe timeout handler () =
     en_queue lk.eventfd info
   in
 
-  let add_decr : Semaphore.t -> (Semaphore.t -> unit) -> (unit, unit) continuation -> unit =
-    fun lk fn cont ->
+  let add_decr : Semaphore.t -> (unit, unit) continuation -> unit =
+    fun lk cont ->
     let cl = get_client () in
     cl.acont <- C cont;
-    let fn () = fn lk in
     let info = { ty = Decr ; client = cl
-               ; pd = Wait { fn; cont; read = false }
+               ; pd = Wait { cont; read = false }
                }
     in
     (* may be another client is already waiting *)
@@ -852,9 +845,33 @@ let loop listens pipe timeout handler () =
     | exn -> Log.f (Exc 0) (fun k -> k "unexpected poll: %s\n%!" (printexn exn));
              (*check now;*) poll () (* FIXME: which exception *)
   in
-  let step v =
-    try
-      match v with
+  let spawn f =
+    match f () with
+    | () -> ()
+    | effect Yield, cont ->
+       add_ready (Yield(cont, get_client (), now ()))
+    | effect Sleep t, cont ->
+       add_sleep t cont
+    | effect Lock(lk), cont ->
+       add_lock lk cont
+    | effect Decr(lk), cont ->
+       add_decr lk cont
+    | effect Io {sock; read}, cont ->
+       let info = pendings.(Util.file_descr_to_int sock) in
+       begin
+         match info with
+         | NoSocket | QueueSocket _ | PipeSocket _ -> assert false
+         | OneSocket info ->
+            match info.pd with
+            | NoEvent ->
+               info.pd <- Wait { cont; read }
+            | TooSoon e ->
+               add_ready (Action({ cont; read }, info, e))
+            | Wait _ -> assert false
+       end
+  in
+  let step () =
+      match Queue.take ready with
       | Poll ->
          poll ();
          add_ready Poll
@@ -883,25 +900,27 @@ let loop listens pipe timeout handler () =
          Unix.(setsockopt_float sock SO_SNDTIMEO timeout);
          Unix.(setsockopt sock TCP_NODELAY true); (* not clearly usefull *)
          Polly.(add poll_list sock Events.(inp lor out lor et lor rdhup lor hup lor err));
-         begin
-           match linfo.ssl with
-           | Some ctx ->
-              let chan = Ssl.embed_socket sock (Atomic.get ctx) in
-              let rec fn () =
-                try
-                  Ssl.accept chan; 1
-                with
-                | Ssl.(Accept_error(Error_want_read|Error_want_write
+         spawn (fun () ->
+             begin
+               match linfo.ssl with
+               | Some ctx ->
+                  let chan = Ssl.embed_socket sock (Atomic.get ctx) in
+                  let rec fn () =
+                    try
+                      Ssl.accept chan; 1
+                    with
+                    | Ssl.(Accept_error(Error_want_read|Error_want_write
                                    |Error_want_connect|Error_want_accept|Error_zero_return)) ->
-                   perform (Io {sock; fn; read = false })
-              in
-              ignore (fn ());
-              client.ssl <- Some chan;
-              Log.f (Req 2) (fun k -> k "ssl connection established");
-           | None -> ()
-         end;
-         handler client; close EndHandling
-      | Action ({ fn; cont; read }, p, e) ->
+                       perform (Io {sock; read = false });
+                       fn ()
+                  in
+                  ignore (fn ());
+                  client.ssl <- Some chan;
+                  Log.f (Req 2) (fun k -> k "ssl connection established");
+               | None -> ()
+             end;
+             handler client; close EndHandling)
+      | Action ({ cont; read }, p, e) ->
          p.pd <- NoEvent;
          let cl = p.client in
          if cl.connected then
@@ -910,22 +929,13 @@ let loop listens pipe timeout handler () =
              cl.acont <- N;
              match e with
              | Hup ->
-                discontinue cont Unix.(Unix_error(EPIPE, "Hup", "error_in_poll"))
-             | Err e ->
-                let msg = Unix.error_message e in
-                discontinue cont (Unix.Unix_error(e, msg, "error_in_poll"))
-             | RdHup ->
-                if read then
-                  begin
-                    discontinue cont Unix.(Unix_error(ECONNRESET, "RdHup", "error_in_poll"))
-                  end
-                else
-                  cl.cont <- false;
-                let n = fn () in
-                continue cont n;
-             | NoError ->
-                let n = fn () in
-                continue cont n;
+                cl.close ()
+             | Err _ ->
+                cl.close ()
+             | RdHup when read ->
+                cl.close ()
+             | NoError | RdHup ->
+                continue cont ()
            end
       | Yield(cont,cl,_) ->
          if cl.connected then
@@ -934,41 +944,11 @@ let loop listens pipe timeout handler () =
              cl.acont <- N;
              continue cont ();
            end
-    with e -> (try close e
-               with e -> Log.f (Exc 1) (fun k -> k "close: %s"
-                                                (Printexc.to_string e)))
+
 
   in
-  let step_handler v =
-    match step v with
-    | v -> v
-    | effect Yield, cont ->
-       let c = get_client () in
-       c.acont <- C cont;
-       add_ready (Yield(cont, c, now ()))
-    | effect Sleep t, cont ->
-       add_sleep t cont
-    | effect Lock(lk, fn), cont ->
-       add_lock lk fn cont
-    | effect Decr(lk, fn), cont ->
-       add_decr lk fn cont
-    | effect Io {sock; fn; read}, cont ->
-       (get_client ()).acont <- C cont;
-       let info = pendings.(Util.file_descr_to_int sock) in
-       begin
-         match info with
-         | NoSocket | QueueSocket _ | PipeSocket _ -> assert false
-         | OneSocket info ->
-            match info.pd with
-            | NoEvent ->
-               info.pd <- Wait { fn; cont; read }
-            | TooSoon e ->
-               add_ready (Action({ fn; cont; read }, info, e))
-            | Wait _ -> assert false
-       end
-  in
   while true do
-    step_handler (Queue.take ready)
+    step ()
   done
 
 let add_close, close_all =
@@ -1073,7 +1053,8 @@ let run ~nb_threads ~listens ~maxc ~timeout ~set_domains handler =
 let rec ssl_flush s =
   try ignore (Ssl.flush s); 1
   with Ssl.Flush_error(true) ->
-    schedule_io (Ssl.file_descr_of_socket s) (fun () -> ssl_flush s)
+    schedule_io (Ssl.file_descr_of_socket s);
+    ssl_flush s
 
 module Client = struct
   type t = client

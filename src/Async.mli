@@ -146,7 +146,7 @@ exception TimeOut
 
 (** For use if you do not want to use the provided Io module, and want
     to schedule an Io task *)
-val schedule_io : Unix.file_descr -> (unit -> int) -> int
+val schedule_io : Unix.file_descr -> unit
 
 val run : nb_threads:int -> listens:Address.t array -> maxc:int ->
           timeout:float -> set_domains:(Domain.id array -> unit) ->
