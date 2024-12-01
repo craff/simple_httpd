@@ -893,8 +893,6 @@ let loop listens pipe timeout handler () =
          Log.f (Req 1)
            (fun k -> k "[%d] accept connection from %s" client.id client.peer);
          Unix.set_nonblock sock;
-         Unix.(setsockopt_float sock SO_RCVTIMEO timeout);
-         Unix.(setsockopt_float sock SO_SNDTIMEO timeout);
          Unix.(setsockopt sock TCP_NODELAY true); (* not clearly usefull *)
          Polly.(add poll_list sock Events.(inp lor out lor et lor rdhup lor hup lor err));
          spawn (fun () ->
