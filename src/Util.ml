@@ -70,11 +70,8 @@ external raw_ssl_sendfile : Ssl.socket -> (int [@untagged])
                             -> (int [@untagged]) -> (int [@untagged]) -> (int [@untagged])
   = "caml_byte_ssl_sendfile" "caml_ssl_sendfile" [@@noalloc]
 
-external ssl_check_ktls : Ssl.socket -> bool
-  = "caml_ssl_check_ktls" [@@noalloc]
-
-external ssl_ctx_set_ciphersuites : Ssl.context -> string -> unit
-  = "caml_ssl_ctx_set_ciphersuites" [@@noalloc]
+external ssl_nonblock : Ssl.context -> unit
+  = "caml_ssl_nonblock" [@@noalloc]
 
 external get_error : Ssl.socket -> int -> Ssl.ssl_error = "ocaml_ssl_get_error_code"
     [@@noalloc]

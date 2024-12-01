@@ -887,7 +887,7 @@ let loop listens pipe timeout handler () =
              begin
                match linfo.ssl with
                | Some ctx ->
-                  let chan = Ssl.embed_socket sock (Atomic.get ctx) in
+                  let chan = Ssl.embed_socket sock ctx in
                   let rec fn () =
                     try
                       Ssl.accept chan; 1

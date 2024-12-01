@@ -56,27 +56,28 @@ long caml_ssl_sendfile (value out_fd, long in_fd, long offset, long count) {
   return(SSL_sendfile(SSL_val(out_fd),in_fd,offset,count, 0));
 }
 
-CAMLprim value caml_ssl_check_ktls(value out_fd) {
-  CAMLparam1(out_fd);
-  SSL *ssl = SSL_val(out_fd);
-  int tx = BIO_get_ktls_send(SSL_get_wbio(ssl));
-  int rx = BIO_get_ktls_recv(SSL_get_wbio(ssl));
-  CAMLreturn(Int_val(rx && tx));
+int alpn_select_cb(SSL *ssl, const unsigned char **out, unsigned char *outlen,
+                   const unsigned char *in, unsigned int inlen, void *arg) {
+    static const unsigned char alpn_protocols[] = "\x08http/1.1";
+    *out = alpn_protocols + 1;
+    *outlen = alpn_protocols[0];
+    return SSL_TLSEXT_ERR_OK;
 }
 
-CAMLprim void caml_ssl_ctx_set_ciphersuites(value ctx_val, value suites) {
-  CAMLparam2(ctx_val, suites);
+CAMLprim void caml_ssl_nonblock(value ctx_val) {
+  CAMLparam1(ctx_val);
   SSL_CTX *ctx = SSL_CTX_val(ctx_val);
-  SSL_CTX_set_ciphersuites(ctx, String_val(suites));
-  SSL_CTX_set_options(ctx, SSL_OP_ENABLE_KTLS);
-  #ifdef SSL_OP_ENABLE_KTLS_TX_ZEROCOPY_SENDFILE
-  SSL_CTX_set_options(ctx, SSL_OP_ENABLE_KTLS_TX_ZEROCOPY_SENDFILE);
-  #endif
-  #ifdef SSL_OP_ENABLE_KTLS_RX_ZEROCOPY_SENDFILE
-  SSL_CTX_set_options(ssl, SSL_OP_ENABLE_KTLS_RX_ZEROCOPY_SENDFILE);
-  #endif
+  SSL_CTX_clear_options(ctx, SSL_OP_NO_TICKET);
+  SSL_CTX_sess_set_cache_size(ctx, 16384);
+  SSL_CTX_set_session_cache_mode(ctx,
+  				 SSL_SESS_CACHE_SERVER);
+  SSL_CTX_clear_mode(ctx, SSL_MODE_AUTO_RETRY);
+  SSL_CTX_set_mode(ctx, SSL_MODE_ENABLE_PARTIAL_WRITE);
+  SSL_CTX_set_num_tickets(ctx, 1);
+  SSL_CTX_set_alpn_select_cb(ctx, alpn_select_cb, NULL);
   CAMLreturn0;
 }
+
 
 CAMLprim value caml_byte_setsockopt_cork(long socket, value val)
 {

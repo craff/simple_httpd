@@ -7,7 +7,7 @@ type t =
   { addr : string
   ; port : int
   ; hosts : string list
-  ; ssl  : Ssl.context Atomic.t option
+  ; ssl  : Ssl.context option
   ; reuse : bool
   ; mutable index : index ref
     (* shared ref for all adresses using the same ip and port  *)
@@ -48,11 +48,11 @@ let rec renew_ssl () =
       if mtime > ssl.mtime then
         begin
           ssl.mtime <- mtime;
-          let ctx = Ssl.create_context ssl.protocol Ssl.Server_context in
-          Ssl.use_certificate ctx ssl.cert ssl.priv;
           match ssl.addr.ssl with
           | None -> assert false
-          | Some a -> Atomic.set a ctx
+          | Some ctx ->
+             Ssl.use_certificate ctx ssl.cert ssl.priv;
+
         end;
       !forward_log (fun k -> k "Renewed ssl certificate %S, %S: %s"
                     ssl.cert ssl.priv "OK")
@@ -96,9 +96,10 @@ let make ?(addr="0.0.0.0") ?(port=8080) ?(hosts=[]) ?ssl ?(reuse=true) () =
          let _ = Ssl.set_min_protocol_version ctx protocol in
          let _ = Ssl.set_max_protocol_version ctx Ssl.TLSv1_3 in
          Ssl.use_certificate ctx cert priv;
+         Util.ssl_nonblock ctx;
          let ssl = { mtime; cert; priv; protocol; addr = dummy } in
          add_ssl ssl;
-         (Some (Atomic.make ctx), fun addr -> ssl.addr <- addr)
+         (Some ctx, fun addr -> ssl.addr <- addr)
        with e ->
          !forward_log
            (fun k -> k "failed to read ssl certificate %S, %S because %s"

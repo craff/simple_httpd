@@ -5,8 +5,7 @@ val single_write : Unix.file_descr -> Bytes.t -> int -> int -> int
 val read : Unix.file_descr -> Bytes.t -> int -> int -> int
 val sendfile : Unix.file_descr -> Unix.file_descr -> int -> int -> int
 val ssl_sendfile : Ssl.socket -> Unix.file_descr -> int -> int -> int
-val ssl_check_ktls : Ssl.socket -> bool
-val ssl_ctx_set_ciphersuites : Ssl.context -> string -> unit
+val ssl_nonblock : Ssl.context -> unit
 
 val setsockopt_cork : Unix.file_descr -> bool -> unit
 

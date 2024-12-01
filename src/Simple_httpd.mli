@@ -58,7 +58,7 @@ module Address : sig
       ; port : int     (** The port *)
       ; hosts: string list (** The host we accept: any if the list is empty,
                                only those listed otherwise *)
-      ; ssl  : Ssl.context Atomic.t option (** An optional ssl context *)
+      ; ssl  : Ssl.context option (** An optional ssl context *)
       ; reuse : bool   (** Can we reuse the socket *)
       ; mutable index : index ref (** The index used to refer to the address,
                                       shared by all addresses with the same IP
