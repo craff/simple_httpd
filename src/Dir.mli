@@ -131,6 +131,9 @@ module type VFS = sig
 
   val read_file : path -> file_info
   (** Read content of a file *)
+
+  val free : path -> unit
+  (** some path may contain fs ressources that must br freed *)
 end
 
 val vfs_of_dir : string -> (module VFS)

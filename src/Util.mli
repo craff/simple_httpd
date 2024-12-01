@@ -100,13 +100,13 @@ val fast_concat : char -> string list -> string
 
 type file_type =
   | Inexistant
-  | Block
-  | Chr
-  | Dir
-  | Fifo
-  | Flnk
-  | Freg
-  | Sock
-  | Unknown
+  | Reg of { fd : Unix.file_descr; mtime: float; size: int;
+             mutable free: bool }
+  | Dir of { fd : Unix.dir_handle; mtime: float;
+             mutable free: bool }
+  | Other
 
 val file_type : string -> file_type
+
+val free : file_type -> unit
+val do_not_free : file_type -> unit

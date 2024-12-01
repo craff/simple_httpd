@@ -20,6 +20,12 @@
 #include <openssl/ssl.h>
 #include <openssl/err.h>
 #include <sys/resource.h>
+#include <fcntl.h>
+#ifdef HAS_DIRENT
+#include <dirent.h>
+#else
+#include <sys/dir.h>
+#endif
 
 CAMLprim value caml_byte_sendfile(value out_fd, value in_fd, value offset, value count) {
   CAMLparam0();
@@ -167,22 +173,34 @@ CAMLprim value caml_rlimit_cur() {
 
 CAMLprim value caml_file_type(value name) {
   CAMLparam1(name);
+  CAMLlocal3(d,r,mtime);
   struct stat st;
 
-  long res = stat(String_val(name), &st);
-
-  if (res == -1) res = 0;
+  int fd = open(String_val(name),O_RDONLY);
+  if (fd == -1) r = Val_int(0);
   else {
+    int res = fstat(fd, &st);
+    if (res == -1) r = Val_int(0);
+    mtime = caml_copy_double(st.st_mtime);
     switch (st.st_mode & S_IFMT) {
-    case S_IFBLK:  res = 1; break;
-    case S_IFCHR:  res = 2; break;
-    case S_IFDIR:  res = 3; break;
-    case S_IFIFO:  res = 4; break;
-    case S_IFLNK:  res = 5; break;
-    case S_IFREG:  res = 6; break;
-    case S_IFSOCK: res = 7; break;
-    default:       res = 8; break;
+    case S_IFDIR:
+      d = caml_alloc_small(1, Abstract_tag);
+      DIR_Val(d) = fdopendir(fd);
+      r = caml_alloc_small(3,1);
+      Store_field(r,0,d);
+      Store_field(r,1,mtime);
+      Store_field(r,2,Val_int(1));
+      break;
+    case S_IFREG:
+      r = caml_alloc_small(4,0);
+      Store_field(r,0,Val_int(fd));
+      Store_field(r,1,mtime);
+      Store_field(r,2,Val_int(st.st_size));
+      Store_field(r,3,Val_int(1));
+      break;
+    default:
+      r = Val_int(1); break;
     }
   }
-  CAMLreturn(Val_int(res));
+  CAMLreturn(r);
 }

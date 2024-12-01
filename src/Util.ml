@@ -527,13 +527,22 @@ let fast_concat sep ls =
 
 type file_type =
   | Inexistant
-  | Block
-  | Chr
-  | Dir
-  | Fifo
-  | Flnk
-  | Freg
-  | Sock
-  | Unknown
+  | Reg of { fd : Unix.file_descr; mtime: float; size: int;
+             mutable free: bool }
+  | Dir of { fd : Unix.dir_handle; mtime: float;
+             mutable free: bool }
+  | Other
 
 external file_type : string -> file_type = "caml_file_type"
+
+let free : file_type -> unit = function
+  | Reg { fd; free = true; _ } ->
+     (try Unix.close fd with Unix.Unix_error _ -> ())
+  | Dir { fd; free = true; _ } ->
+     (try Unix.closedir fd with Unix.Unix_error _ -> ())
+  | _ -> ()
+
+let do_not_free : file_type -> unit = function
+  | Reg r -> r.free <- false
+  | Dir r -> r.free <- false
+  | _ -> ()

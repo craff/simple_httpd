@@ -45,7 +45,7 @@ let human_size (x:int) : string =
   else if x >= 1_000 then Printf.sprintf "%d.%dk" (x/1000) ((x/100) mod 100)
   else Printf.sprintf "%db" x
 
-let header_html = Headers.Content_Type, "text/html"
+let header_html = [Headers.Content_Type, "text/html"]
 
 let encode_path s = Util.percent_encode ~skip:(function '/' -> true|_->false) s
 
@@ -79,6 +79,7 @@ module type VFS = sig
   val delete : path -> unit
   val create : path -> (bytes -> int -> int -> unit) * (unit -> unit)
   val read_file : path -> file_info
+  val free : path -> unit
 end
 
 type vfs = (module VFS)
@@ -92,11 +93,12 @@ let vfs_of_dir (top:string) : vfs =
       let name = Util.fast_concat '/' (top :: l) in
       let ft = Util.file_type name in
       (name, ft)
-    let concat (p, _) f = (Filename.concat p f, Util.Unknown)
+    let concat (p, _) f = (Filename.concat p f, Util.Other)
     let to_string ?(prefix="") (p, _) = if prefix = "" then "/" ^ p
                      else "/" ^ Filename.concat prefix p
     let descr = top
-    let is_directory (_,ft) = (ft = Util.Dir)
+    let is_directory = function (_,Util.Dir _) -> true
+                              | _ -> false
     let contains (_,ft) = (ft <> Util.Inexistant)
     let list_dir (f, _) = Sys.readdir f
     let create (f, _) =
@@ -106,29 +108,29 @@ let vfs_of_dir (top:string) : vfs =
       write, close
     let delete (f, _) = Sys.remove f
     let cache = Hashtbl.create 1024
-    let read_file (f, _) =
-      let oc = Unix.openfile f [O_RDONLY] 0 in
-      let stats = Unix.fstat oc in
-      let mtime = Some stats.st_mtime in
-      let content = Fd(oc) in
-      let mtime2, size, headers =
-        try Hashtbl.find cache f with Not_found -> None, None, []
-      in
-      let size, headers =
-        if mtime2 <> mtime then
-          begin
-            let size = if stats.st_kind = S_REG then
-                         Some stats.st_size else None
-            in
-            let mime =  Magic_mime.lookup f in
-            let headers = [(Headers.Content_Type, mime)] in
-            Hashtbl.replace cache f (mtime, size, headers);
-            size, headers
-          end
-        else
-          size,headers
-      in
-      FI { content; size; mtime; headers }
+    let read_file = function
+      | (f, Util.Reg({ fd; mtime; size; _} as fi)) ->
+         let mtime = Some mtime in
+         fi.free <- false;
+         let content = Fd(fd) in
+         let mtime2, size2, headers =
+           try Hashtbl.find cache f
+           with Not_found -> None, None, Headers.empty
+         in
+         let size, headers =
+           if mtime2 <> mtime then
+             begin
+               let mime =  Magic_mime.lookup f in
+               let headers = [Headers.Content_Type, mime] in
+               Hashtbl.replace cache f (mtime, Some size, headers);
+               Some size, headers
+             end
+           else
+             size2,headers
+         in
+         FI { content; size; mtime; headers }
+      | _ -> assert false
+    let free (_, f) = Util.free f
   end in
   (module M)
 
@@ -200,15 +202,20 @@ let add_vfs_ ?addresses ?(filter=(fun x -> (x, fun r -> r)))
     else let prefix = List.rev (Util.split_on_slash prefix) in
          List.fold_left (fun acc s -> Route.exact_path s acc) Route.rest prefix
   in
-  let check must_exists path =
-    let path = VFS.path path in
-    if must_exists && not (VFS.contains path) then Route.pass ();
-    path
+  let do_path ~must_exists fn lpath req =
+    let path = VFS.path lpath in
+    try
+      if must_exists && not (VFS.contains path) then Route.pass ();
+      let r = fn lpath path req in
+      VFS.free path;
+      r
+    with e ->
+      VFS.free path; raise e
   in
   if config.delete then (
     Server.add_route_handler ?addresses ~filter ~meth:DELETE
       server (route())
-      (fun path -> let path = check true path in fun _req ->
+      (do_path ~must_exists:true (fun _lpath path _req ->
            Response.make_string
              (try
                 log (Req 1) (fun k->k "done delete %s"  (VFS.to_string path));
@@ -218,14 +225,14 @@ let add_vfs_ ?addresses ?(filter=(fun x -> (x, fun r -> r)))
                                          (Async.printexn e));
                 Response.fail_raise ~code:internal_server_error
                   "delete fails: %s (%s)"  (VFS.to_string path) (Async.printexn e))
-      ))
+      )))
     else (
       Server.add_route_handler ?addresses ~filter ~meth:DELETE server (route())
         (fun _ _  ->
           Response.fail_raise ~code:method_not_allowed "delete not allowed");
     );
 
-  if config.upload then (
+  if config.upload then
     Server.add_route_handler_stream ?addresses ~meth:PUT server (route())
       ~filter:(fun req ->
           match Request.get_header_int req Headers.Content_Length with
@@ -234,7 +241,7 @@ let add_vfs_ ?addresses ?(filter=(fun x -> (x, fun r -> r)))
                "max upload size is %d" config.max_upload_size
           | _ -> filter req
         )
-      (fun path -> let path = check false path in fun req ->
+      (do_path ~must_exists:false (fun _path path req ->
          let write, close =
            try VFS.create path
            with e ->
@@ -248,19 +255,16 @@ let add_vfs_ ?addresses ?(filter=(fun x -> (x, fun r -> r)))
          close ();
          log (Req 1) (fun k->k "done uploading %s"  (VFS.to_string path));
          Response.make_raw ~code:created "upload successful"
-      )
-  ) else (
+      ))
+    else (
     Server.add_route_handler ?addresses ~filter ~meth:PUT server (route())
       (fun _ _  -> Response.make_raw ~code:method_not_allowed
                      "upload not allowed");
   );
 
-  if config.download then (
+  if config.download then
     Server.add_route_handler ?addresses ~filter ~meth:GET server (route())
-      (fun path ->
-        let lpath = path in
-        let path = check true path in
-        fun req ->
+      (do_path ~must_exists:true (fun lpath path req ->
         if VFS.is_directory path then
           begin
             match config.dir_behavior with
@@ -272,7 +276,7 @@ let add_vfs_ ?addresses ?(filter=(fun x -> (x, fun r -> r)))
                in
                let url = Printf.sprintf "https://%s/%s" host
                            (VFS.to_string ~prefix (VFS.concat path "index.html")) in
-               let headers = [ (Headers.Location, url) ] in
+               let headers = [Headers.Location, url] in
                Response.fail_raise ~headers ~code:Response_code.permanent_redirect
                  "Permanent redirect"
             | _ -> ()
@@ -307,10 +311,10 @@ let add_vfs_ ?addresses ?(filter=(fun x -> (x, fun r -> r)))
           match mtime with
           | None -> (Headers.Cache_Control, "no-store") :: h
           | Some (mtime, mtime_str) ->
-             (Headers.ETag, mtime_str)
-             :: (Headers.Age, string_of_float (Request.start_time req -. mtime))
-             :: (Headers.Cache_Control, "public,no-cache")
-             :: h
+             Headers.((ETag, mtime_str)
+                      :: (Age, (string_of_float (Request.start_time req -. mtime)))
+                      :: (Cache_Control, "public,no-cache")
+                      :: h)
         in
         if VFS.is_directory path then (
           (match info.content with
@@ -321,7 +325,7 @@ let add_vfs_ ?addresses ?(filter=(fun x -> (x, fun r -> r)))
             | Lists | Index_or_lists ->
                let body = html_list_dir ~prefix vfs lpath ~parent in
                log (Req 1) (fun k->k "download index %s" (VFS.to_string path));
-               let (headers, cookies, str) = body req [header_html] in
+               let (headers, cookies, str) = body req header_html in
                Response.make_stream ~headers ~cookies str
             | Forbidden | Index ->
                Response.make_raw ~code:forbidden "listing dir not allowed"
@@ -336,8 +340,8 @@ let add_vfs_ ?addresses ?(filter=(fun x -> (x, fun r -> r)))
           | Path(_, Some (fz, size)) when deflate ->
              let fd = Unix.openfile fz [O_RDONLY] 0 in
              Response.make_raw_file
-               ~headers:(cache_control
-                         ((Headers.Content_Encoding, "deflate")::info.headers))
+               ~headers:(cache_control (
+                         (Headers.Content_Encoding, "deflate"):: info.headers))
                ~code:ok size (Util.Sfd.make fd)
           | Path(f, _) ->
              let fd = Unix.openfile f [O_RDONLY] 0 in
@@ -352,8 +356,8 @@ let add_vfs_ ?addresses ?(filter=(fun x -> (x, fun r -> r)))
                ~code:ok size (Util.Sfd.make fd)
           | String(_, Some sz) when deflate ->
              Response.make_raw
-               ~headers:(cache_control (
-                         (Headers.Content_Encoding, "deflate")::info.headers))
+               ~headers:(cache_control
+                         Headers.((Content_Encoding, "deflate") :: info.headers))
                ~code:ok sz
           | String(s, _) ->
              Response.make_raw
@@ -372,7 +376,7 @@ let add_vfs_ ?addresses ?(filter=(fun x -> (x, fun r -> r)))
           | Dir _ -> assert false
 
         )
-      )
+     )
   ) else (
     Server.add_route_handler ?addresses ~filter ~meth:GET server (route())
       (fun _ _  -> Response.make_raw ~code:method_not_allowed "download not allowed");
@@ -429,7 +433,7 @@ module Embedded_fs = struct
              let sub = create ~mtime:self.emtime () in
              let entry =
                { kind = Dir sub; mtime = Some self.emtime;
-                 size = None; headers = [] }
+                 size = None; headers = Headers.empty }
              in
              Hashtbl.add self.entries d entry;
              sub
@@ -438,7 +442,7 @@ module Embedded_fs = struct
     in
     loop self path
 
-  let add_file (self:t) ~path ?mtime ?(headers=[]) content : unit =
+  let add_file (self:t) ~path ?mtime ?(headers=Headers.empty) content : unit =
     let path = Util.split_on_slash path in
     if contains_dotdot path then invalid_arg "file contains ..";
     let mtime = match mtime with Some t -> t | None -> self.emtime in
@@ -452,13 +456,13 @@ module Embedded_fs = struct
     let entry = { mtime = Some mtime; headers; size = Some size; kind } in
     add_file_gen (self:t) ~path entry
 
-  let add_dynamic (self:t) ~path ?mtime ?(headers=[]) content : unit =
+  let add_dynamic (self:t) ~path ?mtime ?(headers=Headers.empty) content : unit =
     let path = Util.split_on_slash path in
     if contains_dotdot path then invalid_arg "file contains ..";
     let entry = { mtime; headers; size = None; kind = Dynamic content} in
     add_file_gen (self:t) ~path entry
 
-  let add_path (self:t) ~path ?mtime ?(headers=[]) ?deflate rpath : unit =
+  let add_path (self:t) ~path ?mtime ?(headers=Headers.empty) ?deflate rpath : unit =
     (*let fz = rpath ^".zlib" in *)
     let path = Util.split_on_slash path in
     if contains_dotdot path then invalid_arg "file contains ..";
@@ -485,7 +489,7 @@ module Embedded_fs = struct
     if path=[] then Some { mtime = Some self.emtime;
                            size = None;
                            kind = Dir self;
-                           headers =[] }
+                           headers = Headers.empty }
     else loop self path
 
   let to_vfs self : vfs =
@@ -519,6 +523,6 @@ module Embedded_fs = struct
 
       let create _ = failwith "Embedded_fs is read-only"
       let delete _ = failwith "Embedded_fs is read-only"
-
+      let free   _ = ()
     end in (module M)
 end
