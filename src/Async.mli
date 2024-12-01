@@ -37,8 +37,6 @@ module Semaphore : sig
   val delete : t -> unit
 end
 
-type any_continuation (** internal use only *)
-
 (** Record describing clients *)
 type client = private {
     id : int;                         (** Unique identifier *)
@@ -51,7 +49,6 @@ type client = private {
                                           modified once after ssl negociation *)
     mutable cont : bool;              (** Read the next request *)
     mutable session : session option; (** Session *)
-    mutable acont : any_continuation; (** internal use *)
     mutable start_time : float;       (** start of request *)
     mutable timeout_ref : float;      (** reference for timeout, usually start_time,
                                           except if [Async.reset_timeout] is used*)

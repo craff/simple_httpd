@@ -14,12 +14,6 @@ exception EndHandling
 exception ClosedByHandler
 exception TimeOut
 
-(** Generic type for continuation: used only to discontinue in
-    cas of TimeOut *)
-type any_continuation =
-    N : any_continuation
-  | C : ('a,unit) continuation -> any_continuation
-
 type client =
   { id : int
   ; mutable connected : bool
@@ -30,7 +24,6 @@ type client =
   ; mutable ssl : Ssl.socket option
   ; mutable cont : bool (* set to false to stop reading request *)
   ; mutable session : session option
-  ; mutable acont : any_continuation
   ; mutable start_time : float (* last time request started *)
   ; mutable timeout_ref : float
   ; mutable locks : mutex list
@@ -75,7 +68,6 @@ let fake_client =
       connected = false;
       session = None;
       cont = true;
-      acont = N;
       id = -1;
       buf = Buffer.create 16;
       start_time = 0.0;
@@ -447,7 +439,6 @@ let rec read c s o l =
         perform (Io {sock = c.sock; read = true });
         read c s o l
 
-
 let rec write c s o l =
   try
     apply c Util.single_write Ssl.write s o l
@@ -646,7 +637,6 @@ let loop listens pipe timeout handler () =
   (* O(N) when N is the current number of sleep. Could use Map ?*)
   let add_sleep t cont =
     let cl = get_client () in
-    cl.acont <- C cont;
     let rec fn acc = function
       | [] -> List.rev_append acc [(t,cont,cl)]
       | (t',_,_)::_ as l when t < t' -> List.rev_append acc ((t,cont,cl)::l)
@@ -690,7 +680,6 @@ let loop listens pipe timeout handler () =
   let add_lock : Mutex.t -> (unit, unit) continuation -> unit =
     fun lk cont ->
     let cl = get_client () in
-    cl.acont <- C cont;
     let info = { ty = Lock ; client = cl
                ; pd = Wait { cont; read = false }
                }
@@ -708,7 +697,6 @@ let loop listens pipe timeout handler () =
   let add_decr : Semaphore.t -> (unit, unit) continuation -> unit =
     fun lk cont ->
     let cl = get_client () in
-    cl.acont <- C cont;
     let info = { ty = Decr ; client = cl
                ; pd = Wait { cont; read = false }
                }
@@ -881,7 +869,7 @@ let loop listens pipe timeout handler () =
                             ; connected = true; session = None; cont = true
                             ; start_time = now; timeout_ref = now
                             ; locks = []
-                            ; acont = N; buf = Buffer.create 4_096
+                            ; buf = Buffer.create 4_096
                             ; accept_by = index; last_seen_cell = LL.fake_cell
                             ; close = (fun () -> close ~client Exit)
                       }
@@ -920,7 +908,6 @@ let loop listens pipe timeout handler () =
          if cl.connected then
            begin
              dinfo.cur_client <-cl;
-             cl.acont <- N;
              match e with
              | Hup ->
                 cl.close ()
@@ -935,7 +922,6 @@ let loop listens pipe timeout handler () =
          if cl.connected then
            begin
              dinfo.cur_client <- cl;
-             cl.acont <- N;
              continue cont ();
            end
 
