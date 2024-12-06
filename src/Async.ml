@@ -854,6 +854,8 @@ let loop listens pipe timeout handler () =
                add_ready (Action({ cont; read }, info, e))
             | Wait _ -> assert false
        end
+    | exception e ->
+       Log.f (Exc 0) (fun k -> k "Exception in spawn %s" (Printexc.to_string e))
   in
   let step () =
       match Queue.take ready with
