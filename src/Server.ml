@@ -249,12 +249,11 @@ let handle_client_ (self:t) (client:Async.client) : unit =
   let oc  = Output.create ~buf_size:self.buf_size client in
   let is = Input.of_client ~buf_size:self.buf_size client in
   while client.cont do
-    try
-      match Request.parse_req_start ~client ~buf is with
-      | None ->
-         Async.stop_client client (* client is done *)
+    match Request.parse_req_start ~client ~buf is with
+    | None ->
+       Async.stop_client client (* client is done *)
 
-      | Some req ->
+    | Some req ->
        try
          log (Req 1) (fun k->k "req: %s" (Format.asprintf "@[%a@]" Request.pp_ req));
 
@@ -264,55 +263,42 @@ let handle_client_ (self:t) (client:Async.client) : unit =
          let (req, filter, handler) = Route.find self.handlers req in
          (* handle expect/continue *)
          begin match Request.get_header ~f:String.trim req Headers.Expect with
-          | Some "100-continue" ->
+         | Some "100-continue" ->
             log (Req 1) (fun k->k "send back: 100 CONTINUE");
             Response.output_ (Request.meth req) oc (Response.make_raw ~code:continue "");
-            (* CHECK !!! *)
-          | Some s -> Response.fail_raise ~code:expectation_failed
-                        "unknown expectation %s" s
-          | None -> ()
-        end;
-
-        (* now actually read request's body into a stream *)
-        let req =
-          Request.parse_body_ ~tr_stream:(fun s->s) ~buf req
-        in
-
-        (* how to reply *)
-        let resp r =
-          let r = filter r in
-          if Headers.get Headers.Connection r.Response.headers = Some "close" then
-            Async.stop_client client;
-          Response.output_ (Request.meth req) oc r;
-          log (Req 0) (fun k -> k "response code %d sent after %fms" (r.code :> int)
-                                    (1e3 *. (Unix.gettimeofday () -. req.start_time)));
-        in
-        (* call handler *)
-        handler oc req ~resp;
-        if client.cont then Async.yield ()
-      with
-      | Headers.Bad_req (c,s,headers,cookies) ->
-         log (Req 0) (fun k -> k "not 200 status: %d (%s)" (c :> int) s);
-         let res = Response.make_raw ~headers ~cookies ~code:c s in
-         begin
-           try Response.output_ (Request.meth req) oc res
-           with Sys_error _ | Unix.Unix_error _ -> ()
+         (* CHECK !!! *)
+         | Some s -> Response.fail_raise ~code:expectation_failed
+                       "unknown expectation %s" s
+         | None -> ()
          end;
-         if not ((c :> int) < 500) then Async.stop_client client else Async.yield ()
-      with
-      | Sys_error _ | Unix.Unix_error _
-        | Ssl.Write_error _ | Ssl.Read_error _
-        | Async.ClosedByHandler | Async.TimeOut as e ->
-         log (Exc 1) (fun k -> k "probably broken connection (%s)"
-                                    (Async.printexn e));
-         Async.stop_client client (* connection broken somehow *)
 
-      | e ->
-         log (Exc 0) (fun k -> k "internal server error (%s)"
-                                    (Async.printexn e));
-         Async.stop_client client
+         (* now actually read request's body into a stream *)
+         let req =
+           Request.parse_body_ ~tr_stream:(fun s->s) ~buf req
+         in
+
+         (* how to reply *)
+         let resp r =
+           let r = filter r in
+           if Headers.get Headers.Connection r.Response.headers = Some "close" then
+             Async.stop_client client;
+           Response.output_ (Request.meth req) oc r;
+           log (Req 0) (fun k -> k "response code %d sent after %fms" (r.code :> int)
+                                   (1e3 *. (Unix.gettimeofday () -. req.start_time)));
+         in
+         (* call handler *)
+         handler oc req ~resp;
+         if client.cont then Async.yield ()
+       with
+       | Headers.Bad_req (c,s,headers,cookies) ->
+          log (Req 0) (fun k -> k "not 200 status: %d (%s)" (c :> int) s);
+          let res = Response.make_raw ~headers ~cookies ~code:c s in
+          begin
+            try Response.output_ (Request.meth req) oc res
+            with Sys_error _ | Unix.Unix_error _ -> ()
+          end;
+          if not ((c :> int) < 500) then Async.stop_client client else Async.yield ()
   done;
-  client.close ();
   log (Sch 0) (fun k->k "done with client, exiting");
   ()
 

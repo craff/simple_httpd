@@ -886,24 +886,28 @@ let loop listens pipe timeout handler () =
          Unix.(setsockopt sock TCP_NODELAY true); (* not clearly usefull *)
          Polly.(add poll_list sock Events.(inp lor out lor et lor rdhup lor hup lor err));
          spawn (fun () ->
-             begin
-               match linfo.ssl with
-               | Some ctx ->
-                  let chan = Ssl.embed_socket sock ctx in
-                  let rec fn () =
-                    try
-                      Ssl.accept chan; 1
-                    with
-                    | Ssl.(Accept_error(Error_want_read|Error_want_write)) ->
-                       perform (Io {sock; read = false });
-                       fn ()
-                  in
+             try
+               begin
+                 match linfo.ssl with
+                 | Some ctx ->
+                    let chan = Ssl.embed_socket sock ctx in
+                    let rec fn () =
+                      try
+                        Ssl.accept chan; 1
+                      with
+                      | Ssl.(Accept_error(Error_want_read|Error_want_write|Error_want_accept)) ->
+                         perform (Io {sock; read = false });
+                         fn ()
+                    in
                   ignore (fn ());
                   client.ssl <- Some chan;
                   Log.f (Req 2) (fun k -> k "ssl connection established");
-               | None -> ()
-             end;
-             handler client; close EndHandling)
+                 | None -> ()
+               end;
+               handler client;
+               close EndHandling
+             with
+             | e -> close e)
       | Action ({ cont; read }, p, e) ->
          p.pd <- NoEvent;
          let cl = p.client in
