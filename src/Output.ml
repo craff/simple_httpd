@@ -5,6 +5,8 @@ type t = { fd : Async.client; b: Bytes.t
 let create ?(buf_size=16* 4_096) fd =
   {fd; s=buf_size; o = 0; b=Bytes.make buf_size ' '}
 
+let sock oc = oc.fd.sock
+
 let push oc =
   assert(oc.o = oc.s);
   let w = Async.write oc.fd oc.b 0 oc.s in
@@ -138,4 +140,4 @@ let sendfile oc n fd =
   flush oc;
   while !r < n  do
     r := !r + Async.sendfile oc.fd fd !r (n - !r);
-  done; (* without cork, it may not send the last bytes*)
+  done;

@@ -4,6 +4,7 @@
 type t
 
 val create : ?buf_size:int -> Async.client -> t
+val sock : t -> Unix.file_descr
 val flush : t -> unit
 val close : t -> unit
 val add_char : t -> char -> unit

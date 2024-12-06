@@ -97,6 +97,7 @@ let pp out self : unit =
     (self.code :> int) Headers.pp self.headers pp_body self.body
 
 let output_ meth (oc:Output.t) (self:t) : unit =
+  Util.setsockopt_cork (Output.sock oc) true;
   Output.add_string oc "HTTP/1.1 ";
   Output.add_decimal oc (self.code :> int);
   Output.add_char oc ' ';
@@ -136,16 +137,20 @@ let output_ meth (oc:Output.t) (self:t) : unit =
   else
     begin
       match body with
-      | String "" | Void -> ()
-      | String s         -> Output.output_str oc s
+      | String "" | Void ->
+         Output.flush oc;
+      | String s         ->
+         Output.output_str oc s;
+         Output.flush oc;
       | File {size; fd; close} ->
          (try Output.sendfile oc size (Util.Sfd.get fd); close fd
           with e -> close fd; raise e)
       | Stream {inp;synch;close} ->
          (try
             Output.output_chunked ?synch oc inp;
+            Output.flush oc;
             close inp;
           with e -> close inp; raise e)
     end;
-  Output.flush oc;
+  Util.setsockopt_cork (Output.sock oc) false;
   self.post ()
