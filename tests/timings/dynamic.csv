@@ -1,7 +1,7 @@
 ,min, mean, 50%, 90%, 95%, 99%, max
-simple_httpd chaml,  97.61µs, 385.36µs, 377.285µs, 503.694µs, 557.566µs, 948.578µs, 3.725ms
-simple_httpd chaml ssl,  64.521µs, 438.986µs, 414.415µs, 551.511µs, 621.164µs, 1.057ms, 8.504ms
-nginx php,  454.02µs, 1.039ms, 999.953µs, 1.369ms, 1.478ms, 1.732ms, 10.493ms
-nginx php ssl,  245.255µs, 1.038ms, 985.668µs, 1.382ms, 1.508ms, 1.869ms, 10.478ms
-apache php,  325.764µs, 1.063ms, 1.04ms, 1.391ms, 1.486ms, 1.823ms, 4.301ms
-apache php ssl,  238.882µs, 1.168ms, 1.139ms, 1.567ms, 1.774ms, 2.664ms, 5.912ms
+simple_httpd chaml,  63.4µs, 191.25µs, 170.658µs, 257.135µs, 288.554µs, 556.674µs, 2.183ms
+simple_httpd chaml ssl,  78.703µs, 250.868µs, 220.711µs, 370.536µs, 455.17µs, 712.652µs, 3.518ms
+nginx php,  275.443µs, 524.816µs, 472.644µs, 701.299µs, 777.72µs, 1.047ms, 8.066ms
+nginx php ssl,  314.387µs, 882.029µs, 828.559µs, 1.126ms, 1.218ms, 1.678ms, 11.638ms
+apache php,  316.369µs, 897.188µs, 896.727µs, 1.092ms, 1.162ms, 1.567ms, 4.198ms
+apache php ssl,  429.012µs, 1.066ms, 984.636µs, 1.218ms, 1.653ms, 3.491ms, 5.77ms

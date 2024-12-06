@@ -328,9 +328,9 @@ let save_load (self:t) =
            close_in ch;
            Sys.remove self.restart_file
          with exn ->
-               Printf.eprintf "FATAL ERROR: failed to load %s (%s)\n%!"
-                 name (Printexc.to_string exn);
-               exit 1
+           Printf.eprintf "FATAL ERROR: failed to load %s (%s)\n%!"
+             name (Printexc.to_string exn);
+           ()
        end
     | _ -> ()
   in

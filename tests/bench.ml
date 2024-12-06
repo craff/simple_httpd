@@ -41,10 +41,9 @@ let measure server cmd values =
     try
       while true do
         let line = input_line ch in
-        (try
-          ignore (Str.search_forward err_regexp line 0);
-          Printf.printf "%s\n%!" (Str.matched_string line);
-          with Not_found -> ());
+        if String.starts_with ~prefix:"requests" line ||
+             String.starts_with ~prefix:"time" line
+        then Printf.printf "%s\n%!" line;
         (try Scanf.sscanf line "finished in %f%[ms], %f "
                (fun _ _ f -> Printf.printf "%s\n%!" line; res := f)
         with _ -> ());
