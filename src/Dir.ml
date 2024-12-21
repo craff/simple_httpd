@@ -202,13 +202,16 @@ let add_vfs_ ?addresses ?(filter=(fun x -> (x, fun r -> r)))
     else let prefix = List.rev (Util.split_on_slash prefix) in
          List.fold_left (fun acc s -> Route.exact_path s acc) Route.rest prefix
   in
-  let do_path ~must_exists fn lpath req =
+  let do_path ~must_exists fn lpath =
     let path = VFS.path lpath in
     try
-      if must_exists && not (VFS.contains path) then Route.pass ();
-      let r = fn lpath path req in
-      VFS.free path;
-      r
+      if must_exists && not (VFS.contains path) then (
+        Log.f (Req 0) (fun k -> k "PASS IN DIR");
+        Route.pass ());
+      (fun req ->
+        let r = fn lpath path req in
+        VFS.free path;
+        r)
     with e ->
       VFS.free path; raise e
   in
