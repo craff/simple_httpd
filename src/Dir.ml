@@ -206,7 +206,6 @@ let add_vfs_ ?addresses ?(filter=(fun x -> (x, fun r -> r)))
     let path = VFS.path lpath in
     try
       if must_exists && not (VFS.contains path) then (
-        Log.f (Req 0) (fun k -> k "PASS IN DIR");
         Route.pass ());
       (fun req ->
         let r = fn lpath path req in
