@@ -61,100 +61,12 @@ let measure server cmd values =
 
 let nb_conn = [10;50;100;200;300;400;500;600;800;1000;1200;1500;2000]
 
-(* ======================== TEST of .chaml ====================== *)
 let csv = ref []
-
-let files = ["bar.html", 50_000]
-let values = List.(flatten (map (fun file -> map (fun n -> (file,n)) nb_conn) files))
-
-let _ = csv := add_column !csv "file" fst (List.map fst values)
-let _ = csv := add_column !csv "nbc" string_of_int (List.map snd values)
-
-let data =
-  Printf.printf "simple_httpd chaml\n%!";
-  measure
-    (Some "../_build/default/examples/echo.exe --port 8080 -c 2100 -j 8 --log-requests 0 --log-exceptions 0")
-    (fun ((file, d), c) ->
-      Printf.sprintf "h2load --h1 -m 8 -c %d -n %d http://localhost:8080/vfs/%s"
-        c d file)
-    values
-
-let _ = csv := add_column !csv "simple_httpd chaml" string_of_float data
-
-let data =
-  Printf.printf "simple_httpd chaml ssl\n%!";
-  measure
-    (Some "../_build/default/examples/echo.exe --port 8443 -c 2100 -j 8 --ssl ../_build/default/tests/domain.crt ../_build/default/tests/domain.key -c 2100 -j 8 --port=8443 --log-requests 0 --log-exceptions 0")
-    (fun ((file, d), c) ->
-      Printf.sprintf "h2load --h1 -m 8 -c %d -n %d https://localhost:8443/vfs/%s"
-        c d file)
-    values
-
-let _ = csv := add_column !csv "simple_httpd chaml ssl" string_of_float data
-(*
-let data =
-  Printf.printf "simple_https chaml ssl+ktls\n%!";
-  measure
-    (Some "../_build/default/examples/echo.exe -c 2100 -j 8 --ktls --ssl ../_build/default/tests/domain.crt ../_build/default/tests/domain.key -c 2100 -j 8 --port=8444 --log-requests 0 --log-exceptions 0")
-    (fun ((file, d), c) ->
-      Printf.sprintf "h2load --h1 -m 8 -c %d -n %d https://localhost:8444/vfs/%s"
-        c d file)
-    values
-
-let _ = csv := add_column !csv "simple_httpd chaml ssl+ktls" string_of_float data
- *)
-let data =
-  Printf.printf "apache php\n%!";
-  measure None
-    (fun ((file, d), c) ->
-      let file = Filename.remove_extension file ^ ".php" in
-      Printf.sprintf "h2load --h1 -m 8 -c %d -n %d http://localhost:80/nginx/%s"
-        c d file)
-    values
-
-let _ = csv := add_column !csv "apache php" string_of_float data
-
-let data =
-  Printf.printf "apache php ssl\n%!";
-  measure None
-    (fun ((file, d), c) ->
-      let file = Filename.remove_extension file ^ ".php" in
-      Printf.sprintf "h2load --h1 -m 8 -c %d -n %d https://localhost:443/nginx/%s"
-        c d file)
-    values
-
-let _ = csv := add_column !csv "apache php ssl" string_of_float data
-
-let data =
-  Printf.printf "nginx php\n%!";
-  measure None
-    (fun ((file, d), c) ->
-      let file = Filename.remove_extension file ^ ".php" in
-      Printf.sprintf "h2load --h1 -m 8 -c %d -n %d http://localhost:7080/%s"
-        c d file)
-    values
-
-let _ = csv := add_column !csv "nginx php" string_of_float data
-
-let data =
-  Printf.printf "nginx php ssl\n%!";
-  measure None
-    (fun ((file, d), c) ->
-      let file = Filename.remove_extension file ^ ".php" in
-      Printf.sprintf "h2load --h1 -m 8 -c %d -n %d https://localhost:7443/%s"
-        c d file)
-    values
-
-let _ = csv := add_column !csv "nginx php ssl" string_of_float data
-
-let _ = Csv.save "timings/bench_chaml.csv" !csv
 
 (* ======================== TEST of static files ====================== *)
 
 let files = ["foo_1k", 50_000; "foo_50k", 10_000; "foo_500k", 2_000 ]
 let values = List.(flatten (map (fun file -> map (fun n -> (file,n)) nb_conn) files))
-
-let _ = csv := []
 
 let _ = csv := add_column !csv "file" fst (List.map fst values)
 let _ = csv := add_column !csv "nbc" string_of_int (List.map snd values)
@@ -267,3 +179,91 @@ let data =
 let _ = csv := add_column !csv "apache ssl" string_of_float data
 
 let _ = Csv.save "timings/bench.csv" !csv
+
+(* ======================== TEST of .chaml ====================== *)
+
+let files = ["bar.html", 50_000]
+let values = List.(flatten (map (fun file -> map (fun n -> (file,n)) nb_conn) files))
+let _ = csv := []
+
+let _ = csv := add_column !csv "file" fst (List.map fst values)
+let _ = csv := add_column !csv "nbc" string_of_int (List.map snd values)
+
+let data =
+  Printf.printf "simple_httpd chaml\n%!";
+  measure
+    (Some "../_build/default/examples/echo.exe --port 8080 -c 2100 -j 8 --log-requests 0 --log-exceptions 0")
+    (fun ((file, d), c) ->
+      Printf.sprintf "h2load --h1 -m 8 -c %d -n %d http://localhost:8080/vfs/%s"
+        c d file)
+    values
+
+let _ = csv := add_column !csv "simple_httpd chaml" string_of_float data
+
+let data =
+  Printf.printf "simple_httpd chaml ssl\n%!";
+  measure
+    (Some "../_build/default/examples/echo.exe --port 8443 -c 2100 -j 8 --ssl ../_build/default/tests/domain.crt ../_build/default/tests/domain.key -c 2100 -j 8 --port=8443 --log-requests 0 --log-exceptions 0")
+    (fun ((file, d), c) ->
+      Printf.sprintf "h2load --h1 -m 8 -c %d -n %d https://localhost:8443/vfs/%s"
+        c d file)
+    values
+
+let _ = csv := add_column !csv "simple_httpd chaml ssl" string_of_float data
+(*
+let data =
+  Printf.printf "simple_https chaml ssl+ktls\n%!";
+  measure
+    (Some "../_build/default/examples/echo.exe -c 2100 -j 8 --ktls --ssl ../_build/default/tests/domain.crt ../_build/default/tests/domain.key -c 2100 -j 8 --port=8444 --log-requests 0 --log-exceptions 0")
+    (fun ((file, d), c) ->
+      Printf.sprintf "h2load --h1 -m 8 -c %d -n %d https://localhost:8444/vfs/%s"
+        c d file)
+    values
+
+let _ = csv := add_column !csv "simple_httpd chaml ssl+ktls" string_of_float data
+ *)
+let data =
+  Printf.printf "apache php\n%!";
+  measure None
+    (fun ((file, d), c) ->
+      let file = Filename.remove_extension file ^ ".php" in
+      Printf.sprintf "h2load --h1 -m 8 -c %d -n %d http://localhost:80/nginx/%s"
+        c d file)
+    values
+
+let _ = csv := add_column !csv "apache php" string_of_float data
+
+let data =
+  Printf.printf "apache php ssl\n%!";
+  measure None
+    (fun ((file, d), c) ->
+      let file = Filename.remove_extension file ^ ".php" in
+      Printf.sprintf "h2load --h1 -m 8 -c %d -n %d https://localhost:443/nginx/%s"
+        c d file)
+    values
+
+let _ = csv := add_column !csv "apache php ssl" string_of_float data
+
+let data =
+  Printf.printf "nginx php\n%!";
+  measure None
+    (fun ((file, d), c) ->
+      let file = Filename.remove_extension file ^ ".php" in
+      Printf.sprintf "h2load --h1 -m 8 -c %d -n %d http://localhost:7080/%s"
+        c d file)
+    values
+
+let _ = csv := add_column !csv "nginx php" string_of_float data
+
+let data =
+  Printf.printf "nginx php ssl\n%!";
+  measure None
+    (fun ((file, d), c) ->
+      let file = Filename.remove_extension file ^ ".php" in
+      Printf.sprintf "h2load --h1 -m 8 -c %d -n %d https://localhost:7443/%s"
+        c d file)
+    values
+
+let _ = csv := add_column !csv "nginx php ssl" string_of_float data
+
+let _ = Csv.save "timings/bench_chaml.csv" !csv

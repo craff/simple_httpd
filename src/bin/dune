@@ -5,7 +5,7 @@
   (package simple_httpd)
   (modules http_of_dir)
   (flags :standard -warn-error -3)
-  (ocamlopt_flags -O3 -g)
+  (ocamlopt_flags -O3)
   (libraries simple_httpd magic-mime))
 
 (executable

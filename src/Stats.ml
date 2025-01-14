@@ -161,7 +161,7 @@ let filter () =
                    vertical-align: top;
                    padding: 3px;
                    white-space: nowrap; }
-           .info { text-align; left;
+           .info { text-align: left;
                    vertical-align: top;
                    padding: 3px; }
            .info div {
