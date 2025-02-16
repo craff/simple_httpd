@@ -94,8 +94,9 @@ let vfs_of_dir (top:string) : vfs =
       let ft = Util.file_type name in
       (name, ft)
     let concat (p, _) f = (Filename.concat p f, Util.Other)
-    let to_string ?(prefix="") (p, _) = if prefix = "" then "/" ^ p
-                     else "/" ^ Filename.concat prefix p
+    let to_string ?(prefix="") (p, _) =
+      let res = Filename.concat prefix p in
+      if String.length res = 0 || res.[0] != '/' then "/" ^ res else res
     let descr = top
     let is_directory = function (_,Util.Dir _) -> true
                               | _ -> false
@@ -276,8 +277,12 @@ let add_vfs_ ?addresses ?(filter=(fun x -> (x, fun r -> r)))
                  | Some h -> h
                  | None -> raise Not_found
                in
-               let url = Printf.sprintf "https://%s/%s" host
-                           (VFS.to_string ~prefix (VFS.concat path "index.html")) in
+               let url =
+                 Printf.sprintf "https://%s%s" host
+                   (VFS.to_string ~prefix (VFS.concat path "index.html"))
+               in
+               Log.f (Exc 0) (fun k -> k "redirect %s %s => %s"
+                                         prefix (VFS.to_string path) url);
                let headers = [Headers.Location, url] in
                Response.fail_raise ~headers ~code:Response_code.permanent_redirect
                  "Permanent redirect"
@@ -499,7 +504,9 @@ module Embedded_fs = struct
       type path = string list
       let path l = l
       let concat l x = l @ [x]
-      let to_string ?(prefix="") l = Util.fast_concat '/' ("" :: prefix :: l)
+      let to_string ?(prefix="") l =
+        let res = Util.fast_concat '/' (prefix :: l) in
+        if String.length res = 0 || res.[0] != '/' then "/" ^ res else res
 
       let descr = "Embedded_fs"
 

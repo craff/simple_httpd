@@ -174,8 +174,10 @@ let html ?log_size ?in_head ?in_body self req headers =
                let dinfo = Async.all_domain_info.((did :> int)) in
                let pps = dinfo.pendings in
                echo {html|<li><?=
-                   Printf.sprintf "Thread %d: %d connections" did
-                                  (Atomic.get (dinfo.nb_connections))?>|html};
+                   Printf.sprintf "Thread %d: %d=%d connections" did
+                                  (Util.LinkedList.size (dinfo.last_seen))
+                                  (Atomic.get (dinfo.nb_connections))
+                               ?>|html};
              done
            ?></ul>
      <?ml
