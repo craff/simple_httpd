@@ -262,23 +262,30 @@ module Log = struct
     let filename = fname i in
     let ch = open_out_gen [Open_wronly; Open_append; Open_creat] !log_perm filename in
     let fd = Unix.descr_of_out_channel ch in
-    let size = (Unix.fstat fd).st_size in
+    let stat = Unix.fstat fd in
+    let ctime = stat.st_ctime in
+    let size = stat.st_size in
     if size <= 0 then
       Printf.fprintf ch "%.6f %2d %10d Log0: log created\n%!"
         (Unix.gettimeofday ()) i (-1);
-    ch, Format.formatter_of_out_channel ch
+    ch, Format.formatter_of_out_channel ch, ctime
 
   let get_log id =
-    let ch, fmt = !log_files.(id) in
+    let open Unix in
+    let ch, fmt, ctime = !log_files.(id) in
     (* reopen log file it no link: logrotate might delete it*)
-    if Unix.(fstat (Unix.descr_of_out_channel ch)).st_nlink < 1 then
-      begin
-        (try close_out ch with _ -> ());
-        let _, fmt as c = open_log id in
-        !log_files.(id) <- c;
-        fmt
-      end
-    else fmt
+    let reopen () =
+      (try close_out ch with Unix_error _ | Sys_error _ -> ());
+      let _, fmt, _ as c = open_log id in
+      !log_files.(id) <- c;
+      fmt
+    in
+    try
+      let stat = fstat (descr_of_out_channel ch) in
+      if ctime >= 0.0 && (stat.st_nlink < 1 || ctime <> stat.st_ctime)
+      then reopen () else fmt
+    with Unix_error _ -> reopen ()
+
 
   let set_log_folder ?(basename="log") ?(perm=0o700) folder nb_dom =
     log_perm := perm;
@@ -294,9 +301,10 @@ module Log = struct
   let init_log_folder nb_dom =
     if Array.length !log_files < nb_dom then
       begin
-        log_files := Array.init nb_dom
-                       (fun _ -> let stdout = Unix.out_channel_of_descr Unix.stdout in
-                                 (stdout, Format.formatter_of_out_channel stdout))
+        log_files :=
+          Array.init nb_dom
+            (fun _ -> let stdout = Unix.out_channel_of_descr Unix.stdout in
+                      (stdout, Format.formatter_of_out_channel stdout, -1.0))
       end
 
   let f ty k =
@@ -308,7 +316,11 @@ module Log = struct
           let log,lvl = str_log ty in
           Format.fprintf ch "%.6f %2d %10d %s%d: "
             (Unix.gettimeofday ()) id cl.id log lvl;
-          Format.kfprintf (fun oc -> Format.fprintf oc "\n%!") ch fmt
+          Format.kfprintf (fun oc ->
+              try
+                Format.fprintf oc "\n%!"
+              with
+                Sys_error _ | Unix.Unix_error _ -> ()) ch fmt
         )
     )
 
