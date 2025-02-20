@@ -41,7 +41,7 @@ module Make(Login:Login) = struct
             Log.f (Aut 0) (fun k -> k "Login failed for %S" login);
             None
         with Not_found ->
-          Log.f (Aut 0) (fun k -> k "Login failed: bad form sent");
+          Log.f (Aut 0) (fun k -> k "Need login");
           None
       in
       let redirect cookies =

@@ -963,7 +963,7 @@ let loop listens pipe timeout handler () =
         step ()
       done
     with
-    | FailHandling -> ()
+    | FailHandling -> inner_loop ()
     | e -> Log.f (Exc 0) (fun k -> k "UNEXPECTED EXCEPTION IN INNER LOOP: %s"
                                      (Printexc.to_string e));
            inner_loop ()
