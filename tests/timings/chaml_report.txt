@@ -1,6 +1,6 @@
-Requests      [total, rate, throughput]         2000, 1000.31, 1000.22
-Duration      [total, attack, wait]             2s, 1.999s, 184.395µs
-Latencies     [min, mean, 50, 90, 95, 99, max]  23.281µs, 190.636µs, 184.532µs, 253.537µs, 285.752µs, 523.307µs, 1.748ms
+Requests      [total, rate, throughput]         2000, 1000.23, 1000.11
+Duration      [total, attack, wait]             2s, 2s, 238.77µs
+Latencies     [min, mean, 50, 90, 95, 99, max]  28.202µs, 202.396µs, 193.491µs, 273.628µs, 309.301µs, 512.795µs, 1.166ms
 Bytes In      [total, mean]                     898000, 449.00
 Bytes Out     [total, mean]                     0, 0.00
 Success       [ratio]                           100.00%
