@@ -86,31 +86,46 @@ type vfs = (module VFS)
 
 let vfs_of_dir (top:string) : vfs =
   let module M = struct
-    type path = string * Util.file_type
+    type path = string * string list * Util.file_type
     let path l =
       if contains_dotdot l then
         Response.fail_raise ~code:forbidden "Path is forbidden";
       let name = Util.fast_concat '/' (top :: l) in
       let ft = Util.file_type name in
-      (name, ft)
-    let concat (p, _) f = (Filename.concat p f, Util.Other)
-    let to_string ?(prefix="") (p, _) =
-      let res = Filename.concat prefix p in
+      (name, l, ft)
+    let concat (_ , l, _) f = path (l @ [f])
+    let to_string ?(prefix="") (_, l, _) =
+      let res = Util.fast_concat '/' (prefix :: l) in
       if String.length res = 0 || res.[0] != '/' then "/" ^ res else res
     let descr = top
-    let is_directory = function (_,Util.Dir _) -> true
-                              | _ -> false
-    let contains (_,ft) = (ft <> Util.Inexistant)
-    let list_dir (f, _) = Sys.readdir f
-    let create (f, _) =
+    let is_directory =
+      function (_,_,Util.Dir _) -> true
+             | _ -> false
+    let contains (_,_,ft) = (ft <> Util.Inexistant)
+    let list_dir =
+      function (_,_,Util.Dir { fd; _ }) ->
+                begin
+                  let r = ref [] in
+                  try
+                    while true do
+                      let path = Unix.readdir fd in
+                      if String.length path > 0 && path <> ".."
+                         && path <> "." then
+                        r := path :: !r
+                    done;
+                    assert false
+                  with End_of_file -> Array.of_list !r
+                end
+             | _ -> [||]
+    let create (f, _, _) =
       let oc = open_out_bin f in
       let write = output oc in
       let close() = close_out oc in
       write, close
-    let delete (f, _) = Sys.remove f
+    let delete (f, _, _) = Sys.remove f
     let cache = Hashtbl.create 1024
     let read_file = function
-      | (f, Util.Reg({ fd; mtime; size; _} as fi)) ->
+      | (f, _, Util.Reg({ fd; mtime; size; _} as fi)) ->
          let mtime = Some mtime in
          fi.free <- false;
          let content = Fd(fd) in
@@ -130,74 +145,100 @@ let vfs_of_dir (top:string) : vfs =
              size2,headers
          in
          FI { content; size; mtime; headers }
-      | _ -> assert false
-    let free (_, f) = Util.free f
+      | (f, _, Util.Dir({ fd; mtime; _})) ->
+         let mtime = Some mtime in
+         let content = Dir(fd) in
+         let mtime2, size2, headers =
+           try Hashtbl.find cache f
+           with Not_found -> None, None, Headers.empty
+         in
+         let size, headers =
+           if mtime2 <> mtime then
+             begin
+               let mime =  Magic_mime.lookup f in
+               let headers = [Headers.Content_Type, mime] in
+               Hashtbl.replace cache f (mtime, None, headers);
+               None, headers
+             end
+           else
+             size2,headers
+         in
+         FI { content; size; mtime; headers }
+      | _ -> raise Not_found
+    let free (_, _, f) = Util.free f
   end in
   (module M)
 
-let html_list_dir (module VFS:VFS) ~prefix ~parent d : Html.chaml =
-  let d = VFS.path d in
-  let entries = VFS.(list_dir d) in
-  Array.sort String.compare entries;
-
-  (* TODO: breadcrumbs for the path, each element a link to the given ancestor dir *)
-  let head =
-    {html|<head>
-            <title>list directory "<?=VFS.descr?>"</title>
-            <meta charset="utf-8"/>
-          </head>
-    |html}
-  in
-  let n_hidden = ref 0 in
-  Array.iter (fun f -> if is_hidden f then incr n_hidden) entries;
-
-  let file_to_elt (f : string) : string =
-    let fpath = VFS.concat d f in
-    if not @@ VFS.contains fpath then (
-      {html|<li><?= f ?> [invalid file]</li>|html}
-    ) else (
-      let size =
-        try
-            match VFS.read_file fpath with
-            | FI { size = Some f ; content; _ } ->
-               (match content with
-                | Fd fd -> Unix.close fd
-                | _     -> ());
-               Printf.sprintf " (%s)" @@ human_size f
-            | _ -> ""
-        with _ -> ""
-      in
-      let tpath = VFS.to_string ~prefix fpath in
-      {html|<li><a href=<?=encode_path tpath?> >
-                  <?= f ?></a>
-       <?= if VFS.is_directory fpath then " dir" else ""?>
-       <?= size ?></li>|html}
-    )
-  in
-  {chaml|<!DOCTYPE html>
-   <html><?=head?>
-    <body>
-      <h2>Index of "<?= VFS.to_string ~prefix d ?>"</h2>
-      <?ml begin match parent with
-         | None -> ()
-         | Some p -> echo {html|<a href=<?= encode_path p ?>>parent directory</a>|html}
-          end;;
-      ?>
-     <ul>
-       <?ml if !n_hidden>0 then
-             {funml|<details>(<?= string_of_int !n_hidden ?> hidden files)
-                 <?ml Array.iter (fun f -> if is_hidden f then echo (file_to_elt f))
-                   entries?>
-                 </details>|funml} output;
-             Array.iter (fun f -> if not (is_hidden f) then echo (file_to_elt f))
-               entries ?>
-      </ul>
-    </body></html>|chaml}
 
 (* @param on_fs: if true, we assume the file exists on the FS *)
 let add_vfs_ ?addresses ?(filter=(fun x -> (x, fun r -> r)))
                ?(config=default_config ())
-               ?(prefix="") ~vfs:((module VFS:VFS) as vfs) server : unit=
+               ?(prefix="") ~vfs:(module VFS:VFS) server : unit=
+  let html_list_dir ~prefix ~parent d : Html.chaml =
+    let entries = VFS.(list_dir d) in
+    Array.sort String.compare entries;
+
+    (* TODO: breadcrumbs for the path, each element a link to the given ancestor dir *)
+    let head =
+      {html|<head>
+       <title>list directory "<?=prefix?>"</title>
+       <meta charset="utf-8"/>
+       </head>
+       |html}
+    in
+    let n_hidden = ref 0 in
+    Array.iter (fun f -> if is_hidden f then incr n_hidden) entries;
+
+    let file_to_elt (f : string) : string =
+      let fpath = VFS.concat d f in
+      if not @@ VFS.contains fpath then (
+        {html|<li><?= f ?> [invalid file]</li>|html}
+      ) else (
+        let is_dir = VFS.is_directory fpath in
+        let size = if is_dir then "" else
+          try
+            match VFS.read_file fpath with
+            | FI { size = Some f ; _ } ->
+               Printf.sprintf " (%s)" @@ human_size f
+            | _ -> ""
+          with Not_found -> ""
+        in
+        let tpath = VFS.to_string ~prefix fpath in
+        VFS.free fpath;
+        {html|
+          <li><a href=<?=encode_path tpath?> >
+            <?= f ?></a>
+            <?= if is_dir then " dir" else size?>
+          </li>
+        |html}
+      )
+    in
+    {chaml|<!DOCTYPE html>
+     <html><?=head?>
+       <body>
+         <h2>Index of "<?= VFS.to_string ~prefix d ?>"</h2>
+         <?ml begin match parent with
+                | None -> ()
+                | Some p -> echo
+                   {html|
+                     <a href=<?= encode_path p ?>>parent directory</a>
+                   |html}
+              end;;
+         ?>
+         <ul>
+           <?ml if !n_hidden>0 then
+             {funml|
+               <details>(<?= string_of_int !n_hidden ?> hidden files)
+                 <?ml Array.iter (fun f -> if is_hidden f then echo (file_to_elt f))
+                           entries?>
+               </details>|funml} output;
+             Array.iter (fun f -> if not (is_hidden f) then echo (file_to_elt f))
+                        entries ?>
+         </ul>
+       </body>
+     </html>
+     |chaml}
+  in
   let route () =
     if prefix="" then Route.rest
     else let prefix = List.rev (Util.split_on_slash prefix) in
@@ -209,7 +250,7 @@ let add_vfs_ ?addresses ?(filter=(fun x -> (x, fun r -> r)))
       if must_exists && not (VFS.contains path) then (
         Route.pass ());
       (fun req ->
-        let r = fn lpath path req in
+        let r = fn path req in
         VFS.free path;
         r)
     with e ->
@@ -218,7 +259,7 @@ let add_vfs_ ?addresses ?(filter=(fun x -> (x, fun r -> r)))
   if config.delete then (
     Server.add_route_handler ?addresses ~filter ~meth:DELETE
       server (route())
-      (do_path ~must_exists:true (fun _lpath path _req ->
+      (do_path ~must_exists:true (fun path _req ->
            Response.make_string
              (try
                 log (Req 1) (fun k->k "done delete %s"  (VFS.to_string path));
@@ -244,7 +285,7 @@ let add_vfs_ ?addresses ?(filter=(fun x -> (x, fun r -> r)))
                "max upload size is %d" config.max_upload_size
           | _ -> filter req
         )
-      (do_path ~must_exists:false (fun _path path req ->
+      (do_path ~must_exists:false (fun path req ->
          let write, close =
            try VFS.create path
            with e ->
@@ -267,28 +308,33 @@ let add_vfs_ ?addresses ?(filter=(fun x -> (x, fun r -> r)))
 
   if config.download then
     Server.add_route_handler ?addresses ~filter ~meth:GET server (route())
-      (do_path ~must_exists:true (fun lpath path req ->
+      (do_path ~must_exists:true (fun path req ->
         if VFS.is_directory path then
           begin
-            match config.dir_behavior with
-            | Index | Index_or_lists when
-                   VFS.contains (VFS.concat path "index.html") ->
+            match config.dir_behavior, VFS.concat path "index.html" with
+            | (Index | Index_or_lists), index_path when VFS.contains index_path ->
                let host = match Request.get_header req Headers.Host with
                  | Some h -> h
                  | None -> raise Not_found
                in
                let url =
                  Printf.sprintf "https://%s%s" host
-                   (VFS.to_string ~prefix (VFS.concat path "index.html"))
+                   (VFS.to_string ~prefix index_path)
                in
                Log.f (Exc 0) (fun k -> k "redirect %s %s => %s"
                                          prefix (VFS.to_string path) url);
                let headers = [Headers.Location, url] in
-               Response.fail_raise ~headers ~code:Response_code.permanent_redirect
+               VFS.free index_path;
+               Response.fail_raise ~headers
+                 ~code:Response_code.permanent_redirect
                  "Permanent redirect"
-            | _ -> ()
+            | _, index_path ->
+               VFS.free index_path;
+            | exception e ->
+               Log.f (Exc 0) (fun k -> k "exception in search index %s"
+                                         (Printexc.to_string e))
           end;
-        let FI info = VFS.read_file path in
+        let FI info = try VFS.read_file path with Not_found -> assert false in
         let mtime, may_cache =
            match info.mtime with
            | None -> None, false
@@ -324,13 +370,10 @@ let add_vfs_ ?addresses ?(filter=(fun x -> (x, fun r -> r)))
                       :: h)
         in
         if VFS.is_directory path then (
-          (match info.content with
-          | Fd fd -> Unix.close fd
-          | _ -> ());
           let parent = Some (Filename.(dirname (VFS.to_string ~prefix path))) in
           match config.dir_behavior with
             | Lists | Index_or_lists ->
-               let body = html_list_dir ~prefix vfs lpath ~parent in
+               let body = html_list_dir ~prefix path ~parent in
                log (Req 1) (fun k->k "download index %s" (VFS.to_string path));
                let (headers, cookies, str) = body req header_html in
                Response.make_stream ~headers ~cookies str

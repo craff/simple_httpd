@@ -90,13 +90,20 @@ let _ = Server.add_route_handler_chaml server
           (Status.html server)
 
 (** Add a virtual file system VFS, produced by [simple-httpd-vfs-pack] from
-    an actual folger *)
+    an actual folder *)
 let _ =
   let vfs = Vfs.make ?top_dir:!top_dir () in
   Dir.add_vfs server
     ~config:(Dir.config ~download:true
                ~dir_behavior:Dir.Index_or_lists ())
     ~vfs:vfs ~prefix:"vfs"
+
+(** Add a directory, this is dynamic and changes are reflected *)
+let _ =
+  Dir.add_dir_path server
+    ~config:(Dir.config ~download:true
+               ~dir_behavior:Dir.Index_or_lists ())
+    ~prefix:"dir" ~dir:"./files"
 
 (** Run a shell command (VERY UNSAFE!) *)
 let _ =

@@ -104,7 +104,6 @@ type file_type =
              mutable free: bool }
   | Dir of { fd : Unix.dir_handle; mtime: float;
              mutable free: bool }
-  | Other
 
 val file_type : string -> file_type
 

@@ -18,4 +18,13 @@ curl -N "http://localhost:${PORT}/vfs/a.txt" --max-time 5
 sleep 0.1
 curl -N "http://localhost:${PORT}/vfs/sub/yolo.html" --max-time 5
 
+sleep 0.1
+curl -N "http://localhost:${PORT}/dir/" --max-time 5
+
+sleep 0.1
+curl -N "http://localhost:${PORT}/dir/a.txt" --max-time 5
+
+sleep 0.1
+curl -N "http://localhost:${PORT}/dir/sub/yolo.html" --max-time 5
+
 kill $PID
