@@ -79,6 +79,7 @@ module type VFS = sig
   val delete : path -> unit
   val create : path -> (bytes -> int -> int -> unit) * (unit -> unit)
   val read_file : path -> file_info
+  val keep : path -> unit
   val free : path -> unit
 end
 
@@ -125,9 +126,8 @@ let vfs_of_dir (top:string) : vfs =
     let delete (f, _, _) = Sys.remove f
     let cache = Hashtbl.create 1024
     let read_file = function
-      | (f, _, Util.Reg({ fd; mtime; size; _} as fi)) ->
+      | (f, _, Util.Reg({ fd; mtime; size; _})) ->
          let mtime = Some mtime in
-         fi.free <- false;
          let content = Fd(fd) in
          let mtime2, size2, headers =
            try Hashtbl.find cache f
@@ -165,6 +165,10 @@ let vfs_of_dir (top:string) : vfs =
          in
          FI { content; size; mtime; headers }
       | _ -> raise Not_found
+    let keep (_, _, f) = match f with
+      | Util.Reg r -> r.free <-false
+      | Util.Dir r -> r.free <-false
+      | _ -> ()
     let free (_, _, f) = Util.free f
   end in
   (module M)
@@ -327,14 +331,15 @@ let add_vfs_ ?addresses ?(filter=(fun x -> (x, fun r -> r)))
                VFS.free index_path;
                Response.fail_raise ~headers
                  ~code:Response_code.permanent_redirect
-                 "Permanent redirect"
+                 "Temporary redirect"
             | _, index_path ->
                VFS.free index_path;
             | exception e ->
                Log.f (Exc 0) (fun k -> k "exception in search index %s"
                                          (Printexc.to_string e))
           end;
-        let FI info = try VFS.read_file path with Not_found -> assert false in
+        let FI info = try VFS.read_file path with Not_found -> assert false
+        in
         let mtime, may_cache =
            match info.mtime with
            | None -> None, false
@@ -352,14 +357,7 @@ let add_vfs_ ?addresses ?(filter=(fun x -> (x, fun r -> r)))
               in
          (Some (t, mtime_str), may_cache)
         in
-        if may_cache then
-          begin
-            (match info.content with
-             | Fd fd -> Unix.close fd
-             | _ -> ());
-            Response.make_raw ~code:not_modified ""
-          end
-        else
+        if may_cache then Response.make_raw ~code:not_modified "" else
         let cache_control h =
           match mtime with
           | None -> (Headers.Cache_Control, "no-store") :: h
@@ -400,6 +398,7 @@ let add_vfs_ ?addresses ?(filter=(fun x -> (x, fun r -> r)))
                ~headers:(cache_control info.headers)
                ~code:ok size (Util.Sfd.make fd)
           | Fd(fd) ->
+             VFS.keep path;
              let size = Unix.(fstat fd).st_size in
              Response.make_raw_file
                ~headers:(cache_control info.headers)
@@ -575,6 +574,7 @@ module Embedded_fs = struct
 
       let create _ = failwith "Embedded_fs is read-only"
       let delete _ = failwith "Embedded_fs is read-only"
+      let keep   _ = ()
       let free   _ = ()
     end in (module M)
 end

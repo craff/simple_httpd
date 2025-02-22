@@ -130,7 +130,10 @@ module type VFS = sig
   (** Create a file and obtain a pair [write, close] *)
 
   val read_file : path -> file_info
-  (** Read content of a file *)
+  (** Read content of a file. *)
+
+  val keep : path -> unit
+  (** Prefent VFS.free to close the file descriptor *)
 
   val free : path -> unit
   (** some path may contain fs ressources that must br freed *)
