@@ -292,6 +292,7 @@ let check_session_cookie ?(cookie_policy=default_cookie_policy) ?(create=false) 
   let key = Option.map Http_cookie.value
               (Request.get_cookie req session_key)
   in
+
   match (key, Request.get_cookie req session_adr) with
   | (Some key, Some addr) when
          key = session.key &&
@@ -336,7 +337,11 @@ let start_check
       | _ -> raise Exit
       | exception Bad_session_cookie when create ->
          start_session ~session_life_time addr client key
-      | exception _ -> raise Exit
+      | exception e ->
+         Log.f (Exc 0)
+           (fun k -> k "Bad session cookie and create session not allowed: %s"
+                       (Printexc.to_string e));
+         raise Exit
     in
     let bad () = raise (Bad session) in
     if not (check session) then bad ();

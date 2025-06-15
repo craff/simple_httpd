@@ -145,7 +145,9 @@ module Make(Login:Login) = struct
       end;
       r
     with Login ->
-      let cookies = Session.select_cookies ~delete:true cookie_policy (Request.cookies request) in
+      let cookies = Session.select_cookies ~delete:true cookie_policy
+                      (Request.cookies request)
+      in
       Response.fail_raise ~code:log_code ~cookies ~headers:log_headers "%s" log_msg
 
 
