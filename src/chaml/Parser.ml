@@ -11,10 +11,11 @@ let do_with_filename filename fn =
 
 let blank = Blank.from_charset Charset.empty
 
-type mode = { cls : string option (* waiting for a closing tag |html} of |chaml} *)
-            ; top : bool (* allows for <?ml ... ?> and <?prelude ... ?>*)
-            ; str : bool (* allows for <?=  ... ?> *)
-            ; glb : bool (* allows for <?global ... ?> *)
+type mode = { cls : string option
+              (** waiting for a closing tag |html} of |chaml} *)
+            ; top : bool (** allows for <?ml ... ?> and <?prelude ... ?>*)
+            ; str : bool (** allows for <?=  ... ?> *)
+            ; glb : bool (** allows for <?global ... ?> *)
             }
 
 let mkMode =
@@ -27,8 +28,15 @@ let mkMode =
 let is_control code = (0x0000 <= code && code <= 0x001F) ||
                      (0x007F <= code && code <= 0x009F)
 
-let is_space code = (code = 0x0009 || code = 0x000A || code = 0x000C || code = 0x000D
-                  || code = 0x0020)
+let is_space code = (code = 0x0009 || code = 0x000A || code = 0x000C
+                     || code = 0x000D || code = 0x0020)
+
+let missing_closing open_tag_pos =
+  let msg = Format.asprintf "Missing '?>', opening at %a"
+              (Pos.print_pos ()) open_tag_pos
+  in
+  Lex.give_up ~msg ()
+
 
 let%parser spaces =
     ()   => ()
@@ -172,7 +180,10 @@ let%parser comment =
 
 let%parser [@warning -39] rec value mode =
     (v :: attribute_value) => v
-  ; (mode.str = true) "<?=" (ocaml::ocaml false) "?>" => (OCaml (ocaml_pos, ocaml) : value)
+  ; (mode.str = true) "<?=" (ocaml::ocaml false) "?>"
+      => (OCaml (ocaml_pos, ocaml) : value)
+  ; (mode.str = true) (open_tag::"<?=") (ocaml false)
+      => missing_closing open_tag_pos
 
 and attributes mode =
     () => []
@@ -181,6 +192,8 @@ and attributes mode =
     => (ns, Html.attr_of_string name, value) :: attrs
   ; (mode.str = true) (attrs::attributes mode) one_spaces "<?=" (ocaml::ocaml false) "?>"
     => (None, Html.attr_of_string "",  (OptCaml (ocaml_pos, ocaml) : value)) :: attrs
+  ; (mode.str = true) (attributes mode) one_spaces (open_tag::"<?=")
+      (ocaml false) => missing_closing open_tag_pos
 
 and tag_name = (name::name) => Html.tag_of_string name
 
@@ -229,7 +242,10 @@ and raw_re tag =
 and raw_content mode re =
     () => []
   ; (c::raw_content mode re) (text::RE re) => Text(text)::c
-  ; (mode.str = true) (c::raw_content mode re) "<?=" (ocaml:: ocaml false) "?>" => OCaml(ocaml_pos,Str,ocaml)::c
+  ; (mode.str = true) (c::raw_content mode re)
+      "<?=" (ocaml:: ocaml false) "?>" => OCaml(ocaml_pos,Str,ocaml)::c
+  ; (mode.str = true) (raw_content mode re)
+      (open_tag::"<?=") (ocaml false) => missing_closing open_tag_pos
 
 and cdata_re = {|\([^]]\|\(\][^]\)\|\(\]\][^>]\)\)+|}
 
@@ -429,14 +445,26 @@ and ocaml_elt mode =
     (mode.top = true) "<?ml" (ocaml:: ocaml false) "?>" =>
       OCaml(ocaml_pos,Top,ocaml)
 
+  ; (mode.top = true) (open_tag::"<?ml") (ocaml false) =>
+      missing_closing open_tag_pos
+
   ; (mode.top = true) "<?prelude" (ocaml:: ocaml false) "?>" =>
       OCaml(ocaml_pos,Prelude,ocaml)
+
+  ; (mode.top = true) (open_tag::"<?prelude") (ocaml false) "?>" =>
+      missing_closing open_tag_pos
 
   ; (mode.glb = true) "<?global" (ocaml:: ocaml false) "?>" =>
       OCaml(ocaml_pos,Global,ocaml)
 
+  ; (mode.glb = true) (open_tag::"<?global") (ocaml false) =>
+      missing_closing open_tag_pos
+
   ; (mode.str = true) "<?=" (ocaml:: ocaml false) "?>" =>
       OCaml(ocaml_pos,Str,ocaml)
+
+  ; (mode.str = true) (open_tag::"<?=") (ocaml false) =>
+      missing_closing open_tag_pos
 
 and text_elt mode =
     (mode.cls = None) (text::RE{|[^<]+|}) => Text(text)
