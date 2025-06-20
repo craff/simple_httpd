@@ -132,6 +132,25 @@ let output_chunked ?synch (oc:t) (self:Input.t) : unit =
   (*add_string oc "\r\n";*) (* empty trailer required by RFC *)
   ()
 
+let output_raw ?synch (oc:t) (self:Input.t) len : unit =
+  let len = ref len in
+  try
+    while !len > 0 do
+      self.fill_buf();
+      let n = self.len in
+      add_subbytes oc self.bs self.off (min n !len);
+      len := !len - n;
+      self.consume n;
+      if !len > 0 then
+        (match synch with
+         | None -> ()
+         | Some f -> flush oc; f ())
+    done;
+    ()
+  with e ->
+        Log.f (Exc 0) (fun k -> k "output_raw exc: %s" (Printexc.to_string e));
+        raise e
+
 let output_str = add_string
 let output_bytes = add_bytes
 

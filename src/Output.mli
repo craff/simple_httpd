@@ -20,6 +20,10 @@ val printf : t -> ('a, unit, string, unit) format4 -> 'a
 val output_chunked : ?synch:(unit -> unit) -> t -> Input.t -> unit
 (** Write the stream into the channel, using the chunked encoding. *)
 
+val output_raw : ?synch:(unit -> unit) -> t -> Input.t -> int -> unit
+(** Write given bytes number from the stream into the channel,
+    using no encoding. *)
+
 val output_str   : t -> string -> unit
 (** Write the content of a string to a fd *)
 

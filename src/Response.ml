@@ -7,6 +7,7 @@ type body = String of string
           | Stream of
               { inp: Input.t
               ; synch:(unit -> unit) option
+              ; size: int option
               ; close : Input.t -> unit }
            (** flush each part and call f if second arg is [Some f] *)
           | File of
@@ -42,16 +43,17 @@ let make_raw ?(cookies=[]) ?(headers=[]) ~code body : t =
   let post () = () in
   { code; headers; body; post }
 
-let make_raw_stream ?synch ?(close=Input.close) ?(cookies=[]) ?(headers=[]) ~code inp : t =
+let make_raw_stream ?synch ?(close=Input.close) ?(cookies=[]) ?(headers=[])
+      ~code ?size inp : t =
   (* do not add content length to response *)
-  let headers = Headers.set Headers.Transfer_Encoding "chunked" headers in
   let headers = Headers.set_cookies cookies headers in
-  let body = Stream{inp;synch;close} in
+  let body = Stream{inp;synch;size;close} in
   let post () = close inp in
   Gc.finalise (fun inp -> try close inp with _ -> ()) inp;
   { code; headers; body; post }
 
-let make_raw_file ?(cookies=[]) ?(headers=[]) ?(close=Util.Sfd.close) ~code size fd : t =
+let make_raw_file ?(cookies=[]) ?(headers=[]) ?(close=Util.Sfd.close) ~code
+      size fd : t =
   (* add content length to response *)
   let headers = Headers.set_cookies cookies headers in
   let post () = close fd in
@@ -63,6 +65,7 @@ let make_void ?(cookies=[]) ?(headers=[]) ~code () : t =
   let headers = if Headers.(get Content_Type headers = None)
                    &&  Headers.(get Content_Length headers = None)
                 then
+
                   Headers.(set Content_Length "0" headers) else headers
   in
   let post () = () in
@@ -71,15 +74,16 @@ let make_void ?(cookies=[]) ?(headers=[]) ~code () : t =
 let make_string ?cookies ?headers body =
   make_raw ?cookies ?headers ~code:ok body
 
-let make_stream ?synch ?close ?cookies ?headers body =
-  make_raw_stream ?synch ?close ?cookies ?headers ~code:ok body
+let make_stream ?synch ?close ?cookies ?headers ?size body =
+  make_raw_stream ?synch ?close ?cookies ?headers ?size ~code:ok body
 
 let make_file ?cookies ?headers ?close n body =
   make_raw_file ?cookies ?headers ?close ~code:ok n body
 
 let make ?cookies ?headers r : t = match r with
   | String body -> make_raw ?cookies ?headers ~code:ok body
-  | Stream{inp;synch;close} -> make_raw_stream ?synch ~close ?cookies ?headers ~code:ok inp
+  | Stream{inp;synch;size;close} ->
+     make_raw_stream ?synch ~close ?cookies ?headers ?size ~code:ok inp
   | File{size;fd=body;close}-> make_raw_file ?cookies ?headers ~code:ok ~close size body
   | Void -> make_void ?cookies ?headers ~code:ok ()
 
@@ -113,7 +117,12 @@ let output_ meth (oc:Output.t) (self:t) : unit =
          self.headers
     | File{size;_} ->
        Headers.set Headers.Content_Length (string_of_int size) self.headers
-    | Stream _ -> Headers.set Headers.Transfer_Encoding "chunked" self.headers
+    | Stream{size;_} ->
+       match size with
+       | None ->
+          Headers.set Headers.Transfer_Encoding "chunked" self.headers
+       | Some s ->
+          Headers.set Headers.Content_Length (string_of_int s) self.headers
   in
 
   let self = {self with headers; body} in
@@ -145,9 +154,13 @@ let output_ meth (oc:Output.t) (self:t) : unit =
       | File {size; fd; close} ->
          (try Output.sendfile oc size (Util.Sfd.get fd); close fd
           with e -> close fd; raise e)
-      | Stream {inp;synch;close} ->
+      | Stream {inp;synch;close;size} ->
          (try
-            Output.output_chunked ?synch oc inp;
+            (match size with
+             | None ->
+                Output.output_chunked ?synch oc inp;
+             | Some s ->
+                Output.output_raw ?synch oc inp s);
             Output.flush oc;
             close inp;
           with e -> close inp; raise e)

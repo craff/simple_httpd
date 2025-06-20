@@ -1,3 +1,4 @@
+#define _GNU_SOURCE
 #include <caml/misc.h>
 #include <caml/mlvalues.h>
 #include <caml/memory.h>
@@ -13,6 +14,7 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
+#include <fcntl.h>
 #include <netinet/tcp.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
@@ -43,6 +45,28 @@ long caml_sendfile(long out_fd, long in_fd, long off, long count) {
 CAMLprim void caml_sendfile_error() {
   CAMLparam0();
   caml_uerror("sendfile", Nothing);
+  CAMLreturn0;
+}
+
+CAMLprim value caml_byte_splice(value in_fd, value in_off, value out_fd,
+				value out_off, value count) {
+  CAMLparam0();
+  ssize_t in_off_p = Int_val(in_off);
+  ssize_t out_off_p = Int_val(out_off);
+  // printf("sendfile %d %d\n",off,Int_val(count)); fflush(stdout);
+  ssize_t w = splice(Int_val(in_fd),&in_off_p,
+		     Int_val(in_fd),&out_off_p,Int_val(count),0);
+  // printf("sendfile %d %d\n",off,w); fflush(stdout);
+  CAMLreturn(Val_int(w));
+}
+
+long caml_splice(long in_fd, long in_off, long out_fd, long out_off, long count) {
+  return(splice(in_fd,&in_off,out_fd,&out_off,count,0));
+}
+
+CAMLprim void caml_splice_error() {
+  CAMLparam0();
+  caml_uerror("splice", Nothing);
   CAMLreturn0;
 }
 
@@ -85,7 +109,7 @@ CAMLprim void caml_ssl_nonblock(value ctx_val) {
 }
 
 
-CAMLprim value caml_byte_setsockopt_cork(long socket, value val)
+CAMLprim value caml_byte_setsockopt_cork(value socket, value val)
 {
   CAMLparam0();
   int optval;

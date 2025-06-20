@@ -66,6 +66,13 @@ external raw_sendfile : (int [@untagged]) -> (int [@untagged]) ->
 
 external sendfile_error : unit -> 'a = "caml_sendfile_error"
 
+external raw_splice : (int [@untagged]) -> (int [@untagged]) ->
+                      (int [@untagged]) -> (int [@untagged]) ->
+                       (int [@untagged]) -> (int [@untagged])
+  = "caml_byte_splice" "caml_splice" [@@noalloc]
+
+external splice_error : unit -> 'a = "caml_splice_error"
+
 external raw_ssl_sendfile : Ssl.socket -> (int [@untagged])
                             -> (int [@untagged]) -> (int [@untagged]) -> (int [@untagged])
   = "caml_byte_ssl_sendfile" "caml_ssl_sendfile" [@@noalloc]
@@ -87,6 +94,12 @@ let sendfile out in_ offset count =
   let ret = raw_sendfile (file_descr_to_int out)
               (file_descr_to_int in_) offset count in
   if ret == -1 then sendfile_error ();
+  ret
+
+let splice in_fd in_offset out_fd out_offset count =
+  let ret = raw_splice (file_descr_to_int in_fd) in_offset
+              (file_descr_to_int out_fd) out_offset count in
+  if ret == -1 then splice_error ();
   ret
 
 let ssl_sendfile out in_ offset count =

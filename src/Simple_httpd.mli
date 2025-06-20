@@ -651,6 +651,8 @@ module Response : sig
                 { inp : Input.t
                 ; synch : (unit -> unit) option
                 (** flush each part and call f if synch is [Some f] *)
+                ; size : int option
+                (** use chunk encoding only if size is not provided *)
                 ; close : Input.t -> unit
                 (** close stream with this function at end of input *)}
             | File of
@@ -710,6 +712,7 @@ module Response : sig
     ?cookies:Cookies.t ->
     ?headers:Headers.t ->
     code:Response_code.t ->
+    ?size:int ->
     Input.t ->
   t
   (** Same as {!make_raw} but with a stream body. The body will be sent with
@@ -755,6 +758,7 @@ module Response : sig
     ?close:(Input.t->unit) ->
     ?cookies:Cookies.t ->
     ?headers:Headers.t ->
+    ?size:int ->
     Input.t -> t
   (** Same as {!make} but with a stream body. *)
 

@@ -6,6 +6,8 @@
 type body = String of string
           | Stream of  { inp : Input.t
                        ; synch : (unit -> unit) option
+                       ; size : int option (** use chunk encoding only
+                                               if size is not provided *)
                        ; close : Input.t -> unit}
                 (** flush each part and call f for each part if second arg is [Some f],
                     use the close function at end of output *)
@@ -69,6 +71,7 @@ val make_raw_stream :
   ?cookies:Cookies.t ->
   ?headers:Headers.t ->
   code:Response_code.t ->
+  ?size:int ->
   Input.t ->
   t
 (** Same as {!make_raw} but with a stream body. The body will be sent with
@@ -114,6 +117,7 @@ val make_stream :
   ?close:(Input.t->unit) ->
   ?cookies:Cookies.t ->
   ?headers:Headers.t ->
+  ?size:int ->
   Input.t -> t
 (** Same as {!make} but with a stream body. *)
 
