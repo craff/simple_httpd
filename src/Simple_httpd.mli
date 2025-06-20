@@ -407,6 +407,21 @@ module Semaphore : sig
   val delete : t -> unit
 end
 
+module Resources : sig
+  module type Resource = sig
+    type t
+    val create : unit -> t
+    val number : int
+  end
+
+  module type Resources = sig
+    type t
+    val use : (t -> 'a) -> 'a
+  end
+
+  module Make(R:Resource) : Resources with type t = R.t
+end
+
 (** Module for creating process to communicate with.
    reading and writing are non blocking. *)
 module Process : sig

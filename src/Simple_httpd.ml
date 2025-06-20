@@ -33,6 +33,8 @@ module Mutex = Async.Mutex
 
 module Semaphore = Async.Semaphore
 
+module Resources = Resources
+
 module Process = Process
 
 module Method = Method
