@@ -54,7 +54,7 @@ let empty = {
   _rest=();
 }
 
-let make ?(bs=Bytes.create @@ 16 * 1024) ?(close=ignore) ~consume ~fill () : t =
+let make ?(bs=Bytes.create @@ 64 * 1024) ?(close=ignore) ~consume ~fill () : t =
   let rec self = {
     bs;
     off=0;
@@ -70,7 +70,7 @@ let make ?(bs=Bytes.create @@ 16 * 1024) ?(close=ignore) ~consume ~fill () : t =
   } in
   self
 
-let of_chan ?(buf_size=16 * 1024) ic : t =
+let of_chan ?(buf_size=64 * 1024) ic : t =
   make
     ~bs:(Bytes.create buf_size)
     ~close:(fun _ -> close_in ic)
@@ -85,7 +85,7 @@ let of_chan ?(buf_size=16 * 1024) ic : t =
       )
     ()
 
-let of_fd ?(buf_size=16 * 1024) ic : t =
+let of_fd ?(buf_size=64 * 1024) ic : t =
   make
     ~bs:(Bytes.create buf_size)
     ~close:(fun _ -> Unix.close ic)
@@ -99,7 +99,7 @@ let of_fd ?(buf_size=16 * 1024) ic : t =
         )
     ()
 
-let of_client ?(buf_size=16 * 1024) ic : t =
+let of_client ?(buf_size=64 * 1024) ic : t =
   make
     ~bs:(Bytes.create buf_size)
     ~close:(fun _ -> Async.Client.close ic)
@@ -116,7 +116,7 @@ let of_client ?(buf_size=16 * 1024) ic : t =
 
 module Io = Async.Io
 
-let of_io ?(buf_size=16 * 1024) (sock:Io.t) : t =
+let of_io ?(buf_size=64 * 1024) (sock:Io.t) : t =
   make
     ~bs:(Bytes.create buf_size)
     ~close:(fun _ -> Io.close sock)
@@ -169,7 +169,7 @@ let of_string s : t =
   of_bytes (Bytes.unsafe_of_string s)
 
 (* mainly for tests *)
-let of_strings ?(buf_size=16 * 1024) ls : t =
+let of_strings ?(buf_size=64 * 1024) ls : t =
   let buf_size =
     List.fold_left (fun s str -> max s (String.length str)) buf_size ls
   in
