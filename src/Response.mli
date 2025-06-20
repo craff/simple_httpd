@@ -6,7 +6,7 @@
 type body = String of string
           | Stream of  { inp : Input.t
                        ; synch : (unit -> unit) option
-                       ; size : int option (** use chunk encoding only
+                       ; size : int option (** use chunked encoding only
                                                if size is not provided *)
                        ; close : Input.t -> unit}
                 (** flush each part and call f for each part if second arg is [Some f],

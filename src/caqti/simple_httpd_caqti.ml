@@ -86,7 +86,7 @@ module System = struct
         | Some io -> io
         | None ->
            Unix.set_nonblock fd;
-           let finalise () =
+           let finalise _ =
              Atomic.set tbl.(nfd) None
            in
            let res = Io.create ~finalise fd in

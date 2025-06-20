@@ -105,7 +105,7 @@ let sleep : float -> unit = fun t ->
 module IoTmp = struct
 
   type t = { sock : Unix.file_descr
-           ; finalise : unit -> unit (** extra function when closing *)
+           ; finalise : t -> unit (** extra function when closing *)
            ; waiting : bool array
            ; closing : bool Atomic.t
            (* which domain has added the socket to epoll,
@@ -535,13 +535,13 @@ module Io = struct
   let close (s:t) =
     if Atomic.compare_and_set s.closing false true then
       begin
-        s.finalise ();
+        s.finalise s;
         unregister s;
         (try Unix.(shutdown s.sock SHUTDOWN_ALL); with Unix.Unix_error _ -> ());
         (try Unix.close s.sock with Unix.Unix_error _ -> ());
       end
 
-  let create ?(finalise=fun () -> ()) sock =
+  let create ?(finalise=fun _ -> ()) sock =
     let r = { sock
             ; finalise
             ; waiting = Array.make max_domain false

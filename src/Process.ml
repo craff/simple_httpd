@@ -31,7 +31,7 @@ let create ?(wait_interval=0.010) cmd args : (process * Io.t) =
        proc.status <- Exn exn;
        false
   in
-  let finalise () =
+  let finalise _ =
     while check () do
       Async.sleep wait_interval
     done

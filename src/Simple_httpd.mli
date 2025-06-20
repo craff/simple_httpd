@@ -170,7 +170,7 @@ end
 module Io : sig
     type t
 
-    val create : ?finalise:(unit -> unit) -> Unix.file_descr -> t
+    val create : ?finalise:(t -> unit) -> Unix.file_descr -> t
     (** Encapsulate a file descriptor in a dedicated data structure *)
 
     val close : t -> unit

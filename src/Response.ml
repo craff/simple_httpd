@@ -101,6 +101,8 @@ let pp out self : unit =
     (self.code :> int) Headers.pp self.headers pp_body self.body
 
 let output_ meth (oc:Output.t) (self:t) : unit =
+  let body = self.body in
+  try
   Util.setsockopt_cork (Output.sock oc) true;
   Output.add_string oc "HTTP/1.1 ";
   Output.add_decimal oc (self.code :> int);
@@ -108,7 +110,6 @@ let output_ meth (oc:Output.t) (self:t) : unit =
   Output.add_string oc (Response_code.descr self.code);
   Output.add_char oc '\r';
   Output.add_char oc '\n';
-  let body = self.body in
   let headers =
     match body with
     | String "" | Void -> self.headers
@@ -152,18 +153,25 @@ let output_ meth (oc:Output.t) (self:t) : unit =
          Output.output_str oc s;
          Output.flush oc;
       | File {size; fd; close} ->
-         (try Output.sendfile oc size (Util.Sfd.get fd); close fd
-          with e -> close fd; raise e)
+         Output.sendfile oc size (Util.Sfd.get fd); close fd
       | Stream {inp;synch;close;size} ->
-         (try
-            (match size with
-             | None ->
-                Output.output_chunked ?synch oc inp;
-             | Some s ->
-                Output.output_raw ?synch oc inp s);
-            Output.flush oc;
-            close inp;
-          with e -> close inp; raise e)
+         (match size with
+          | None ->
+             Output.output_chunked ?synch oc inp;
+          | Some s ->
+             Output.output_raw ?synch oc inp s);
+         Output.flush oc;
+         close inp
     end;
   Util.setsockopt_cork (Output.sock oc) false;
   self.post ()
+  with e ->
+    Log.f (Exc 0) (fun k -> k "Exception in Response.outpout_ %s"
+                              (Printexc.to_string e));
+    (match body with
+     | String _ | Void -> ()
+     | File { close; fd; _ } ->
+        Log.f (Exc 0) (fun k -> k "close fd"); close fd
+     | Stream { close; inp; _ } ->
+        Log.f (Exc 0) (fun k -> k "close inp"); close inp);
+    raise e
