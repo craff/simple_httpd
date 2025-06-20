@@ -416,6 +416,9 @@ module Resources : sig
 
   module type Resources = sig
     type t
+    type handle
+    val get : unit -> handle * t
+    val release : handle -> unit
     val use : (t -> 'a) -> 'a
   end
 
