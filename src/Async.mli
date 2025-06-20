@@ -31,7 +31,7 @@ end
 module Semaphore : sig
   type t
   val create : int -> t
-  val decr : t -> unit
+  val decr : Mutex.t -> t -> unit
   val try_decr : t -> bool
   val incr : t -> unit
   val delete : t -> unit
@@ -141,6 +141,12 @@ exception NoWrite
 exception ClosedByHandler
 exception TimeOut
 
+(** Run the given function concurrently. Beware that this is cooperative
+    threading. Typical use is a function that communicated with the main
+    thread using socket wrapped using the Io module. Race condition are
+    very likely, use with caution. *)
+val spawn : (unit -> unit) -> unit
+
 (** For use if you do not want to use the provided Io module, and want
     to schedule an Io task *)
 val schedule_io : Unix.file_descr -> unit
@@ -184,11 +190,22 @@ type pollResult
 
 type domain_info =
   { mutable cur_client : client (* the client currently running *)
+  ; did : Domain.id
   ; pendings : socket_infos array
+  (** The main pipe of the domain and the socket of each client are
+      added at creation in the table and removed went terminating
+      the client.
+
+      evenfd of [Mutex.t] and socket in [Io.t] are added to this
+      table when a client is blocking on that mutex/io. As several clients
+      may block on the same mutex or io, they can be present several time
+      in the table of several domains.
+   *)
   ; poll_list : Polly.t
   ; bytes : Bytes.t (* a preallocated buffer *)
   ; last_seen : client Util.LinkedList.t
   ; ready : pollResult Queue.t
+  ; mutable sleeps : (float * (unit, unit) continuation * client) list
   ; nb_connections : int Atomic.t (* -1 for the accepting domain, -2 for unused domain *)
   }
 

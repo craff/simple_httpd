@@ -150,6 +150,11 @@ module Async : sig
   val sleep : float -> unit
   (** Same as above, but with a minimum sleeping time in second *)
 
+  (** Run the given function concurrently. Beware that this is cooperative
+      threading. Typical use is a data base request that write to one end
+      of a fifo, while the web server reads the other end. *)
+  val spawn : (unit -> unit) -> unit
+
 end
 
 (** Module that encapsulates non blocking sockets with function similar to
@@ -396,7 +401,7 @@ end
 module Semaphore : sig
   type t
   val create : int -> t
-  val decr : t -> unit
+  val decr : Mutex.t -> t -> unit
   val try_decr : t -> bool
   val incr : t -> unit
   val delete : t -> unit

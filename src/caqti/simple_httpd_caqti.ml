@@ -42,7 +42,7 @@ module System = struct
 
     let fetch m =
       Mutex.lock m.mut;
-      Semaphore.decr m.sem;
+      Semaphore.decr m.mut m.sem;
       let r = Queue.peek m.values in
       Mutex.unlock m.mut;
       r
