@@ -45,8 +45,9 @@ type client = private {
     peer : string;                    (** peer IP *)
     accept_by : int;                  (** index in the listens table of the
                                           adress:port that received the connection *)
-    mutable ssl  : Ssl.socket option; (** An eventual ssl context
-                                          modified once after ssl negociation *)
+    mutable ssl  : (Ssl.socket * bool * bool) option;
+    (** An eventual ssl context modified once after ssl negociation.
+        first boolean: KTLS available for TX, second: RX *)
     mutable cont : bool;              (** Read the next request *)
     mutable session : session option; (** Session *)
     mutable start_time : float;       (** start of request *)
@@ -115,11 +116,12 @@ val stop_client : client -> unit
 module Io : sig
   type t
 
-  val create : ?finalise:(t -> unit) -> Unix.file_descr -> t
+  val create : ?finalise:(t -> unit)
+               -> Unix.file_descr -> t
   val close : t -> unit
   val read : t -> Bytes.t -> int -> int -> int
   val write : t -> Bytes.t -> int -> int -> int
-
+  val sock : t -> Unix.file_descr
   val formatter : t -> Format.formatter
 
   val poll : ?edge_trigger:bool ->

@@ -166,12 +166,10 @@ let output_ meth (oc:Output.t) (self:t) : unit =
   Util.setsockopt_cork (Output.sock oc) false;
   self.post ()
   with e ->
-    Log.f (Exc 0) (fun k -> k "Exception in Response.outpout_ %s"
+    Log.f (Exc 0) (fun k -> k "Exception in Response.output_ %s"
                               (Printexc.to_string e));
     (match body with
      | String _ | Void -> ()
-     | File { close; fd; _ } ->
-        Log.f (Exc 0) (fun k -> k "close fd"); close fd
-     | Stream { close; inp; _ } ->
-        Log.f (Exc 0) (fun k -> k "close inp"); close inp);
+     | File { close; fd; _ } -> close fd
+     | Stream { close; inp; _ } -> close inp);
     raise e

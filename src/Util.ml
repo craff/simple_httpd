@@ -73,6 +73,12 @@ external raw_splice : (int [@untagged]) -> (int [@untagged]) ->
 
 external splice_error : unit -> 'a = "caml_splice_error"
 
+external set_ktls : Ssl.context -> unit
+  = "caml_byte_set_ktls" [@@noalloc]
+
+external check_ktls : Ssl.socket -> int
+  = "caml_byte_check_ktls" [@@noalloc]
+
 external raw_ssl_sendfile : Ssl.socket -> (int [@untagged])
                             -> (int [@untagged]) -> (int [@untagged]) -> (int [@untagged])
   = "caml_byte_ssl_sendfile" "caml_ssl_sendfile" [@@noalloc]

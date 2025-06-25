@@ -87,7 +87,8 @@ module System = struct
         | None ->
            Unix.set_nonblock fd;
            let finalise _ =
-             Atomic.set tbl.(nfd) None
+             Atomic.set tbl.(nfd) None;
+             Unix.close fd;
            in
            let res = Io.create ~finalise fd in
            if Atomic.compare_and_set tbl.(nfd) None (Some res) then

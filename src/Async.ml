@@ -21,7 +21,7 @@ type client =
   ; peer : string
   ; accept_by : int (* index of the socket that accepted the connection in the
                        listens table *)
-  ; mutable ssl : Ssl.socket option
+  ; mutable ssl : (Ssl.socket * bool * bool) option
   ; mutable cont : bool (* set to false to stop reading request *)
   ; mutable session : session option
   ; mutable start_time : float (* last time request started *)
@@ -94,7 +94,15 @@ type pending = (unit, unit) continuation
 
 let apply c f1 f2 =
   match c.ssl with None -> f1 c.sock
-                 | Some s -> f2 s
+                 | Some (s,_,_) -> f2 s
+
+let apply_read c f1 f2 =
+  match c.ssl with None | Some(_,_,true) -> f1 c.sock
+                 | Some (s,_,_) -> f2 s
+
+let apply_write c f1 f2 =
+  match c.ssl with None | Some(_,true,_) -> f1 c.sock
+                   | Some (s,_,_) -> f2 s
 
 let now = Unix.gettimeofday
 
@@ -447,7 +455,7 @@ module Ssl = struct include Ssl include Ssl.Runtime_lock end
 
 let rec read c s o l =
   try
-    apply c Util.read Ssl.read s o l
+    apply_read c Util.read Ssl.read s o l
   with Unix.(Unix_error((EAGAIN|EWOULDBLOCK),_,_))
      | Ssl.(Read_error(Error_want_read|Error_want_write)) ->
         perform (Io c.sock);
@@ -455,15 +463,15 @@ let rec read c s o l =
 
 let rec write c s o l =
   try
-    apply c Util.single_write Ssl.write s o l
+    apply_write c Util.single_write Ssl.write s o l
   with Unix.(Unix_error((EAGAIN|EWOULDBLOCK),_,_))
-    | Ssl.(Write_error(Error_want_read|Error_want_write)) ->
-       perform (Io c.sock);
-       write c s o l
+     | Ssl.(Read_error(Error_want_read|Error_want_write)) ->
+    perform (Io c.sock);
+    write c s o l
 
 (* Note: sendfile together with SSL, not really efficient *)
 let ssl_sendfile c fd o l =
-  let buf = all_domain_info.((Domain.self () :> int)).bytes in
+  let buf = Bytes.create 0x4000 in (* 16K: the default for SSL*)
   let len = Bytes.length buf in
   let _ = Unix.(lseek fd o SEEK_SET) in
   let w = Unix.read fd buf 0 (min l len) in
@@ -471,11 +479,12 @@ let ssl_sendfile c fd o l =
 
 let rec sendfile c in_fd in_off l =
   try
-    apply c Util.sendfile ssl_sendfile in_fd in_off l
+    apply_write c Util.sendfile ssl_sendfile in_fd in_off l
   with Unix.(Unix_error((EAGAIN|EWOULDBLOCK),_,_))
-     | Ssl.(Write_error(Error_want_read|Error_want_write)) ->
+     | Ssl.(Read_error(Error_want_read|Error_want_write)) ->
         perform (Io c.sock);
         sendfile c in_fd in_off l
+
 
 let schedule_io sock = perform (Io sock)
 
@@ -528,7 +537,8 @@ module Io = struct
     let info = all_domain_info.(i) in
     if r.waiting.(i) then begin
         r.waiting.(i) <- false;
-        Polly.(del info.poll_list r.sock)
+        (* If the fd is closed in finalise, this is not needed *)
+        try Polly.(del info.poll_list r.sock) with Unix.Unix_error _ -> ()
       end;
     info.pendings.(Util.file_descr_to_int r.sock) <- NoSocket
 
@@ -537,11 +547,12 @@ module Io = struct
       begin
         s.finalise s;
         unregister s;
-        (try Unix.(shutdown s.sock SHUTDOWN_ALL); with Unix.Unix_error _ -> ());
-        (try Unix.close s.sock with Unix.Unix_error _ -> ());
       end
 
-  let create ?(finalise=fun _ -> ()) sock =
+  let create
+        ?(finalise=fun io ->
+                   (try Unix.(close io.sock); with Unix.Unix_error _ -> ()))
+        sock =
     let r = { sock
             ; finalise
             ; waiting = Array.make max_domain false
@@ -588,6 +599,8 @@ module Io = struct
       }
     in
     formatter_of_out_functions funs
+
+  let sock io = io.sock
 
 end
 
@@ -952,8 +965,26 @@ let loop listens pipe timeout handler () =
                          fn ()
                     in
                     ignore (fn ());
-                    client.ssl <- Some chan;
-                    Log.f (Req 0) (fun k -> k "ssl connection established");
+                    let n = Util.check_ktls chan in
+                    client.ssl <- Some (chan, n land 0x1 <> 0, n land 0x2 <> 0);
+                    Log.f (Req 0) (fun k ->
+                        let open Ssl in
+                        let [@ocaml.warning "-3"] v = match Ssl.version chan with
+                          | SSLv23 -> "SSL 2.3"
+                          | SSLv3 -> "SSL 3.0"
+                          | TLSv1 -> "TLS 1.0"
+                          | TLSv1_1 -> "TLS 1.1"
+                          | TLSv1_2 -> "TLS 1.2"
+                          | TLSv1_3 -> "TLS 1.3"
+                        in
+                        let cn =
+                          Ssl.(get_cipher_name (get_cipher chan))
+                        in
+                        let cv =
+                          Ssl.(get_cipher_version (get_cipher chan))
+                        in
+                        k "ssl connection established (%s, cipher: %s %s, ktls: %d)"
+                          v cn cv n);
                  | None -> ()
                end;
                handler client;

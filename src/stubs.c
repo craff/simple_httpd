@@ -73,6 +73,19 @@ CAMLprim void caml_splice_error() {
 #define SSL_val(v) (*((SSL **)Data_custom_val(v)))
 #define SSL_CTX_val(v) (*((SSL_CTX **)Data_custom_val(v)))
 
+CAMLprim value caml_byte_set_ktls(value v) {
+  SSL_CTX *ssl = SSL_CTX_val(v);
+  SSL_CTX_set_options(ssl, SSL_OP_ENABLE_KTLS);
+  fflush(stderr);
+}
+
+CAMLprim value caml_byte_check_ktls(value v) {
+  SSL *ssl = SSL_val(v);
+  int s = BIO_get_ktls_send(SSL_get_wbio(ssl));
+  int r = BIO_get_ktls_recv(SSL_get_rbio(ssl));
+  return(Val_int(s + 2*r));
+}
+
 CAMLprim value caml_byte_ssl_sendfile (value out_fd, value in_fd, value offset, value count) {
   CAMLparam1(out_fd);
   ERR_clear_error();
@@ -103,6 +116,7 @@ CAMLprim void caml_ssl_nonblock(value ctx_val) {
   				 SSL_SESS_CACHE_SERVER);
   SSL_CTX_clear_mode(ctx, SSL_MODE_AUTO_RETRY);
   SSL_CTX_set_mode(ctx, SSL_MODE_ENABLE_PARTIAL_WRITE);
+  // SSL_CTX_set_mode(ctx, SSL_MODE_ACCEPT_MOVING_WRITE_BUFFER);
   SSL_CTX_set_num_tickets(ctx, 1);
   SSL_CTX_set_alpn_select_cb(ctx, alpn_select_cb, NULL);
   CAMLreturn0;

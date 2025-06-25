@@ -171,16 +171,21 @@ module Io : sig
     type t
 
     val create : ?finalise:(t -> unit) -> Unix.file_descr -> t
-    (** Encapsulate a file descriptor in a dedicated data structure *)
+    (** Encapsulate a file descriptor in a dedicated data structure.
+        finalise default to Unix.close Io.sock. *)
 
     val close : t -> unit
-    (** Close io, similar to [Unix.close] *)
+    (** Close io, similar to [Unix.close], simply call finalise*)
 
     val read : t -> Bytes.t -> int -> int -> int
     (** Read, similar to [Unix.read], but asynchronous *)
 
     val write : t -> Bytes.t -> int -> int -> int
     (** Read, similar to [Unix.write], but asynchronous *)
+
+    val sock : t -> Unix.file_descr
+    (** Returns the socket, usefull in finalise or to set some socket
+        properties, do not attempt to read/write the socket. *)
 
     val formatter : t -> Format.formatter
     (** Provide a formatter to use with the [Format] library *)
