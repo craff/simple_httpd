@@ -1547,15 +1547,18 @@ module Auth : sig
   end
 
   module Make(Login:Login) : sig
-    (** a basic default login page that you may associate to the given login_url.
-       If will both validate login and display the given page if the user is not logged.
-       The page can be adapted using the optional argument. In case of succesful login,
-       the user is redirected to the destination (empty url = same page, by default) *)
-    val login_page : ?destination:string -> ?page:Html.chaml -> Html.chaml
+    (** a basic default login page that you may associate to the given
+        login_url.  If will both validate login and display the given page if
+        the user is not logged.  The page can be adapted using the optional
+        argument, either giving your own page or just the link of a css.  In
+        case of succesful login, the user is redirected to the destination
+        (empty url = same page, by default) *)
+    val login_page : ?destination:string -> ?css:string -> ?page:Html.chaml
+                     -> Html.chaml
 
     (** logout by destroying the login session data and cookies and send back
-        to the destination [login_url] by default. If a page is provided, there is no
-        redirection, the given page is directly displayed. *)
+        to the destination [login_url] by default. If a page is provided,
+        there is no redirection, the given page is directly displayed. *)
     val logout_page : ?destination:string -> ?page:Html.chaml -> Html.chaml
 
     (** checking session, with proper type for defaut parameter of {!Server} functions *)

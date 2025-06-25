@@ -7,7 +7,8 @@ module type Login = sig
 end
 
 module Make(Login:Login) : sig
-  val login_page : ?destination:string -> ?page:Html.chaml -> Html.chaml
+  val login_page
+      : ?destination:string -> ?css:string -> ?page:Html.chaml -> Html.chaml
 
   val logout_page : ?destination:string -> ?page:Html.chaml -> Html.chaml
 

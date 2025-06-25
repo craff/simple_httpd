@@ -14,8 +14,9 @@ module Make(Login:Login) = struct
 
   let auth_key = Session.new_key ("Login_" ^ Login.login_url)
 
-  let login_page : ?destination:string -> ?page:Html.chaml -> Html.chaml =
-    (fun ?destination ?page request headers ->
+  let login_page : ?destination:string -> ?css:string -> ?page:Html.chaml
+                   -> Html.chaml =
+    (fun ?destination ?css ?page request headers ->
       let destination = match destination with
         | Some d -> d
         | None -> try List.assoc "dest" (Request.query request) with Not_found -> ""
@@ -70,6 +71,10 @@ module Make(Login:Login) = struct
         match page with
         | Some page -> page request headers
         | None ->
+           let css = match css with
+             | None -> ""
+             | Some s -> {html|<link rel="stylesheet" href=<?=s?>>|html}
+           in
          {chaml|<!DOCTYPE html>
            <head>
               <title>login page</title>
@@ -77,6 +82,7 @@ module Make(Login:Login) = struct
               <script>
                   function subf() {window.history.replaceState( {} , '', "/");}
               </script>
+              <?=css?>
            </head>
            <body>
              <div style="text-align:center; position:absolute;
@@ -85,9 +91,9 @@ module Make(Login:Login) = struct
                <form action=<?=Login.login_url?>
 		     onsubmit="subf();" method="post">
                  <table><tr><th><label for="login">Login</label></tr>
-                        <tr><td><input type="text" name="login" value="" on/></tr>
+                        <tr><td><input type="text" name="login" value="" required on/></tr>
                         <tr><th><label for="password">Password</label></tr>
-                        <tr><td><input type="password" name="password" value="" on/></tr>
+                        <tr><td><input type="password" name="password" required value="" on/></tr>
                         <tr><td><input type="hidden" name="dest" value=<?=destination?> on/></tr>
                         <tr><td><input type="submit" />
                  </table>
