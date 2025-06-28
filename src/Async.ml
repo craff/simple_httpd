@@ -75,7 +75,7 @@ let fake_client =
       locks = [];
       accept_by = 0;
       last_seen_cell = LL.fake_cell;
-      close = (fun () -> ())
+      close = (fun () -> ());
     }
 
 let close client = client.close ()
