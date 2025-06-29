@@ -12,7 +12,6 @@ exception NoRead
 exception NoWrite
 exception EndHandling
 exception ClosedByHandler
-exception TimeOut
 
 type client =
   { id : int
@@ -29,7 +28,7 @@ type client =
   ; mutable locks : mutex list
   ; buf : Buffer.t (* used to parse headers *)
   ; mutable last_seen_cell : client LL.cell
-  ; close : unit -> unit
+  ; mutable closed : Unix.error option
   }
 
 and mutex_state = Unlocked | Locked of client | Deleted
@@ -75,10 +74,8 @@ let fake_client =
       locks = [];
       accept_by = 0;
       last_seen_cell = LL.fake_cell;
-      close = (fun () -> ());
+      closed = None;
     }
-
-let close client = client.close ()
 
 let set_session ?session client =
   client.session <- session
@@ -111,8 +108,8 @@ let sleep : float -> unit = fun t ->
   perform (Sleep t)
 
 module IoTmp = struct
-
   type t = { sock : Unix.file_descr
+           ; flags : Polly.Events.t
            ; finalise : t -> unit (** extra function when closing *)
            ; waiting : bool array
            ; closing : bool Atomic.t
@@ -148,7 +145,7 @@ type sock_error =
 type pending_status =
   | NoEvent
   | Wait : pending -> pending_status
-  | TooSoon of sock_error
+  | TooSoon of Polly.Events.t
 
 type socket_info =
   { ty : socket_type
@@ -164,7 +161,7 @@ type socket_infos =
 
 type pollResult =
   | Accept of (int * Unix.file_descr * Address.t)
-  | Action : pending * socket_info * sock_error -> pollResult
+  | Action : pending * socket_info * Polly.Events.t -> pollResult
   | Yield of ((unit,unit) continuation * client * float)
   | Poll
 
@@ -339,6 +336,12 @@ module Log = struct
   let _ = Address.forward_log := f (Exc 0)
 end
 
+let close_client cl e =
+  if cl.closed = None then
+    begin
+      cl.closed <- Some e
+    end
+
 let yield () =
   let q = all_domain_info.((Domain.self () :> int)).nb_connections in
   if Atomic.get q > 1 then perform Yield
@@ -466,8 +469,8 @@ let rec write c s o l =
     apply_write c Util.single_write Ssl.write s o l
   with Unix.(Unix_error((EAGAIN|EWOULDBLOCK),_,_))
      | Ssl.(Read_error(Error_want_read|Error_want_write)) ->
-    perform (Io c.sock);
-    write c s o l
+        perform (Io c.sock);
+        write c s o l
 
 (* Note: sendfile together with SSL, not really efficient *)
 let ssl_sendfile c fd o l =
@@ -524,13 +527,13 @@ module Io = struct
   let register (r : t) =
     let i = (Domain.self () :> int) in
     let info = all_domain_info.(i) in
-    if not r.waiting.(i) then begin
-        r.waiting.(i) <- true;
-        Polly.(add info.poll_list r.sock Events.(inp lor out lor et lor err lor hup));
-      end;
     let c = cur_client () in
     info.pendings.(Util.file_descr_to_int r.sock) <-
-      OneSocket { ty = Io; client = c; pd = NoEvent }
+      OneSocket { ty = Io; client = c; pd = NoEvent };
+    if not r.waiting.(i) then begin
+        r.waiting.(i) <- true;
+        Polly.(add info.poll_list r.sock r.flags);
+      end
 
   let unregister (r : t) =
     let i = (Domain.self () :> int) in
@@ -545,37 +548,40 @@ module Io = struct
   let close (s:t) =
     if Atomic.compare_and_set s.closing false true then
       begin
-        s.finalise s;
         unregister s;
+        s.finalise s;
       end
 
   let create
+        ?(edge_triggered=true)
         ?(finalise=fun io ->
                    (try Unix.(close io.sock); with Unix.Unix_error _ -> ()))
         sock =
+    let flags = Polly.Events.(inp lor out lor err lor hup) in
+    let flags = if edge_triggered then Polly.Events.(et lor flags) else flags in
     let r = { sock
             ; finalise
+            ; flags
             ; waiting = Array.make max_domain false
             ; closing = Atomic.make false }
     in
+    register r;
     Gc.finalise close r;
     r
 
   let rec read (io:t) s o l =
-  try
-    Util.read io.sock  s o l
-  with Unix.(Unix_error((EAGAIN|EWOULDBLOCK),_,_)) ->
-    register io;
-    schedule_io io.sock;
-    read io s o l
+    try
+      Util.read io.sock  s o l
+    with Unix.(Unix_error((EAGAIN|EWOULDBLOCK),_,_)) ->
+      schedule_io io.sock;
+      read io s o l
 
   let rec write (io:t) s o l =
-  try
-    Util.single_write io.sock s o l
-  with Unix.(Unix_error((EAGAIN|EWOULDBLOCK),_,_)) ->
-        register io;
-        schedule_io io.sock;
-        write io s o l
+    try
+      Util.single_write io.sock s o l
+    with Unix.(Unix_error((EAGAIN|EWOULDBLOCK),_,_)) ->
+      schedule_io io.sock;
+      write io s o l
 
   let poll ?(edge_trigger=true) ?(read=false) ?(write=false) (fd: Unix.file_descr) =
     let open Polly.Events in
@@ -704,7 +710,6 @@ let add_decr : domain_info -> Semaphore.t -> (unit, unit) continuation -> unit =
 
   en_queue dinfo lk.seventfd info
 
-
 let spawn f =
   let dinfo = global_get_dinfo () in
   let client = dinfo.cur_client in
@@ -773,10 +778,8 @@ let loop listens pipe timeout handler () =
     | OneSocket i | PipeSocket i -> fn i
     | QueueSocket q ->
        match Queue.take_opt q with
-       | None -> assert false
-       | Some i ->
-          if Queue.is_empty q then pendings.(fd) <- NoSocket;
-          fn i
+       | None -> ()
+       | Some i -> fn i
   in
 
   let close ~client exn =
@@ -817,7 +820,8 @@ let loop listens pipe timeout handler () =
       let client = LL.get cell in
       if client.timeout_ref < t0 then
         begin
-          close ~client TimeOut;
+          close_client client Unix.ETIMEDOUT;
+          LL.remove_cell client.last_seen_cell last_seen;
           remove_timeout t0
         end
     with Not_found -> ()
@@ -866,16 +870,7 @@ let loop listens pipe timeout handler () =
       in
       let select_timeout = int_of_float (1e3 *. select_timeout) in
       let fn _ sock evt =
-        let treat_error () =
-          if Polly.Events.(hup lor (out land inp) = empty) then
-            Hup
-          else if Polly.Events.(err land evt <> empty) then
-            match Util.get_socket_error sock with
-            | Some e -> Err e
-            | None -> NoError
-          else NoError
-        in
-        let fn info =
+        let gn info =
           match info with
           | { ty = Pipe; _ } ->
              begin
@@ -894,15 +889,15 @@ let loop listens pipe timeout handler () =
                   | e -> Log.f (Exc 0) (fun k -> k "unexpected accept recv: %s"
                                                    (Printexc.to_string e))
              end
-          | { pd = NoEvent | TooSoon _ ; _ } as r ->
-             let e = treat_error () in
-             if e <> NoError then r.pd <- TooSoon e;
+          | { pd = NoEvent ; _ } as r ->
+             r.pd <- TooSoon evt;
+          | { pd = TooSoon e ; _ } as r ->
+             r.pd <- TooSoon Polly.Events.(e lor evt);
           | { pd = Wait a ; _ } as p ->
-             let e = treat_error () in
-             add_ready dinfo (Action(a,p,e));
+             add_ready dinfo (Action(a,p,evt));
              p.pd <- NoEvent;
         in
-        iter_pendings fn sock
+        iter_pendings gn sock
       in
       Log.f (Sch 0) (fun k -> k "entering poll with timeout: %d (%d conn.)"
                                 select_timeout
@@ -910,7 +905,7 @@ let loop listens pipe timeout handler () =
       ignore (Polly.wait poll_list 1000 select_timeout fn);
     with
     | exn -> Log.f (Exc 0) (fun k -> k "unexpected poll: %s\n%!" (printexn exn));
-             (*check now;*) poll () (* FIXME: which exception *)
+             poll ()
   in
   let step () =
       match Queue.take ready with
@@ -923,15 +918,15 @@ let loop listens pipe timeout handler () =
            try
              let peer = Util.addr_of_sock sock in
              let now = now () in
-             let rec client = { sock; ssl = None; id = new_id ()
-                                ; peer
-                                ; connected = true; session = None; cont = true
-                                ; start_time = now; timeout_ref = now
-                                ; locks = []
-                                ; buf = Buffer.create 4_096
-                                ; accept_by = index; last_seen_cell = LL.fake_cell
-                                ; close = (fun () -> close ~client Exit)
-                              }
+             let client = { sock; ssl = None; id = new_id ()
+                            ; peer
+                            ; connected = true; session = None; cont = true
+                            ; start_time = now; timeout_ref = now
+                            ; locks = []
+                            ; buf = Buffer.create 4_096
+                            ; accept_by = index; last_seen_cell = LL.fake_cell
+                            ; closed = None
+                          }
              in
              let info = { ty = Client; client; pd = NoEvent } in
              dinfo.cur_client <- client;
@@ -995,17 +990,25 @@ let loop listens pipe timeout handler () =
                                (Printexc.to_string e));
                 close ~client e)
       | Action (cont, p, e) ->
-         p.pd <- NoEvent;
+         let hup = Polly.Events.((hup land e) <> empty) in
+         let e =
+           if Polly.Events.((err land e) <> empty) then Err Unix.EPIPE
+           else if hup && Polly.Events.(((out lor inp) land e) = empty) then Hup
+           else NoError
+         in
+         p.pd <- if hup then TooSoon Polly.Events.hup else NoEvent;
          let cl = p.client in
          if cl.connected then
            begin
              dinfo.cur_client <-cl;
-             match e with
-             | Hup ->
-                cl.close ()
-             | Err _ ->
-                cl.close ()
-             | NoError ->
+             match e, cl.closed with
+             | Hup, _ ->
+                discontinue cont Unix.(Unix_error (EPIPE,"HUP",""))
+             | Err _, _ ->
+                discontinue cont Unix.(Unix_error (EPIPE,"ERR",""))
+             | _, Some e ->
+                discontinue cont Unix.(Unix_error (e,"ABORTED",""))
+             | NoError, _ ->
                 continue cont ()
            end
       | Yield(cont,cl,_) ->
@@ -1175,6 +1178,6 @@ module Client = struct
   (* All close above where because of error or socket closed on client side.
      close in Server may be because there is no keep alive and the server close,
      so we flush before closing to handle the (very rare) ssl_flush exception
-     above *)
+     above. This is only possible to close the current client! *)
   let close c = ssl_flush c; raise ClosedByHandler
 end

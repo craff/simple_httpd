@@ -392,10 +392,10 @@ module LinkedList = struct
       | Nil -> ()
       | Cons r ->
          (match r.prev with
-          | Nil -> assert (l.head == c); l.head <- r.next
+          | Nil -> if l.head == c then l.head <- r.next
           | Cons p -> p.next <- r.next);
          (match r.next with
-          | Nil -> assert (l.tail == c); l.tail <- r.prev
+          | Nil -> if l.tail == c then l.tail <- r.prev
           | Cons n -> n.prev <- r.prev);
          r.next <- Nil; r.prev <- Nil
 

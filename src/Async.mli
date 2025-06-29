@@ -57,7 +57,7 @@ type client = private {
     buf : Buffer.t;                   (** used to parse headers *)
     mutable last_seen_cell : client Util.LinkedList.cell;
     (** pointer to the linked list used to detect timeout *)
-    close : unit -> unit              (** close the client *)
+    mutable closed : Unix.error option;
   }
 
 and session_info =
@@ -82,11 +82,10 @@ module Client : sig
   val ssl_flush : t -> unit
 end
 
+val close_client : client -> Unix.error -> unit
+
 (** only to please qtest *)
 val fake_client : client
-
-(** close the client *)
-val close : client -> unit
 
 (** close all clients *)
 val close_all : int -> unit
@@ -116,7 +115,7 @@ val stop_client : client -> unit
 module Io : sig
   type t
 
-  val create : ?finalise:(t -> unit)
+  val create : ?edge_triggered : bool -> ?finalise:(t -> unit)
                -> Unix.file_descr -> t
   val close : t -> unit
   val read : t -> Bytes.t -> int -> int -> int
@@ -141,7 +140,6 @@ type socket_type =
 exception NoRead
 exception NoWrite
 exception ClosedByHandler
-exception TimeOut
 
 (** Run the given function concurrently. Beware that this is cooperative
     threading. Typical use is a function that communicated with the main
