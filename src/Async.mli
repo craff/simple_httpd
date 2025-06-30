@@ -127,6 +127,7 @@ module Io : sig
   val write : t -> Bytes.t -> int -> int -> int
   val sock : t -> Unix.file_descr
   val formatter : t -> Format.formatter
+  val schedule : t -> unit
 
   val poll : ?edge_trigger:bool ->
              ?read:bool ->

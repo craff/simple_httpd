@@ -122,9 +122,9 @@ let default_cookie_policy =
 let prefix_sec info =
   if info.path = "/" then "Host" else "Secure"
 let session_key info =
-  Printf.sprintf "__%s-%s-Key" (prefix_sec info) info.base
+  Printf.sprintf "__%s-%sKey" (prefix_sec info) info.base
 let session_adr info =
-  Printf.sprintf "__%s-%s-Adr" (prefix_sec info) info.base
+  Printf.sprintf "__%s-%sAdr" (prefix_sec info) info.base
 
 let get_client_session client key =
   match Async.(client.session) with
