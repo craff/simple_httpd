@@ -8,6 +8,10 @@ let new_id =
   let c = ref 0 in
   fun () -> let x = !c in c := x + 1; x
 
+type any_cont =
+  Cont : ('a, 'b) continuation -> any_cont
+| NoCont : any_cont
+
 exception NoRead
 exception NoWrite
 exception EndHandling
@@ -28,7 +32,7 @@ type client =
   ; mutable locks : mutex list
   ; buf : Buffer.t (* used to parse headers *)
   ; mutable last_seen_cell : client LL.cell
-  ; mutable closed : Unix.error option
+  ; mutable continuation : any_cont
   }
 
 and mutex_state = Unlocked | Locked of client | Deleted
@@ -74,7 +78,7 @@ let fake_client =
       locks = [];
       accept_by = 0;
       last_seen_cell = LL.fake_cell;
-      closed = None;
+      continuation = NoCont;
     }
 
 let set_session ?session client =
@@ -336,12 +340,6 @@ module Log = struct
   let _ = Address.forward_log := f (Exc 0)
 end
 
-let close_client cl e =
-  if cl.closed = None then
-    begin
-      cl.closed <- Some e
-    end
-
 let yield () =
   let q = all_domain_info.((Domain.self () :> int)).nb_connections in
   if Atomic.get q > 1 then perform Yield
@@ -512,6 +510,11 @@ let reset_timeout cl =
   let ll = all_domain_info.((Domain.self () :> int)).last_seen in
   Util.LinkedList.move_first cl.last_seen_cell ll
 
+let close_client cl =
+  cl.timeout_ref <- 0.0;
+  let ll = all_domain_info.((Domain.self () :> int)).last_seen in
+  Util.LinkedList.move_last cl.last_seen_cell ll
+
 module Io = struct
   include IoTmp
 
@@ -568,6 +571,8 @@ module Io = struct
     register r;
     Gc.finalise close r;
     r
+
+  let schedule io = schedule_io io.sock
 
   let rec read (io:t) s o l =
     try
@@ -716,14 +721,19 @@ let spawn f =
   match f () with
   | () -> ()
   | effect Yield, cont ->
+     client.continuation <- Cont cont;
      add_ready dinfo (Yield(cont, client, now ()))
   | effect Sleep t, cont ->
+     client.continuation <- Cont cont;
      add_sleep dinfo t cont
   | effect Lock(lk), cont ->
+     client.continuation <- Cont cont;
      add_lock dinfo lk cont
   | effect Decr(lk), cont ->
+     client.continuation <- Cont cont;
      add_decr dinfo lk cont
   | effect Io(sock), cont ->
+     client.continuation <- Cont cont;
      let info = dinfo.pendings.(Util.file_descr_to_int sock) in
      begin
        match info with
@@ -820,8 +830,12 @@ let loop listens pipe timeout handler () =
       let client = LL.get cell in
       if client.timeout_ref < t0 then
         begin
-          close_client client Unix.ETIMEDOUT;
-          LL.remove_cell client.last_seen_cell last_seen;
+          (match client.continuation with
+           | Cont c ->
+              dinfo.cur_client <- client;
+              ignore (discontinue c Unix.(Unix_error (ETIMEDOUT, "", "")));
+              ()
+           | NoCont -> ());
           remove_timeout t0
         end
     with Not_found -> ()
@@ -831,14 +845,20 @@ let loop listens pipe timeout handler () =
     match f () with
     | () -> ()
     | effect Yield, cont ->
-       add_ready dinfo (Yield(cont, get_client (), now ()))
+       let client = get_client () in
+       client.continuation <- Cont cont;
+       add_ready dinfo (Yield(cont, client, now ()))
     | effect Sleep t, cont ->
+       (get_client ()).continuation <- Cont cont;
        add_sleep dinfo t cont
     | effect Lock(lk), cont ->
+       (get_client ()).continuation <- Cont cont;
        add_lock dinfo lk cont
     | effect Decr(lk), cont ->
+       (get_client ()).continuation <- Cont cont;
        add_decr dinfo lk cont
     | effect Io(sock), cont ->
+       (get_client ()).continuation <- Cont cont;
        let info = pendings.(Util.file_descr_to_int sock) in
        begin
          match info with
@@ -925,7 +945,7 @@ let loop listens pipe timeout handler () =
                             ; locks = []
                             ; buf = Buffer.create 4_096
                             ; accept_by = index; last_seen_cell = LL.fake_cell
-                            ; closed = None
+                            ; continuation = NoCont
                           }
              in
              let info = { ty = Client; client; pd = NoEvent } in
@@ -1001,14 +1021,12 @@ let loop listens pipe timeout handler () =
          if cl.connected then
            begin
              dinfo.cur_client <-cl;
-             match e, cl.closed with
-             | Hup, _ ->
+             match e with
+             | Hup ->
                 discontinue cont Unix.(Unix_error (EPIPE,"HUP",""))
-             | Err _, _ ->
+             | Err _ ->
                 discontinue cont Unix.(Unix_error (EPIPE,"ERR",""))
-             | _, Some e ->
-                discontinue cont Unix.(Unix_error (e,"ABORTED",""))
-             | NoError, _ ->
+             | NoError ->
                 continue cont ()
            end
       | Yield(cont,cl,_) ->

@@ -190,6 +190,10 @@ module Io : sig
     val formatter : t -> Format.formatter
     (** Provide a formatter to use with the [Format] library *)
 
+    val schedule: t -> unit
+    (** Allow to schedule the io immediatly. Typical use is opening a pipe and
+        waiting the other end to be ready. *)
+
     val poll : ?edge_trigger:bool ->
                ?read:bool ->
                ?write:bool ->

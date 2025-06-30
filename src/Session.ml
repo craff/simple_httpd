@@ -86,7 +86,7 @@ let delete_session session =
        Mutex.unlock mutex_list
    with e ->
      Mutex.unlock mutex_list; raise e);
-  List.iter (fun cl -> Async.close_client cl Unix.EPERM)
+  List.iter (fun cl -> Async.close_client cl)
     (Atomic.get session.clients);
   Key.cleanup_delete (Atomic.get session.data)
 

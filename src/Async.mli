@@ -37,6 +37,10 @@ module Semaphore : sig
   val delete : t -> unit
 end
 
+type any_cont =
+  Cont : ('a, 'b) continuation -> any_cont
+| NoCont : any_cont
+
 (** Record describing clients *)
 type client = private {
     id : int;                         (** Unique identifier *)
@@ -57,7 +61,8 @@ type client = private {
     buf : Buffer.t;                   (** used to parse headers *)
     mutable last_seen_cell : client Util.LinkedList.cell;
     (** pointer to the linked list used to detect timeout *)
-    mutable closed : Unix.error option;
+    mutable continuation : any_cont
+    (** Needed to "kill" client *)
   }
 
 and session_info =
@@ -82,7 +87,7 @@ module Client : sig
   val ssl_flush : t -> unit
 end
 
-val close_client : client -> Unix.error -> unit
+val close_client : client -> unit
 
 (** only to please qtest *)
 val fake_client : client
