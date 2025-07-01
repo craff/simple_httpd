@@ -39,10 +39,9 @@ module Make(Login:Login) = struct
                Session.set_session_data session auth_key t;
                Some cookies
           with Not_found ->
-            Log.f (Aut 0) (fun k -> k "Login failed for %S" login);
+            Log.f (Aut 1) (fun k -> k "Login failed for %S" login);
             None
         with Not_found ->
-          Log.f (Aut 0) (fun k -> k "Need login");
           None
       in
       let redirect cookies =
