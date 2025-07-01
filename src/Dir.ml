@@ -373,8 +373,8 @@ let add_vfs_ ?addresses ?(filter=(fun x -> (x, fun r -> r)))
             | Lists | Index_or_lists ->
                let body = html_list_dir ~prefix path ~parent in
                log (Req 1) (fun k->k "download index %s" (VFS.to_string path));
-               let (headers, cookies, str) = body req header_html in
-               Response.make_stream ~headers ~cookies str
+               let (headers, _cookies, str) = body req header_html in
+               Response.make_stream ~headers str
             | Forbidden | Index ->
                Response.make_raw ~code:forbidden "listing dir not allowed"
         ) else (
@@ -414,9 +414,8 @@ let add_vfs_ ?addresses ?(filter=(fun x -> (x, fun r -> r)))
                ~code:ok s
           | Dynamic f ->
              let headers = cache_control info.headers in
-             let headers, cookies, input = f req headers in
-             Response.make_raw_stream
-               ~headers ~cookies ~code:ok input
+             let headers, _cookies, input = f req headers in
+             Response.make_raw_stream ~headers ~code:ok input
           | Stream input ->
              Response.make_raw_stream
                ~headers:(cache_control info.headers)

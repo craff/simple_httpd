@@ -84,10 +84,9 @@ module Make(Login:Login) = struct
               <?=css?>
            </head>
            <body>
-             <div style="text-align:center; position:absolute;
-                         top:50%; left:50%;
-                         transform:translate(-50%,-50%);">
-               <form action=<?=Login.login_url?>
+             <div class="login-container">
+               <form class="login-form"
+                     action=<?=Login.login_url?>
 		     onsubmit="subf();" method="post">
                  <table><tr><th><label for="login">Login</label></tr>
                         <tr><td><input type="text" name="login" value="" required on/></tr>
