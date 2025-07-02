@@ -445,15 +445,17 @@ module Process : sig
     { pid : int
     ; mutable status : status }
 
-  (** [create_process ~wait_interval cmd args] creates a new process, with the given command
-      name and args. It returns a unix domain socket of type [Io.t] connected
-      to the standard input and output of the process. The stderr is connected
-      to the stderr of the server.
+  (** [create_process ~wait_interval ~stdout ~stderr cmd args] creates a new
+      process, with the given command name and args. It returns a unix domain
+      socket of type [Io.t] connected to the standard input and output of the
+      process, unless you provide values for stderr and stdout.
 
       When the Io.t channel is closed, the process is waited for using
       [Unix.waitpid [WNOHANG; WUNTRACED]], if a loop that yield CPU for
       wait_interval second (default 0.010s = 10ms). *)
-  val create : ?wait_interval: float -> string -> string array -> process * Io.t
+  val create : ?wait_interval: float ->
+               ?stdout: Unix.file_descr -> ?stderr: Unix.file_descr ->
+               string -> string array -> process * Io.t
 end
 
 (** Module defining HTML methods (GET,PUT,...) *)

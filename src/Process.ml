@@ -6,9 +6,17 @@ type process =
   { pid : int
   ; mutable status : status }
 
-let create ?(wait_interval=0.010) cmd args : (process * Io.t) =
-  let s1,s2 = Unix.(socketpair PF_UNIX SOCK_STREAM ~cloexec:false 0) in
-  let pid = Unix.create_process cmd args s2 s2 s2 in
+let create ?(wait_interval=0.010) ?stdout ?stderr cmd args : (process * Io.t) =
+  let s2,s1 = Unix.(socketpair PF_UNIX SOCK_STREAM ~cloexec:false 0) in
+  let stdout = match stdout with
+    | None -> s2
+    | Some s -> s
+  in
+  let stderr = match stderr with
+    | None -> stdout
+    | Some s -> s
+  in
+  let pid = Unix.create_process cmd args s2 stdout stderr in
   let proc = { pid; status = Running } in
   Log.f (Prc 0) (fun k -> k "started process %s (pid: %d)" cmd pid);
   Unix.close s2; (* if we don't close the other, we do not get informed when
@@ -18,7 +26,7 @@ let create ?(wait_interval=0.010) cmd args : (process * Io.t) =
     match Unix.(waitpid [WNOHANG; WUNTRACED] pid) with
     | (p, WEXITED e) when p != 0  ->
        proc.status <- Exited e;
-       Log.f (Prc 1) (fun k -> k "terminated process %s (pid: %d, exit code: %d)"
+       Log.f (Prc 0) (fun k -> k "terminated process %s (pid: %d, exit code: %d)"
                                  cmd pid e);
        false
     | (p, _)                      ->
