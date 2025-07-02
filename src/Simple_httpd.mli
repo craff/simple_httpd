@@ -1592,9 +1592,11 @@ end
 
 (** A module to get detail status about the server *)
 module Status : sig
-  val html : ?log_size:int
-             -> ?in_head : Html.elt -> ?in_body : Html.elt
-             -> Server.t -> Html.chaml
+  val html : ?log_size:int ->
+             ?in_head:Html.elt -> ?css:string ->
+             ?start_header: Html.elt -> ?end_header: Html.elt ->
+             ?start_contents: Html.elt -> ?end_contents: Html.elt ->
+             Server.t -> Html.chaml
 (** Returns a detailed server status as html, including
 
     {ul {- number of actives connections (total and per threads)}
@@ -1609,26 +1611,45 @@ module Status : sig
     the parameter ["nb"] of the query will be used, and if it not provided or
     is not an integer, 100 is used.
 
-    You may add content at the end of the head and
-    beginning of the body using [in_head] and [in_body] parameters *)
+    You may add content in the page, in the same way as for the {!Stats}
+    module below. *)
 end
 
 (** provide a filter giving very simple statistics. We can do much better
     but be carefull on how to do it *)
 module Stats : sig
 
-(** This a filter to acquire statistics.
+  (** This a filter to acquire statistics.
     [let (filter, get) = Stats.filter ()]
     will give you a [Filter.t] and a function [get] returning the statistics
     as a html page
     ["N requests (average response time:
        Tms = T1ms (read) + T2ms (build) + T3ms (send))"]
 
-    You may add content at the end of the head and
-    beginning of the body using [in_head] and [in_body] parameters *)
+       The structure of the page uses the optionnal parameters as:
+       <head>
+          ...
+          link css if given
+          in_head
+       </head>
+       <body>
+         <header>
+           start_header if given
+           ...
+           end_header if given
+         </header>
+         <div class="content">
+           start_contents if given
+           ...
+           end_contents if given
+         </div>
+       </body>
+   *)
   val filter : unit -> 'a Filter.t *
-                         (?in_head: Html.elt -> ?in_body: Html.elt                         -> Html.chaml)
-
+                         (?in_head: Html.elt -> ?css:string ->
+                          ?start_header:Html.elt -> ?end_header:Html.elt ->
+                          ?start_contents:Html.elt -> ?end_contents:Html.elt ->
+                          Html.chaml)
 end
 
 (** Hight level module to write server handling multiple hosts/addresses *)

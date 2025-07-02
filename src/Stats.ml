@@ -147,7 +147,14 @@ let filter () =
 	     </tr>
      |funml} output
   in
-  let get_stat ?in_head ?in_body req headers =
+  let get_stat ?in_head ?css
+        ?start_header ?end_header
+        ?start_contents ?end_contents
+        req headers =
+    let css = match css with
+      | None -> ""
+      | Some s -> {html|<link rel="stylesheet" href=<?=s?>>|html}
+    in
     {chaml|
     <!DOCTYPE html>
     <head>
@@ -169,6 +176,7 @@ let filter () =
                    overflow: scroll; }
      </style>
      <?ml draw_graph !graph_size output ?>
+     <?=css?>
      <script>
        function sort(tableId,index,num,desc) {
 	   var tbody = document.getElementById(tableId);
@@ -255,54 +263,62 @@ let filter () =
      </script>
      <?ml match in_head with None -> () | Some f -> f output ?>
     </head>
-    <body onload="onLoad();">
-      <?ml match in_body with None -> () | Some f -> f output ?>
-     <h1>Statistics of the server</h1>
+     <body onload="onLoad();">
+       <header>
+          <?ml match start_header with None -> () | Some f -> f output ?>
+          <h1>Statistics of the server</h1>
+          <?ml match end_header with None -> () | Some f -> f output ?>
+       </header>
+       <div class="contents">
+          <?ml match start_contents with None -> () | Some f -> f output ?>
 
-     <canvas style="margin: 0 auto;" id='canvas'>
-     </canvas>
+	 <canvas style="margin: 0 auto;" id='canvas'>
+	 </canvas>
 
-     <details><summary>Note about timings</summary>
-       All timings are average time in milliseconds. Parsing time does not take
-       in account parsing the body of the request if it is read as a stream, in
-       which case parsing time is included in building time. Similarly,
-       building time of the body of the response is included in send time
-       if it is a stream. Actually, if your request is build as a stream
-       processer, parsing will only include the parsing of the request
-       headers, build will only include the building of the response headers,
-       and all the stream processing will be included in the send time.
-     </details>
-     <table>
-        <thead><tr>
-	  <th>path
-	    <button onclick="sort('table',0,false,false);">▼</button>
-            <button onclick="sort('table',0,false,true);">▲</button>
-            <input id="path_filter" type="text"
-		   onchange="filter('table',0,'path_filter')">
-          <th>nb req.
-            <button onclick="sort('table',1,true,false);">▼</button>
-            <button onclick="sort('table',1,true,true);">▲</button>
-	  <th>total
-            <button onclick="sort('table',2,true,false);">▼</button>
-            <button onclick="sort('table',2,true,true);">▲</button>
-	  <th>max
-            <button onclick="sort('table',3,true,false);">▼</button>
-            <button onclick="sort('table',3,true,true);">▲</button>
-	  <th>parsing
-            <button onclick="sort('table',4,true,false);">▼</button>
-            <button onclick="sort('table',4,true,true);">▲</button>
-	  <th>build
-            <button onclick="sort('table',5,true,false);">▼</button>
-            <button onclick="sort('table',5,true,true);">▲</button>
-	  <th>send
-            <button onclick="sort('table',6,true,false);">▼</button>
-            <button onclick="sort('table',6,true,true);">▲</button>
-	  </tr>
-	  <?ml stat output "global" !global ?>
-	</thead>
-	<tbody id="table">
-	  <?ml Hashtbl.iter (stat output) !per_path ?>
-	</tbody>
-      </table></body>|chaml} req headers
+	 <details><summary>Note about timings</summary>
+	   All timings are average time in milliseconds. Parsing time does not take
+	   in account parsing the body of the request if it is read as a stream, in
+	   which case parsing time is included in building time. Similarly,
+	   building time of the body of the response is included in send time
+	   if it is a stream. Actually, if your request is build as a stream
+	   processer, parsing will only include the parsing of the request
+	   headers, build will only include the building of the response headers,
+	   and all the stream processing will be included in the send time.
+	 </details>
+	 <table>
+           <thead><tr>
+	       <th>path
+		 <button onclick="sort('table',0,false,false);">▼</button>
+		 <button onclick="sort('table',0,false,true);">▲</button>
+		 <input id="path_filter" type="text"
+			onchange="filter('table',0,'path_filter')">
+               <th>nb req.
+		 <button onclick="sort('table',1,true,false);">▼</button>
+		 <button onclick="sort('table',1,true,true);">▲</button>
+	       <th>total
+		 <button onclick="sort('table',2,true,false);">▼</button>
+		 <button onclick="sort('table',2,true,true);">▲</button>
+	       <th>max
+		 <button onclick="sort('table',3,true,false);">▼</button>
+		 <button onclick="sort('table',3,true,true);">▲</button>
+	       <th>parsing
+		 <button onclick="sort('table',4,true,false);">▼</button>
+		 <button onclick="sort('table',4,true,true);">▲</button>
+	       <th>build
+		 <button onclick="sort('table',5,true,false);">▼</button>
+		 <button onclick="sort('table',5,true,true);">▲</button>
+	       <th>send
+		 <button onclick="sort('table',6,true,false);">▼</button>
+		 <button onclick="sort('table',6,true,true);">▲</button>
+	     </tr>
+	     <?ml stat output "global" !global ?>
+	   </thead>
+	   <tbody id="table">
+	     <?ml Hashtbl.iter (stat output) !per_path ?>
+	   </tbody>
+	 </table>
+         <?ml match end_contents with None -> () | Some f -> f output ?>
+       </div>
+     </body>|chaml} req headers
   in
   (measure, get_stat)

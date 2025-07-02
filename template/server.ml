@@ -83,7 +83,7 @@ module Common = struct
 
   let filter_auth = Filter.compose_cross filter Secure.check_filter
 
-  let in_body = {funml|
+  let start_header = {funml|
                  <div style="float: right;">
                    <button onclick="window.location.href='/logout'">
                      Logout
@@ -93,12 +93,12 @@ module Common = struct
   module Init(Init:Host.Init) = struct
     (** a status page accessible as /status *)
     let _ = Init.add_route_handler_chaml ~filter:filter_auth Route.(exact "status" @/ return)
-              (Status.html ~in_body Init.server)
+              (Status.html ~start_header Init.server)
 
     (** Access to the statistics computed by the filter*)
     let _ =
       Init.add_route_handler_chaml ~filter:filter_auth
-        Route.(exact "stats" @/ return) (get_stats ~in_body)
+        Route.(exact "stats" @/ return) (get_stats ~start_header)
 
     (** Login page for the status and statistics *)
     let _ =

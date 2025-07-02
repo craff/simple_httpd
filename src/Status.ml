@@ -65,7 +65,8 @@ let get_log i nb_lines output =
              Printf.sprintf "Can not read log file %s (exn: %s)\n%!"
                filename (Printexc.to_string e)) output
 
-let html ?log_size ?in_head ?in_body self req headers =
+let html ?log_size ?in_head ?css ?start_header ?end_header
+      ?start_contents ?end_contents self req headers =
   let log_size =
     match log_size with
     | Some nb -> nb
@@ -114,6 +115,10 @@ let html ?log_size ?in_head ?in_body self req headers =
     try Array.length (Sys.readdir "/proc/self/fd")
     with _ -> -1
   in
+  let css = match css with
+    | None -> ""
+    | Some s -> {html|<link rel="stylesheet" href=<?=s?>>|html}
+  in
   {chaml|
    <!DOCTYPE html>
    <html>
@@ -159,52 +164,61 @@ let html ?log_size ?in_head ?in_body self req headers =
              };
           </script>
           <?ml match in_head with None -> () | Some f -> f output ?>
+          <?=css?>
        </head>
        <body onload="sort('table',0,false,true);">
-           <?ml match in_body with None -> () | Some f -> f output ?>
+         <header>
+           <?ml match start_header with None -> () | Some f -> f output ?>
            <h1><?ml printf "Server status %d+1 threads" num_threads?></h1>
-           <ul>
-           <li>Started at (<?ml date (started_time self) output ?>)
-           <li><?= ps ?>
-           <li><?= df ?>
-           <li><?= string_of_int nfd ?> opened file descriptors
-           <?ml
-             for i = 0 to num_threads - 1 do
-               let did = ((Server.domains self).(i) :> int) in
-               let dinfo = Async.all_domain_info.((did :> int)) in
-               let pps = dinfo.pendings in
-               echo {html|<li><?=
+	   <?ml match end_header with None -> () | Some f -> f output ?>
+         </header>
+         <div class="contents">
+           <?ml match start_contents with None -> () | Some f -> f output ?>
+	   <ul>
+             <li>Started at (<?ml date (started_time self) output ?>)
+             <li><?= ps ?>
+             <li><?= df ?>
+             <li><?= string_of_int nfd ?> opened file descriptors
+               <?ml
+		for i = 0 to num_threads - 1 do
+		let did = ((Server.domains self).(i) :> int) in
+                let dinfo = Async.all_domain_info.((did :> int)) in
+                let pps = dinfo.pendings in
+                echo {html|<li><?=
                    Printf.sprintf "Thread %d: %d=%d connections" did
                                   (Util.LinkedList.size (dinfo.last_seen))
                                   (Atomic.get (dinfo.nb_connections))
                                ?>|html};
-             done
-           ?></ul>
-     <?ml
-     if !Log.log_folder <> "" then
-       {funml|
-       <h2>Logs</h2>
-       <table>
-         <thead>
-           <tr>
-             <th>date
-               <button onclick="sort('table',0,false,false);">▼</button>
-               <button onclick="sort('table',0,false,true);">▲</button>
-             <th>domain
-               <button onclick="sort('table',1,true,false);">▼</button>
-               <button onclick="sort('table',1,true,true);">▲</button>
-             <th>client
+               done
+               ?>
+	   </ul>
+	   <?ml
+	    if !Log.log_folder <> "" then
+	   {funml|
+	   <h2>Logs</h2>
+	   <table>
+             <thead>
+               <tr>
+		 <th>date
+		   <button onclick="sort('table',0,false,false);">▼</button>
+		   <button onclick="sort('table',0,false,true);">▲</button>
+		 <th>domain
+		   <button onclick="sort('table',1,true,false);">▼</button>
+		   <button onclick="sort('table',1,true,true);">▲</button>
+		 <th>client
                <button onclick="sort('table',2,true,false);">▼</button>
                <button onclick="sort('table',2,true,true);">▲</button>
-             <th>information
-         <tbody id="table">
-           <?ml
-             let _ = for i = 0 to num_threads do
-               get_log i log_size output;
-             done
-           ?>
-       </table>
-       |funml} output
-     ?>
+		 <th>information
+		   <tbody id="table">
+		     <?ml
+		      let _ = for i = 0 to num_threads do
+		      get_log i log_size output;
+		      done
+		      ?>
+	   </table>
+	   |funml} output
+	   ?>
+	   <?ml match end_contents with None -> () | Some f -> f output ?>
+	 </div>
       </body>
    </html>|chaml} req headers
