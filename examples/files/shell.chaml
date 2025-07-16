@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+   <html>
+   <head>
+   <meta charset="UTF-8">
+   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.min.css">
+   <script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.min.js"></script>
+   <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit/lib/xterm-addon-fit.min.js"></script>
+  </head>
+   <body>
+   <header>
+     <h1>Terminal</h1>
+   </header>
+   <div class = "contents">
+     <div id="terminal"></div>
+     <script>
+      const term = new Terminal({
+	  theme: {
+              background: '#1e1e1e',
+              foreground: '#ffffff'
+	  },
+	  cursorBlink: true,
+      });
+      const fitAddon = new FitAddon.FitAddon();
+      term.loadAddon(fitAddon);
+      term.open(document.getElementById('terminal'));
+      fitAddon.fit();
+      term.write('Login: ');
+
+      let username = '';
+      // Listen for user input character by character
+      let data_handler = term.onData(data => {
+	  if (data === '\r') { // Enter pressed
+	      term.write('\r\n');
+	      startSession(username);
+	  } else if (data === '\u007F') { // Backspace
+	      if (username.length > 0) {
+		  username = username.slice(0, -1);
+		  term.write('\b \b');
+	      }
+	  } else {
+	      username += data;
+	      term.write(data);
+	  }
+      });
+
+      function startSession(user) {
+	  const protocol = window.location.protocol === 'https:' ? 'wss://' : 'ws://';
+	  const ws_url= protocol + window.location.host + '/shell?user=' + user;
+	  const socket = new WebSocket(ws_url);
+
+	  let got_prompt = 0;
+
+	  let last = Promise.resolve();
+
+	  socket.onmessage = (event) => {
+	      last = last.then(() =>
+		  event.data.text().then(str => {
+		      term.write(str.replace(/\r?\n/g, '\r\n'));
+		      if (got_prompt < 2) {
+			  got_prompt += 1;
+		      } else if (got_prompt == 2) {
+			  got_prompt = 3;
+			  console.log("stty");
+			  socket.send(`S${term.cols} ${term.rows}`);
+		      }
+		  }));
+	  };
+
+	  socket.onerror = (err) => {
+              term.writeln('\r\n❌ Erreur WebSocket');
+	  };
+
+	  socket.onclose = (event) => {
+              term.writeln('\r\n🔌 Connexion fermée');
+	  };
+
+	  socket.onopen = () => {
+              term.writeln('✅ Connecté au WebSocket');
+	  }
+
+	  window.addEventListener('resize', () => {
+	      fitAddon.fit();
+	      socket.send(`S${term.cols} ${term.rows}`);
+	  });
+
+	  data_handler.dispose();
+
+	  data_handler = term.onData(data => {
+	      console.log("input:", data);
+	      socket.send("D" + data);
+	  });
+      }
+    </script>
+   </div>
+  </body>
+</html>

@@ -67,6 +67,7 @@ type ssl_info =
   { protocol : Ssl.protocol
   ; cert : string
   ; priv : string
+  ; ktls : bool
   }
 
 let init_ssl = ref false
@@ -82,7 +83,7 @@ let make ?(addr="0.0.0.0") ?(port=8080) ?(hosts=[]) ?ssl ?(reuse=true) () =
   let ctx, fill =
     match ssl with
     | None -> (None, fun _ -> ())
-    | Some {protocol; cert; priv} ->
+    | Some {protocol; cert; priv; ktls} ->
        try
          if not !init_ssl then (
            Ssl_threads.init ();
@@ -93,7 +94,7 @@ let make ?(addr="0.0.0.0") ?(port=8080) ?(hosts=[]) ?ssl ?(reuse=true) () =
          let mtime2 = (Unix.stat cert).st_mtime in
          let mtime = max mtime1 mtime2 in
          let ctx = Ssl.create_context protocol Ssl.Server_context in
-         Util.set_ktls ctx;
+         if ktls then Util.set_ktls ctx;
          let _ = Ssl.set_min_protocol_version ctx protocol in
          let _ = Ssl.set_max_protocol_version ctx Ssl.TLSv1_3 in
          Ssl.use_certificate ctx cert priv;

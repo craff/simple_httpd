@@ -1,9 +1,9 @@
 #!/bin/bash
 
 SERVER=$1
-PORT=8444
+PORT=8445
 "$SERVER" . -p $PORT --log-requests 0 --log-exceptions 0 -c 200 \
-	  --ssl domain.crt domain.key &
+	  --ssl domain.crt domain.key --ssl-ktls &
 PID=$!
 
 # need to sleep to make sure server is ready before first curl

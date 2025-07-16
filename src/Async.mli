@@ -25,6 +25,7 @@ module Mutex : sig
   val try_lock : t -> bool
   val lock : t -> unit
   val unlock : t -> unit
+  val try_unlock : t -> unit
   val delete : t -> unit
 end
 
@@ -55,14 +56,18 @@ type client = private {
     mutable cont : bool;              (** Read the next request *)
     mutable session : session option; (** Session *)
     mutable start_time : float;       (** start of request *)
+    mutable timeout : float;          (** time out for that client *)
     mutable timeout_ref : float;      (** reference for timeout, usually start_time,
                                           except if [Async.reset_timeout] is used*)
-    mutable locks : Mutex.t list;     (** all lock, locked by this client *)
     buf : Buffer.t;                   (** used to parse headers *)
     mutable last_seen_cell : client Util.LinkedList.cell;
     (** pointer to the linked list used to detect timeout *)
-    mutable continuation : any_cont
-    (** Needed to "kill" client *)
+    mutable at_close : (unit -> unit) Util.LinkedList.t;
+    (** linked list of ressources allocated to that client *)
+    mutable read : bytes -> int -> int -> int;
+    mutable write : bytes -> int -> int -> int;
+    mutable sendfile : Unix.file_descr -> int -> int -> int;
+    mutable flush : unit -> unit;
   }
 
 and session_info =
@@ -79,15 +84,24 @@ and session = session_info Util.LinkedList.cell
 
 module Client : sig
   type t = client
+  val current : unit -> t
   val connected : t -> bool
   val peer : t -> string
   val start_time : t -> float
+  val reset_timeout : t -> unit
+  val set_timeout : t -> float -> unit
   val is_ssl : t -> bool
+  type at_close
+  val at_close : t -> (unit -> unit) -> at_close
+  val remove_at_close : t -> at_close -> unit
   val close : t -> unit
-  val ssl_flush : t -> unit
-end
+  val immediate_close : t -> unit
 
-val close_client : client -> unit
+  val read  : t -> Bytes.t -> int -> int -> int
+  val write : t -> Bytes.t -> int -> int -> int
+  val sendfile : t -> Unix.file_descr -> int -> int -> int
+  val flush : t -> unit
+end
 
 (** only to please qtest *)
 val fake_client : client
@@ -99,9 +113,6 @@ val close_all : int -> unit
 val set_session : ?session:session -> client -> unit
 
 (** The scheduling primitives *)
-val read  : client -> Bytes.t -> int -> int -> int
-val write : client -> Bytes.t -> int -> int -> int
-val sendfile : client -> Unix.file_descr -> int -> int -> int
 val yield : unit -> unit
 val sleep : float -> unit
 
@@ -115,24 +126,24 @@ val reset_timeout : client -> unit
 (** Tell the client not to try to read the next request *)
 val stop_client : client -> unit
 
+val register_fd : Unix.file_descr -> Polly.Events.t -> unit
+val unregister_fd : Unix.file_descr -> unit
+val schedule_fd : bool -> Unix.file_descr -> unit
+
 (** Module with function similar to Unix.read and Unix.single_write
-    but that will perform scheduling *)
+    but that will perform scheduling on a file descriptor.*)
 module Io : sig
   type t
 
   val create : ?edge_triggered : bool -> ?finalise:(t -> unit)
-               -> Unix.file_descr -> t
+                                 -> ?client:client -> Unix.file_descr -> t
   val close : t -> unit
   val read : t -> Bytes.t -> int -> int -> int
   val write : t -> Bytes.t -> int -> int -> int
+  val flush : t -> unit (* double cork *)
   val sock : t -> Unix.file_descr
   val formatter : t -> Format.formatter
-  val schedule : t -> unit
-
-  val poll : ?edge_trigger:bool ->
-             ?read:bool ->
-             ?write:bool ->
-             Unix.file_descr -> unit
+  val schedule : bool -> t -> unit
 end
 
 type socket_type =
@@ -147,15 +158,15 @@ exception NoRead
 exception NoWrite
 exception ClosedByHandler
 
+val max_domain : int
+
 (** Run the given function concurrently. Beware that this is cooperative
     threading. Typical use is a function that communicated with the main
     thread using socket wrapped using the Io module. Race condition are
     very likely, use with caution. *)
-val spawn : (unit -> unit) -> unit
+val spawn : (unit -> 'a) -> (unit -> ('a, exn) Result.t)
 
-(** For use if you do not want to use the provided Io module, and want
-    to schedule an Io task *)
-val schedule_io : Unix.file_descr -> unit
+exception Switch
 
 val run : nb_threads:int -> listens:Address.t array -> maxc:int ->
           timeout:float -> set_domains:(Domain.id array -> unit) ->

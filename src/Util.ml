@@ -55,9 +55,14 @@ let read fd buf ofs len =
 
 external raw_setsockopt_cork : (int [@untagged]) -> (bool [@untagged]) -> (int [@untagged])
   = "caml_byte_setsockopt_cork" "caml_setsockopt_cork" [@@noalloc]
+external raw_flush_cork : (int [@untagged]) -> (int [@untagged])
+  = "caml_byte_flush_cork" "caml_flush_cork" [@@noalloc]
 
 let setsockopt_cork fd v =
   if raw_setsockopt_cork (file_descr_to_int fd) v < 0 then
+    raise Unix.(Unix_error(ENOTSOCK,"setsockopt_cork",""))
+let flush_cork fd =
+  if raw_flush_cork (file_descr_to_int fd) < 0 then
     raise Unix.(Unix_error(ENOTSOCK,"setsockopt_cork",""))
 
 external raw_sendfile : (int [@untagged]) -> (int [@untagged]) ->
@@ -564,3 +569,12 @@ let do_not_free : file_type -> unit = function
   | Reg r -> r.free <- false
   | Dir r -> r.free <- false
   | _ -> ()
+
+external ptty_spawn : string -> string array -> string array option
+                      -> usepath:bool -> resetids:bool
+                      -> int * Unix.file_descr * Unix.file_descr
+  = "caml_ptty_spawn"
+
+external resize_ptty : Unix.file_descr -> rows:int -> cols:int -> pid:int
+                       -> unit
+  = "caml_resize_ptty"

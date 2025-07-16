@@ -10,6 +10,7 @@ let port = ref 9080
 let top_dir = ref ""
 let ssl_cert = ref ""
 let ssl_priv = ref ""
+let ktls = ref false
 
 (** parse command line option *)
 let args, parameters = Server.args ()
@@ -21,12 +22,14 @@ let _ =
       "--port", Arg.Set_int port, " set port";
       "-p", Arg.Set_int port, " set port";
       "--ssl", Tuple[Set_string ssl_cert; Set_string ssl_priv], " give ssl certificate and private key";
+      "--ssl-ktls", Set ktls, " add support for kernel TLS";
       "--dir", Arg.Set_string top_dir, " set the top dir for file path";
     ] @ args)) (fun _ -> raise (Arg.Bad "")) "echo [option]*"
 
 let ssl =
   if !ssl_cert <> "" then
-    Some Address.{ cert = !ssl_cert; priv = !ssl_priv; protocol = Ssl.TLSv1_3 }
+    Some Address.{ cert = !ssl_cert; priv = !ssl_priv;
+                   protocol = Ssl.TLSv1_3; ktls = !ktls }
   else None
 
 (** Server initialisation *)

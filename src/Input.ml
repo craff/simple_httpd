@@ -17,7 +17,7 @@ let index_rec2 s lim i c1 v1 c2 v2 =
   in
   fn i
 type three = One | Two | Three
-let index_rec3 s lim i c1 c2 c3 =
+let index_rec3 enc s lim i c1 c2 c3 =
   let rec fn i =
     if i >= lim then raise Not_found else
       begin
@@ -25,7 +25,11 @@ let index_rec3 s lim i c1 c2 c3 =
         if cr = c1 then (i, One)
         else if cr = c2 then (i, Two)
         else if cr = c3 then (i, Three)
-        else fn (i+1)
+        else
+          begin
+            if cr = '%' then enc := true;
+            fn (i+1)
+          end
       end
   in fn i
 
@@ -109,7 +113,7 @@ let of_client ?(buf_size=64 * 1024) ic : t =
     ~fill:(fun self ->
        if self.len <= 0 then (
           self.off <- 0;
-          self.len <- Async.(read ic self.bs 0 (Bytes.length self.bs));
+          self.len <- Async.(Client.read ic self.bs 0 (Bytes.length self.bs));
         )
       )
     ()
@@ -368,11 +372,15 @@ let read_path ~buf (self:t) : (string * string list * (string * string) list) =
   let cont_query = ref true in
   let start = ref 0 in
   let pos = ref 0 in
-  let get_buf len = Buffer.sub buf !start len in
+  let enc = ref false in
+  let get_buf len =
+    let s = Buffer.sub buf !start len in
+    if !enc then (enc := false; Util.percent_decode s) else s
+  in
   while !cont do
     self.fill_buf();
     try
-      let (i,nb) = index_rec3 self.bs (self.off+self.len) self.off '/' '?' ' ' in
+      let (i,nb) = index_rec3 enc self.bs (self.off+self.len) self.off '/' '?' ' ' in
       let r = i - self.off + 1 in
       Buffer.add_subbytes buf self.bs self.off r;
       pos := !pos + r;
@@ -394,7 +402,7 @@ let read_path ~buf (self:t) : (string * string list * (string * string) list) =
   while !cont_query do
     self.fill_buf();
     try
-      let (i,nb) = index_rec3 self.bs (self.off+self.len) self.off '=' '&' ' ' in
+      let (i,nb) = index_rec3 enc self.bs (self.off+self.len) self.off '=' '&' ' ' in
       let r = i - self.off + 1 in
       Buffer.add_subbytes buf self.bs self.off r;
       pos := !pos + r;
@@ -402,10 +410,8 @@ let read_path ~buf (self:t) : (string * string list * (string * string) list) =
       let len = !pos - 1 - !start in
       (match nb with
       | One -> last_key := get_buf len
-      | Two -> query := (Util.percent_decode !last_key, Util.percent_decode @@ get_buf len)
-                        :: !query
-      | Three -> query := (Util.percent_decode !last_key, Util.percent_decode @@ get_buf len)
-                          :: !query; cont_query := false);
+      | Two -> query := (!last_key, get_buf len) :: !query
+      | Three -> query := (!last_key, get_buf len) :: !query; cont_query := false);
       start := !pos;
     with Not_found ->
       Buffer.add_subbytes buf self.bs self.off self.len;
@@ -425,9 +431,9 @@ let read_path ~buf (self:t) : (string * string list * (string * string) list) =
   (let buf = Buffer.create 16 in\
    of_strings ~buf_size:16 ["hello"; "/"; "world"; "?x="; "z&u"; "="; "v "]\
                 |> read_path ~buf)
-  ("hello/world?x=z&u=v+j", ["hello";"world"], [("u","v j");("x","z")])\
+  ("hello/nice%20world?x=z&u=v%20j", ["hello";"nice world"], [("u","v j");("x","z")])\
   (let buf = Buffer.create 16 in\
-   of_strings ~buf_size:16 ["he"; "ll"; "o"; "/w"; "orl"; "d?x"; "=z&u"; "="; "v+j "]\
+   of_strings ~buf_size:16 ["he"; "ll"; "o"; "/nic"; "e%20"; "w"; "orl"; "d?x"; "=z&u"; "="; "v%20j "]\
                 |> read_path ~buf)
  *)
 

@@ -21,11 +21,11 @@ let log_line i (time, client, rest) output =
         <td class="info"><?= (rest) ?></td>
       </tr>|funml} output
 
-let get_log i nb_lines output =
+let get_log client i nb_lines output =
   let filename = fname i in
   try
     let (_pid, out) =
-      Process.create "tail" [|"tail"; "-n"; string_of_int nb_lines; filename|]
+      Process.create ~client "tail" [|"tail"; "-n"; string_of_int nb_lines; filename|]
     in
     let ch = Input.of_io out in
     let b = Buffer.create 1024 in
@@ -75,10 +75,11 @@ let html ?log_size ?in_head ?css ?start_header ?end_header
   in
   let num_threads = num_threads self in
   let mypid = Unix.getpid () in
+  let client = Request.client req in
   let ps =
     try
       let (_,out) =
-        Process.create "ps" [| "ps";"-p"; string_of_int mypid;"-o"
+        Process.create ~client"ps" [| "ps";"-p"; string_of_int mypid;"-o"
                                ; "%cpu,rss,vsz,pmem"|]
       in
       let ch = Input.of_io out in
@@ -100,7 +101,7 @@ let html ?log_size ?in_head ?css ?start_header ?end_header
   let df =
     try
       let (_,out) =
-        Process.create "df" [| "df";"-h"; "."|]
+        Process.create ~client "df" [| "df";"-h"; "."|]
       in
       let ch = Input.of_io out in
       let buf = Buffer.create 128 in
@@ -212,7 +213,7 @@ let html ?log_size ?in_head ?css ?start_header ?end_header
 		   <tbody id="table">
 		     <?ml
 		      let _ = for i = 0 to num_threads do
-		      get_log i log_size output;
+		      get_log client i log_size output;
 		      done
 		      ?>
 	   </table>

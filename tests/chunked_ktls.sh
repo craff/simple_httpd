@@ -6,7 +6,7 @@ SERVER=$1
 PORT=8443
 
 "$SERVER" . -p $PORT --log-requests 0 --log-exceptions 0 \
-	  --ssl domain.crt domain.key \
+	  --ssl domain.crt domain.key --ssl-ktls \
           --upload --max-upload 100000000000 &
 PID=$!
 

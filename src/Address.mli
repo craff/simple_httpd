@@ -19,6 +19,7 @@ type ssl_info =
   { protocol : Ssl.protocol (** min protocol version, max is 1_3 *)
   ; cert : string
   ; priv : string
+  ; ktls : bool (** Use kernel TLS *)
   }
 
 (** An helper to build the above type *)

@@ -11,6 +11,7 @@ let port = ref 8080
 let top_dir = ref None
 let ssl_cert = ref ""
 let ssl_priv = ref ""
+let ktls = ref false
 
 (** Server.args provides a bunch and standard option to control the
     maximum number of connections, logs, etc... *)
@@ -24,12 +25,13 @@ let _ =
       "-p", Arg.Set_int port, " set port";
       "--dir", Arg.String (fun s -> top_dir := Some s), " set the top dir for file path";
       "--ssl", Tuple[Set_string ssl_cert; Set_string ssl_priv], " give ssl certificate and private key";
-
+      "--ssl-ktls", Set ktls, " add support for kernel TLS";
     ] @ args)) (fun _ -> raise (Arg.Bad "")) "echo [option]*"
 
 let ssl =
   if !ssl_cert <> "" then
-    Some Address.{ cert = !ssl_cert; priv = !ssl_priv; protocol = Ssl.TLSv1_3 }
+    Some Address.{ cert = !ssl_cert; priv = !ssl_priv;
+                   protocol = Ssl.TLSv1_3; ktls = !ktls }
   else None
 
 (** Server initialisation *)
@@ -115,8 +117,9 @@ let _ =
                      let acc = if v <> "" then v::acc else acc in
                      acc) [cmd] (Request.query req)
       in
+      let client = Request.client req in
       let args = Array.of_list (List.rev args) in
-      let (_, io) = Process.create cmd args in
+      let (_, io) = Process.create ~client cmd args in
       Response.make_stream (Input.of_io io);
     )
 
@@ -132,6 +135,10 @@ let _ =
         let headers = [H.Content_Type, mime_type] in
         Response.make_stream ~headers str
       )
+
+let _ =
+  Server.add_route_handler ~meth:GET server
+    Route.(exact "shell" @/ return) WebSocket.terminal_handler
 
 (** Main pagen using the Html module (deprecated by vfs_pack and many other
     solutions *)
@@ -156,6 +163,8 @@ let _ =
            <li><pre><a href="/stats/">/status (GET)</a></pre> to get server status</li>
            <li><pre><a href="/vfs/">/vfs (GET)</a></pre> to access a VFS
              embedded in the binary</li>
+           <li><pre><a href="/vfs/shell.html">/vfs/shell.html (GET)</a></pre> to access a shell
+             using web socket and xterm.js</li>
 	 </ul>
        </body>
      </html>|chaml}

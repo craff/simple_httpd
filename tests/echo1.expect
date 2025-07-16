@@ -7,7 +7,7 @@ echo:
  query=["c","d";"a","b"]}
 (query: "c" = "d";"a" = "b")
 <!DOCTYPE html>
-<html><head><title>list directory "vfs"</title><meta charset="utf-8"><body><h2>Index of "/vfs"</h2><a href="/">parent directory</a><ul><li><a href="/vfs/a.txt">a.txt</a> (12b)<li><a href="/vfs/bar.html">bar.html</a><li><a href="/vfs/big">big</a> (1.48M)<li><a href="/vfs/foo.html">foo.html</a> (141b)<li><a href="/vfs/sub">sub</a> dir<li><a href="/vfs/test_out.txt">test_out.txt</a> (208b)<li><a href="/vfs/tyr.html">tyr.html</a></ul></body></html>hello
+<html><head><title>list directory "vfs"</title><meta charset="utf-8"><body><h2>Index of "/vfs"</h2><a href="/">parent directory</a><ul><li><a href="/vfs/a.txt">a.txt</a> (12b)<li><a href="/vfs/bar.html">bar.html</a><li><a href="/vfs/big">big</a> (1.48M)<li><a href="/vfs/foo.html">foo.html</a> (141b)<li><a href="/vfs/shell.html">shell.html</a><li><a href="/vfs/sub">sub</a> dir<li><a href="/vfs/test_out.txt">test_out.txt</a> (208b)<li><a href="/vfs/tyr.html">tyr.html</a></ul></body></html>hello
 world
 <!DOCTYPE html>
 <html><head><body><h2>funky:</h2><ul><li><a href="../">go up!!</a><li><a href="../foo.html">up/foo</a></ul><!DOCTYPE html>

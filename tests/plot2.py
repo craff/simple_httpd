@@ -32,7 +32,8 @@ def bars(name, title):
                          else ("#ff00ff" if "simple_httpd" in label
                                else ("#ff0000" if "nginx" in label
                                      else "#00ff00")))
-                dashes = ([4,3] if "ssl" in label else (None, None))
+                dashes = ([4,3] if "ktls" in label else
+                          [2,2] if "ssl" in label else (None, None))
                 curve = ax.plot(x, y, label=label,color=color,dashes=dashes)
 
         ax.legend(loc='upper right')

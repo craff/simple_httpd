@@ -99,9 +99,30 @@ echo 'GET https://localhost:8443/vfs/foo.html' \
 
 kill $PID
 
-cat timings/res.bin | vegeta report > timings/sh_report_ssl.txt
-cat timings/res.bin | vegeta report -type=hist[100us,200us,300us,400us,500us,750us,1ms,2ms,3ms,4ms,5ms] > timings/sh_ssl.txt
-cat timings/res.bin | vegeta plot > timings/sh_ssl.html
+dune exec -- ../examples/echo.exe -c 2100 --port 8443  --log-requests 0 --log-exceptions 0 --ssl ../_build/default/tests/domain.crt ../_build/default/tests/domain.key --ssl-ktls -j 8 &
+PID=$!
+
+sleep 1
+
+echo "simple_httpd ktls chaml"
+
+echo 'GET https://localhost:8443/vfs/bar.html' \
+	| vegeta -cpus 8 attack -insecure -rate 1000 -duration $duration > timings/res.bin
+
+cat timings/res.bin | vegeta report > timings/chaml_report_ktls.txt
+cat timings/res.bin | vegeta report -type=hist[100us,200us,300us,400us,500us,750us,1ms,2ms,3ms,4ms,5ms] > timings/chaml_ktls.txt
+cat timings/res.bin | vegeta plot > timings/chaml_ktls.html
+
+echo "simple_httpd ktls static"
+
+echo 'GET https://localhost:8443/vfs/foo.html' \
+	| vegeta -cpus 8 attack -insecure -rate 1000 -duration $duration > timings/res.bin
+
+kill $PID
+
+cat timings/res.bin | vegeta report > timings/sh_report_ktls.txt
+cat timings/res.bin | vegeta report -type=hist[100us,200us,300us,400us,500us,750us,1ms,2ms,3ms,4ms,5ms] > timings/sh_ktls.txt
+cat timings/res.bin | vegeta plot > timings/sh_ktls.html
 
 echo "apache ssl php"
 
@@ -147,6 +168,7 @@ function csv_out() {
 echo ,min, mean, 50%, 90%, 95%, 99%, max > timings/static.csv
 csv_out "simple_httpd" sh_report.txt timings/static.csv
 csv_out "simple_httpd ssl" sh_report_ssl.txt timings/static.csv
+csv_out "simple_httpd ktls" sh_report_ktls.txt timings/static.csv
 csv_out "nginx" nginx_report.txt timings/static.csv
 csv_out "nginx ssl" nginx_report_ssl.txt timings/static.csv
 csv_out "apache" apache_report.txt timings/static.csv
@@ -156,6 +178,7 @@ csv_out "apache ssl" apache_report_ssl.txt timings/static.csv
 echo ,min, mean, 50%, 90%, 95%, 99%, max > timings/dynamic.csv
 csv_out "simple_httpd chaml" chaml_report.txt timings/dynamic.csv
 csv_out "simple_httpd chaml ssl" chaml_report_ssl.txt timings/dynamic.csv
+csv_out "simple_httpd chaml ktls" chaml_report_ktls.txt timings/dynamic.csv
 csv_out "nginx php" nginx_php_report.txt timings/dynamic.csv
 csv_out "nginx php ssl" nginx_php_report_ssl.txt timings/dynamic.csv
 csv_out "apache php" apache_php_report.txt timings/dynamic.csv

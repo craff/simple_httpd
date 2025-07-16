@@ -27,7 +27,8 @@ let err_regexp = Str.regexp "errors.*"
 let measure server cmd values =
   let s = match server with
     | Some server ->
-       let args = Array.of_list (String.split_on_char ' ' server) in
+       let args = String.split_on_char ' ' server in
+       let args =  Array.of_list (List.filter (fun s -> s <> "") args) in
        let chs = Unix.open_process_args_out args.(0) args in
        let pid = Unix.process_out_pid chs in
        Some(chs,pid)
@@ -54,8 +55,9 @@ let measure server cmd values =
   let res = List.map fn values in
   (match s with
    | Some(ch,pid) ->
-       Unix.kill pid Sys.sigkill;
-       close_out ch
+      Unix.kill pid Sys.sigkill;
+      ignore (Unix.waitpid [] pid);
+      close_out ch
    | None -> ());
   res
 
@@ -85,25 +87,25 @@ let _ = csv := add_column !csv "simple_httpd vfs_path" string_of_float data
 let data =
   Printf.printf "measure vfs_pack ssl\n%!";
   measure
-    (Some "../_build/default/tests/serve_files.exe --port 9443 --log-requests 0 --log-exceptions 0 --ssl ../_build/default/tests/domain.crt ../_build/default/tests/domain.key -c 2100 -j 8 --port=9443 --dir /var/www/nginx --timeout 10")
+    (Some "../_build/default/tests/serve_files.exe --port 9443 --log-requests 0 --log-exceptions 0 --ssl ../_build/default/tests/domain.crt ../_build/default/tests/domain.key -c 2100 -j 8 --dir /var/www/nginx --timeout 10")
     (fun ((file, d), c) ->
       Printf.sprintf "h2load --h1 -m 8 -c %d -n %d https://localhost:9443/%s"
         c d file)
     values
 
 let _ = csv := add_column !csv "simple_httpd vfs_pack ssl" string_of_float data
-(*
+
 let data =
   Printf.printf "measure vfs_pack ssl+ktls\n%!";
   measure
-    (Some "../_build/default/tests/serve_files.exe --log-requests 0 --ktls --ssl ../_build/default/tests/domain.crt ../_build/default/tests/domain.key -c 2100 -j 8 --port=9444 --dir /var/www/nginx -c 2100 -j 8 --timeout 10")
+    (Some "../_build/default/tests/serve_files.exe --port=9444 --log-requests 0 --log-exceptions 0 --ssl ../_build/default/tests/domain.crt ../_build/default/tests/domain.key --ssl-ktls -c 2100 -j 8 --dir /var/www/nginx --timeout 10")
     (fun ((file, d), c) ->
       Printf.sprintf "h2load --h1 -m 8 -c %d -n %d https://localhost:9444/%s"
         c d file)
     values
 
 let _ = csv := add_column !csv "simple_httpd vfs_pack ssl+ktls" string_of_float data
- *)
+
 let data =
   Printf.printf "measure http_of_dir\n%!";
   measure
@@ -125,18 +127,18 @@ let data =
     values
 
 let _ = csv := add_column !csv "simple_httpd add_dir_path ssl" string_of_float data
-(*
+
 let data =
   Printf.printf "measure http_of_dir ssl+ktls\n%!";
   measure
-    (Some "../_build/default/src/bin/http_of_dir.exe --log-requests 0 --ktls --ssl ../_build/default/tests/domain.crt ../_build/default/tests/domain.key -c 2100 -j 8 --port=8444 --timeout 10 /var/www/nginx")
+    (Some "../_build/default/src/bin/http_of_dir.exe --log-requests 0 --log-exceptions 0 --ssl ../_build/default/tests/domain.crt ../_build/default/tests/domain.key --ssl-ktls -c 2100 -j 8 --port=8444 --timeout 10 /var/www/nginx")
     (fun ((file, d), c) ->
       Printf.sprintf "h2load --h1 -m 8 -c %d -n %d https://localhost:8444/%s"
         c d file)
     values
 
-let _ = csv := add_column !csv "simple_httpd ssl+ktls" string_of_float data
- *)
+let _ = csv := add_column !csv "simple_httpd add_dir_path ssl+ktls" string_of_float data
+
 let data =
   Printf.printf "measure nginx\n%!";
   measure None
@@ -210,18 +212,18 @@ let data =
     values
 
 let _ = csv := add_column !csv "simple_httpd chaml ssl" string_of_float data
-(*
+
 let data =
   Printf.printf "simple_https chaml ssl+ktls\n%!";
   measure
-    (Some "../_build/default/examples/echo.exe -c 2100 -j 8 --ktls --ssl ../_build/default/tests/domain.crt ../_build/default/tests/domain.key -c 2100 -j 8 --port=8444 --log-requests 0 --log-exceptions 0")
+    (Some "../_build/default/examples/echo.exe -c 2100 -j 8 --ssl-ktls --ssl ../_build/default/tests/domain.crt ../_build/default/tests/domain.key -c 2100 -j 8 --port=8444 --log-requests 0 --log-exceptions 0")
     (fun ((file, d), c) ->
       Printf.sprintf "h2load --h1 -m 8 -c %d -n %d https://localhost:8444/vfs/%s"
         c d file)
     values
 
 let _ = csv := add_column !csv "simple_httpd chaml ssl+ktls" string_of_float data
- *)
+
 let data =
   Printf.printf "apache php\n%!";
   measure None

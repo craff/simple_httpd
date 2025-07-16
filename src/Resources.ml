@@ -20,9 +20,10 @@ module Make(R:Resource) = struct
 
   (* To do: free resources not used for a long time. *)
   let lcreate () = lazy (R.create ())
-  let vals = Array.init R.number (fun _ -> (ref false, lcreate()))
-  let semaphore = Semaphore.create R.number
-  let mutex = Mutex.create ()
+  let vals = Array.init Async.max_domain
+               (fun _ -> Array.init R.number (fun _ -> (ref false, lcreate())))
+  let semaphore = Array.init Async.max_domain (fun _ -> Semaphore.create R.number)
+  let mutex = Array.init Async.max_domain (fun _ -> Mutex.create ())
 
   let array_find t =
     let i = ref 0 in
@@ -32,6 +33,10 @@ module Make(R:Resource) = struct
     if !i < Array.length t then t.(!i) else raise Not_found
 
   let get () =
+    let i = (Domain.self () :> int) in
+    let semaphore = semaphore.(i) in
+    let mutex = mutex.(i) in
+    let vals = vals.(i) in
     Semaphore.decr mutex semaphore;
     let (handle, e) =
       try
@@ -46,6 +51,9 @@ module Make(R:Resource) = struct
     (handle, Lazy.force e)
 
   let release handle =
+    let i = (Domain.self () :> int) in
+    let semaphore = semaphore.(i) in
+    let mutex = mutex.(i) in
     Mutex.lock mutex;
     handle := false;
     Semaphore.incr semaphore;

@@ -18,6 +18,7 @@ let global_top_dir = ref "."
     to change this. *)
 let ssl_cert = ref ""
 let ssl_priv = ref ""
+let ktls = ref false (** use Kernel TLS if client is OK *)
 
 (** Server.args provides a bunch and standard option to control the
     maximum number of connections, logs, etc... *)
@@ -31,6 +32,7 @@ let _ =
       "--port", Arg.Set_int port, " set port";
       "--ssl-port", Arg.Set_int ssl_port, " set ssl port";
       "--ssl", Tuple[Set_string ssl_cert; Set_string ssl_priv], " give ssl certificate and private key";
+      "--ssl-ktls", Set ktls, " add support for kernel TLS";
       "-p", Arg.Set_int port, " set port";
       "--dir", Arg.String (fun s -> global_top_dir := s), " set the top dir for file path";
     ] @ args)) (fun _ -> raise (Arg.Bad "")) "echo [option]*"
@@ -38,7 +40,8 @@ let _ =
 (** Initialize ssl, if needed *)
 let ssl =
   if !ssl_cert <> "" then
-    Some Address.{ cert = !ssl_cert; priv = !ssl_priv; protocol = Ssl.TLSv1_3 }
+    Some Address.{ cert = !ssl_cert; priv = !ssl_priv;
+                   protocol = Ssl.TLSv1_3; ktls = !ktls }
   else None
 
 (** Compose the stat filter with the compression filter

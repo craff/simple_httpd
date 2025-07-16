@@ -42,6 +42,12 @@ module Util : sig
   val parse_query : string -> (string*string) list
   (** Parse a query as a list of ['&'] or [';'] separated [key=value] pairs.
       The order might not be preserved.  *)
+
+  val ptty_spawn : string -> string array -> string array option
+                   -> usepath:bool -> resetids:bool
+                   -> int * Unix.file_descr * Unix.file_descr
+
+  val resize_ptty : Unix.file_descr -> rows:int -> cols:int -> pid:int -> unit
 end
 
 (** Module for declaring address and port to listen to *)
@@ -70,6 +76,10 @@ module Address : sig
     { protocol : Ssl.protocol (** minimum protocol to use, max is TSL1.3 *)
     ; cert : string           (** file name of the certificate *)
     ; priv : string           (** file name of the private key *)
+    ; ktls : bool             (** use kernel TLS. Remark; Rx only available
+                                  with openSSL >= 3.1.
+                                  Check if suppoprted by each client before
+                                  using *)
     }
 
   (** The constructor to build an address *)
@@ -91,6 +101,9 @@ end
 module Client : sig
   type t
 
+  (** Current client *)
+  val current : unit -> t
+
   (** Is the client connected *)
   val connected : t -> bool
 
@@ -100,14 +113,38 @@ module Client : sig
   (** Unix time of the client arrival*)
   val start_time : t -> float
 
+  (** Reset the time out, client will be closed from this time, after
+      timout s. This is done after each request if the connection is
+      KeepAlive, but you might do it for WebSocket or long request *)
+  val reset_timeout : t -> unit
+
+  val set_timeout : t -> float -> unit
+  (** Change the timeout for a specific client *)
+
   (** Is the client using ssl *)
   val is_ssl : t -> bool
 
-  (** close the client connection *)
+  (** close the client connection. Not immediate, it just
+      expires the timeout *)
   val close : t -> unit
 
-  (** flush an the ssl socket of the client if it has one *)
-  val ssl_flush : t -> unit
+  (** close immediatly, but works only from the client domain *)
+  val immediate_close : t -> unit
+
+  type at_close
+
+  (** register an action performed when the client is closed *)
+  val at_close : t -> (unit -> unit) -> at_close
+
+  (** remove a previously register at_close action *)
+  val remove_at_close : t -> at_close -> unit
+
+  (** flush the ssl socket of the client if it has one *)
+  val flush : t -> unit
+
+  val read  : t -> Bytes.t -> int -> int -> int
+  val write : t -> Bytes.t -> int -> int -> int
+  val sendfile : t -> Unix.file_descr -> int -> int -> int
 end
 
 (** Module dealing with the asynchronous treatment of clients by each domain *)
@@ -153,7 +190,12 @@ module Async : sig
   (** Run the given function concurrently. Beware that this is cooperative
       threading. Typical use is a data base request that write to one end
       of a fifo, while the web server reads the other end. *)
-  val spawn : (unit -> unit) -> unit
+  val spawn : (unit -> 'a) -> (unit -> ('a, exn) Result.t)
+
+  (** Low level polling*)
+  val register_fd : Unix.file_descr -> Polly.Events.t -> unit
+  val unregister_fd : Unix.file_descr -> unit
+  val schedule_fd : bool -> Unix.file_descr -> unit
 
 end
 
@@ -170,9 +212,16 @@ end
 module Io : sig
     type t
 
-    val create : ?edge_triggered:bool -> ?finalise:(t -> unit) -> Unix.file_descr -> t
+    val create : ?edge_triggered:bool -> ?finalise:(t -> unit)
+                 -> ?client:Client.t -> Unix.file_descr -> t
     (** Encapsulate a file descriptor in a dedicated data structure.
-        finalise default to Unix.close Io.sock. *)
+        finalise default to Unix.close Io.sock.
+
+        If client is provided, the ressource is atatched to the client and
+        destroyed (call to finalise) when the client is closed.
+
+        Not suitable for file descriptor using SSL, unless kernel tls is used.
+     *)
 
     val close : t -> unit
     (** Close io, similar to [Unix.close], simply call finalise*)
@@ -190,18 +239,10 @@ module Io : sig
     val formatter : t -> Format.formatter
     (** Provide a formatter to use with the [Format] library *)
 
-    val schedule: t -> unit
+    val schedule: bool -> t -> unit
     (** Allow to schedule the io immediatly. Typical use is opening a pipe and
-        waiting the other end to be ready. *)
-
-    val poll : ?edge_trigger:bool ->
-               ?read:bool ->
-               ?write:bool ->
-               Unix.file_descr -> unit
-    (** Low level polling, release control until the event is available.
-        Usefull for Postgresql. Beware that libpq and other do not support
-        Edge Trigerring, which is true by defaut. read and write are false
-        by default. *)
+        waiting the other end to be ready. The boolean should be true
+        for read, *)
 end
 
 (** Representation of input streams, can be generated from string, file, ... *)
@@ -395,7 +436,8 @@ end
 module Mutex : sig
   (** Simple_httpd notion of mutex. You must be careful with server wide mutex:
       a DoS attack could try to hold such a mutex. A mutex per session may be a good
-      idea. A mutex per client is useless (client are treated sequentially).
+      idea. A mutex per client is useless (client are treated sequentially, unless you
+      use spanw or websocket (that uses spawn)).
 
       Note: they are implemented using Linux [eventfd] *)
   type t
@@ -404,6 +446,9 @@ module Mutex : sig
   val try_lock : t -> bool
   val lock : t -> unit
   val unlock : t -> unit
+  val try_unlock : t -> unit
+  (** unlock if locked by you, useful if you may have closed the client *)
+
   val delete : t -> unit
 end
 
@@ -455,7 +500,16 @@ module Process : sig
       wait_interval second (default 0.010s = 10ms). *)
   val create : ?wait_interval: float ->
                ?stdout: Unix.file_descr -> ?stderr: Unix.file_descr ->
-               string -> string array -> process * Io.t
+               client:Client.t -> string -> string array -> process * Io.t
+
+
+  type 'a mail = { dest: string
+                 ; from: string
+                 ; subject : string
+                 ; action : process -> 'a
+                 ; cmd : string }
+
+  val mail : 'a mail -> ('b, Format.formatter, unit, 'a) format4 -> 'b
 end
 
 (** Module defining HTML methods (GET,PUT,...) *)
@@ -1308,6 +1362,23 @@ module Server : sig
       described at the server's creation time. *)
 
 end
+
+module WebSocket : sig
+  exception Closed
+
+  val start_web_socket : (read:(unit -> string) -> write:(string -> unit) -> 'a)
+                         -> string Request.t
+                         -> (unit -> ('a, exn) result) * Response.t
+
+  val terminal_page : ?in_head:Html.elt -> ?css:string ->
+                      ?start_header: Html.elt -> ?end_header: Html.elt ->
+                      ?start_contents: Html.elt -> ?end_contents: Html.elt ->
+                      Html.chaml
+
+  val terminal_handler : ?mail:unit Process.mail -> 'b Request.t -> Response.t
+
+end
+
 
 (** Module to server directory structure (real of virtual) *)
 module Dir : sig

@@ -11,6 +11,7 @@ val set_ktls : Ssl.context -> unit
 val check_ktls : Ssl.socket -> int
 
 val setsockopt_cork : Unix.file_descr -> bool -> unit
+val flush_cork : Unix.file_descr -> unit
 
 val get_socket_error : ?default:Unix.error -> Unix.file_descr -> Unix.error option
 
@@ -78,7 +79,8 @@ module LinkedList : sig
   val remove_cell : 'a cell -> 'a t -> unit
   val move_first : 'a cell -> 'a t -> unit
   val move_last : 'a cell -> 'a t -> unit
-
+  val insert_first : 'a cell -> 'a t -> unit
+  val insert_last : 'a cell -> 'a t -> unit
   val iter : ('a -> unit) -> 'a t -> unit
 end
 
@@ -112,3 +114,9 @@ val file_type : string -> file_type
 
 val free : file_type -> unit
 val do_not_free : file_type -> unit
+
+val ptty_spawn : string -> string array -> string array option
+                 -> usepath:bool -> resetids:bool
+                 -> int * Unix.file_descr * Unix.file_descr
+
+val resize_ptty : Unix.file_descr -> rows:int -> cols:int -> pid:int -> unit

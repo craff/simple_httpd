@@ -21,8 +21,11 @@
 #include <sys/sendfile.h>
 #include <openssl/ssl.h>
 #include <openssl/err.h>
+#include <sys/ioctl.h>
 #include <sys/resource.h>
+#include <spawn.h>
 #include <fcntl.h>
+#include <signal.h>
 #ifdef HAS_DIRENT
 #include <dirent.h>
 #else
@@ -140,6 +143,31 @@ long caml_setsockopt_cork(long socket, long val)
   return(setsockopt(socket, IPPROTO_TCP, TCP_CORK, &val, optsize));
 }
 
+CAMLprim value caml_byte_flush_cork(value socket)
+{
+  CAMLparam0();
+  int optval = 0;
+  long r;
+  socklen_t optsize;
+  optsize = sizeof(optval);
+
+  r = setsockopt(Int_val(socket), IPPROTO_TCP, TCP_CORK, &optval, optsize);
+  if (r < 0) CAMLreturn(r);
+  optval = 1;
+  CAMLreturn(Val_int(setsockopt(Int_val(socket), IPPROTO_TCP, TCP_CORK, &optval, optsize)));
+}
+
+long caml_flush_cork(long socket)
+{
+  int optval = 0;
+  long r;
+  socklen_t optsize = sizeof(optval);
+  r = setsockopt(socket, IPPROTO_TCP, TCP_CORK, &optval, optsize);
+  if (r < 0) return r;
+  optval = 1;
+  return(setsockopt(socket, IPPROTO_TCP, TCP_CORK, &optval, optsize));
+}
+
 CAMLprim value caml_eventfd(value initval, value flags)
 {
   CAMLparam0();
@@ -241,4 +269,127 @@ CAMLprim value caml_file_type(value name) {
     }
   }
   CAMLreturn(r);
+}
+
+CAMLprim value caml_ptty_spawn(value executable, /* string */
+			      value args,       /* string array */
+			      value optenv,     /* string array option */
+			      value usepath,
+			      value resetids )
+{
+  CAMLparam3(executable, args, optenv);
+  CAMLlocal1(res);
+  char ** argv;
+  char ** envp;
+  const char * path;
+  pid_t pid;
+  int master_fd, slave_fd, control_fd, r;
+  char *slave_name;
+
+  caml_unix_check_path(executable, "create_process");
+  path = String_val(executable);
+  argv = caml_unix_cstringvect(args, "create_process");
+  if (Is_some(optenv)) {
+    envp = caml_unix_cstringvect(Some_val(optenv), "create_process");
+  } else {
+    envp = NULL;
+  }
+  master_fd = posix_openpt(O_RDWR | O_NOCTTY | O_CLOEXEC);
+  if (master_fd < 0) goto error;
+
+  if (grantpt(master_fd) < 0) goto error;
+
+  if (unlockpt(master_fd) < 0) goto error;
+
+  slave_name = ptsname(master_fd);
+  if (!slave_name) goto error;
+  //fprintf(stderr,"slave_name %s\n",slave_name); fflush(stderr);
+
+  slave_fd = open(slave_name, O_RDWR);
+  if (slave_fd < 0) goto error;
+  //fprintf(stderr,"slave\n"); fflush(stderr);
+
+  pid = fork();
+  if (pid != 0) {
+    /* This is the parent process */
+    control_fd = dup(slave_fd); //  make sure we get notified at close
+    close(slave_fd);
+    caml_unix_cstringvect_free(argv);
+    if (envp != NULL) caml_unix_cstringvect_free(envp);
+    if (pid == -1) goto error;
+    res = caml_alloc_small(3,0);
+    Store_field(res,0,Val_int(pid));
+    Store_field(res,1,Val_int(master_fd));
+    Store_field(res,2,Val_int(control_fd));
+    CAMLreturn(res);
+  }
+  // FILE* oerr = fdopen(dup(2), "w");
+  /* This is the child process */
+  /* Perform the redirections for stdin, stdout, stderr */
+  if (isatty(0)) {
+    if (ioctl(0, TIOCNOTTY) < 0) goto exit;
+    //fprintf(oerr,"ioctl TIOCNOTTY\n"); fflush(oerr);
+    close(0);
+  }
+  if (setsid() < 0) goto exit;
+  //fprintf(oerr,"setsid\n"); fflush(oerr);
+  if (ioctl(slave_fd, TIOCSCTTY, 1) < 0) goto exit;
+  //fprintf(oerr,"ioctl TIOCSCTTY\n"); fflush(oerr);
+  if (Val_int(resetids)) {
+    if (setuid(getuid()) < 0) goto exit;
+    if (setgid(getgid()) < 0) goto exit;
+  }
+  //fprintf(oerr,"resetids\n"); fflush(oerr);
+  if (dup2(slave_fd, 0) < 0) goto exit;
+  if (dup2(slave_fd, 1) < 0) goto exit;
+  if (dup2(slave_fd, 2) < 0) goto exit;
+  //fprintf(oerr,"duv\n"); fflush(oerr);
+  close(slave_fd);
+  /* Transfer control to the executable */
+  if (Bool_val(usepath)) {
+    if (envp == NULL) {
+      execvp(path, argv);
+    } else {
+#ifdef HAS_EXECVPE
+      execvpe(path, argv, envp);
+#else
+      /* No other thread is running in the child process, so we can change
+         the global variable [environ] without bothering anyone. */
+      environ = envp;
+      execvp(path, argv);
+#endif
+    }
+  } else {
+    if (envp == NULL) {
+      execv(path, argv);
+    } else {
+      execve(path, argv, envp);
+    }
+  }
+ exit:
+  // fprintf(oerr,"ptty_spawn: %s\n",strerror(errno)); fflush(oerr);
+  _exit(127);
+ error:
+  caml_unix_cstringvect_free(argv);
+  if (Is_some(optenv)) caml_unix_cstringvect_free(envp);
+  caml_unix_error(r, "create_process", executable);
+}
+
+
+CAMLprim value caml_resize_ptty(value fd, value rows, value cols, value pid) {
+  CAMLparam0();
+
+  struct winsize ws;
+  ws.ws_row = Int_val(rows);
+  ws.ws_col = Int_val(cols);
+  ws.ws_xpixel = 0;
+  ws.ws_ypixel = 0;
+
+  if (ioctl(Int_val(fd), TIOCSWINSZ, &ws) == -1) {
+    caml_failwith(strerror(errno));
+  }
+
+  kill(Int_val(pid), SIGWINCH);
+
+  CAMLreturn(Val_unit);
 }

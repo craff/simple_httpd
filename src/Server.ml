@@ -285,6 +285,7 @@ let handle_client_ (self:t) (client:Async.client) : unit =
            Response.output_ (Request.meth req) oc r;
            log (Req 0) (fun k -> k "response code %d sent after %fms" (r.code :> int)
                                    (1e3 *. (Unix.gettimeofday () -. req.start_time)));
+           if r.code = Response_code.switching_protocols then raise Async.Switch
          in
          (* call handler *)
          handler oc req ~resp;

@@ -63,7 +63,25 @@
   (alias runtest)
   (package simple_httpd)
   (enabled_if (= %{system} "linux"))
-  (action (diff chunked-ssl-out.expect chunked-ssl-out)))
+  (action (diff chunked-out.expect chunked-ssl-out)))
+
+;chunked-ktls
+
+(rule
+  (targets chunked-ktls-out)
+  (deps (:bin ../src/bin/http_of_dir.exe) foo_50 domain.crt domain.key
+  	chunked_ssl.sh)
+  (locks /port)
+  (package simple_httpd)
+  (enabled_if (= %{system} "linux"))
+  (action (with-stdout-to %{targets}
+                          (run ./chunked_ktls.sh %{bin}))))
+
+(rule
+  (alias runtest)
+  (package simple_httpd)
+  (enabled_if (= %{system} "linux"))
+  (action (diff chunked-out.expect chunked-ktls-out)))
 
 ;stress
 (rule
@@ -96,7 +114,25 @@
   (alias runtest)
   (package simple_httpd)
   (enabled_if (= %{system} "linux"))
-  (action (diff dl-stress-ssl.expect dl-stress-ssl)))
+  (action (diff dl-stress.expect dl-stress-ssl)))
+
+
+;ktls stress
+(rule
+  (targets dl-stress-ktls)
+  (deps (:bin ../src/bin/http_of_dir.exe) foo_50 domain.crt domain.key
+  	stress-ktls.sh)
+  (locks /port)
+  (package simple_httpd)
+  (enabled_if (= %{system} "linux"))
+  (action (with-stdout-to %{targets}
+                          (run ./stress-ktls.sh %{bin} 15))))
+
+(rule
+  (alias runtest)
+  (package simple_httpd)
+  (enabled_if (= %{system} "linux"))
+  (action (diff dl-stress.expect dl-stress-ktls)))
 
 (rule
   (targets foo_50)

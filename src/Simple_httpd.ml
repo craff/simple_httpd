@@ -53,6 +53,8 @@ module Response_code = Response_code
 
 module Response = Response
 
+module WebSocket = WebSocket
+
 module Route = Route
 
 module Filter = Route.Filter

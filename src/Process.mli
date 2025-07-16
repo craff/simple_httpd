@@ -8,4 +8,12 @@ type process = private
 
 val create : ?wait_interval:float ->
              ?stdout:Unix.file_descr -> ?stderr:Unix.file_descr ->
-             string -> string array -> process * Io.t
+             client:Client.t -> string -> string array -> process * Io.t
+
+type 'a mail = { dest: string
+               ; from: string
+               ; subject : string
+               ; action : process -> 'a
+               ; cmd : string }
+
+val mail : 'a mail -> ('b, Format.formatter, unit, 'a) format4 -> 'b

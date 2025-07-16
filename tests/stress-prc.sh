@@ -2,7 +2,7 @@
 
 SERVER=$1
 PORT=8090
-"$SERVER" -p $PORT --log-requests 0 --log-exceptions 0 --log-processes 0 &
+"$SERVER" -p $PORT --timeout 2 --log-requests 0 --log-exceptions 0 --log-processes 0 &
 PID=$!
 
 # need to sleep to make sure server is ready before first curl
@@ -20,4 +20,7 @@ done
 #echo ${PIDS[@]}
 wait ${PIDS[@]}
 
+sleep 1
+
 kill $PID
+wait $PID

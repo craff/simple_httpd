@@ -9,7 +9,7 @@ let sock oc = oc.fd.sock
 
 let push oc =
   assert(oc.o = oc.s);
-  let w = Async.write oc.fd oc.b 0 oc.s in
+  let w = Async.Client.write oc.fd oc.b 0 oc.s in
   if w < oc.s then
     begin
       Bytes.blit oc.b w oc.b 0 (oc.s - w);
@@ -21,10 +21,11 @@ let push oc =
 let flush oc =
   let n = ref 0 in
   while !n < oc.o do
-    let w = Async.write oc.fd oc.b !n (oc.o - !n) in
+    let w = Async.Client.write oc.fd oc.b !n (oc.o - !n) in
     n := !n + w
   done;
-  oc.o <- 0
+  oc.o <- 0;
+  Async.Client.flush oc.fd
 
 let close oc =
   flush oc; Async.Client.close oc.fd
@@ -53,7 +54,7 @@ let add_substring oc str offset len =
       let r = ref remain in
       while !r > oc.s do
         let str = Bytes.unsafe_of_string str in
-        let w = Async.write oc.fd str !n !r in
+        let w = Async.Client.write oc.fd str !n !r in
         n := !n + w;
         r := !r - w;
       done;
@@ -158,5 +159,5 @@ let sendfile oc n fd =
   let r = ref 0 in
   flush oc;
   while !r < n  do
-    r := !r + Async.sendfile oc.fd fd !r (n - !r);
+    r := !r + Async.Client.sendfile oc.fd fd !r (n - !r);
   done;

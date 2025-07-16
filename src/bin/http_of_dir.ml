@@ -18,6 +18,7 @@ let addr     = ref "127.0.0.1"
 let port     = ref 8080
 let ssl_cert = ref ""
 let ssl_priv = ref ""
+let ktls     = ref false
 
 let (args, parameters) = Server.args ()
 
@@ -30,6 +31,7 @@ let _ =
       "--port", Set_int port, " port to listen on";
       "-p", Set_int port, " alias to --port";
       "--ssl", Tuple[Set_string ssl_cert; Set_string ssl_priv], " give ssl certificate and private key";
+      "--ssl-ktls", Set ktls, " add support for kernel TLS";
       "--dir", Set_string dir, " directory to serve (default: \".\")";
       "--upload", Unit (fun () -> config.upload <- true), " enable file uploading";
       "--no-upload", Unit (fun () -> config.upload <- false), " disable file uploading";
@@ -48,7 +50,8 @@ let _ =
 
 let ssl =
   if !ssl_cert <> "" then
-    Some Address.{ cert = !ssl_cert; priv = !ssl_priv; protocol = Ssl.TLSv1_3 }
+    Some Address.{ cert = !ssl_cert; priv = !ssl_priv;
+                   protocol = Ssl.TLSv1_3; ktls = !ktls }
   else None
 
 open Host

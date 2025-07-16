@@ -48,15 +48,18 @@ let make_raw_stream ?synch ?(close=Input.close) ?(cookies=[]) ?(headers=[])
   (* do not add content length to response *)
   let headers = Headers.set_cookies cookies headers in
   let body = Stream{inp;synch;size;close} in
-  let post () = close inp in
-  Gc.finalise (fun inp -> try close inp with _ -> ()) inp;
+  let client = Async.Client.current () in
+  let cell = Async.Client.at_close client (fun () -> close inp) in
+  let post () = Async.Client.remove_at_close client cell; close inp in
   { code; headers; body; post }
 
 let make_raw_file ?(cookies=[]) ?(headers=[]) ?(close=Util.Sfd.close) ~code
       size fd : t =
   (* add content length to response *)
   let headers = Headers.set_cookies cookies headers in
-  let post () = close fd in
+  let client = Async.Client.current () in
+  let cell = Async.Client.at_close client (fun () -> close fd) in
+  let post () = Async.Client.remove_at_close client cell; close fd in
   let body = File{size; fd; close} in
   { code; headers; body; post }
 
@@ -103,7 +106,6 @@ let pp out self : unit =
 let output_ meth (oc:Output.t) (self:t) : unit =
   let body = self.body in
   try
-  Util.setsockopt_cork (Output.sock oc) true;
   Output.add_string oc "HTTP/1.1 ";
   Output.add_decimal oc (self.code :> int);
   Output.add_char oc ' ';
@@ -152,19 +154,18 @@ let output_ meth (oc:Output.t) (self:t) : unit =
       | String s         ->
          Output.output_str oc s;
          Output.flush oc;
-      | File {size; fd; close} ->
-         Output.sendfile oc size (Util.Sfd.get fd); close fd
-      | Stream {inp;synch;close;size} ->
+      | File {size; fd; _} ->
+         Output.sendfile oc size (Util.Sfd.get fd);
+      | Stream {inp;synch;size;_} ->
          (match size with
           | None ->
              Output.output_chunked ?synch oc inp;
           | Some s ->
-             Output.output_raw ?synch oc inp s);
-         Output.flush oc;
-         close inp
+             Output.output_raw ?synch oc inp s;
+         );
+         Output.flush oc
     end;
-  Util.setsockopt_cork (Output.sock oc) false;
-  self.post ()
+  self.post ();
   with e ->
     Log.f (Exc 0) (fun k -> k "Exception in Response.output_ %s"
                               (Printexc.to_string e));
