@@ -548,7 +548,6 @@ and include_ mode frg = (* very important to cache here! *)
   "<include" spaces '"' (name::RE{|[^"]+|}) '"' spaces ">" =>
     let name = Filename.concat !file_path name ^ ".htinc" in
     try
-      Printf.eprintf "include str: %b top: %b\n%!" mode.str mode.top;
       Lazy.force (do_with_filename name (fun () ->
                       Grammar.parse_file (content mode frg) blank name))
     with Unix.Unix_error _ ->
