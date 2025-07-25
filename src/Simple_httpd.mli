@@ -1052,6 +1052,7 @@ module Session : sig
   val start_check: ?create:bool ->
             ?check:(t -> bool) ->
             ?cookie_policy:cookie_policy ->
+            ?nosession:exn ->
             ?error:(Response_code.t*Headers.t) ->
             'a Request.t -> Cookies.t * t
    (** Check or create a new session and add the session cookies to the
@@ -1065,6 +1066,8 @@ module Session : sig
       @param initial value for the session data (default: NoData)
       @param finalise function called on the session data when it is detroyed.
       @param create if false no session is created if there was none
+      @param exception raised when the is no session. If no given, it
+        results in an error (managed by the error parameter below).
       @param check some extra check, the session will be destroy if it fails.
       @param filter this parameter is called on all request cookies.  If the
         filter return None, the cookie is expired. The default is to keep all

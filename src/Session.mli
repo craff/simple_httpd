@@ -22,6 +22,7 @@ val default_cookie_policy : cookie_policy
 val start_check: ?create:bool ->
             ?check:(t -> bool) ->
             ?cookie_policy:cookie_policy ->
+            ?nosession:exn ->
             ?error:(Response_code.t*Headers.t) ->
             'a Request.t -> Cookies.t * t
 

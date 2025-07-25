@@ -318,6 +318,7 @@ let start_check
       ?(create=false)
       ?(check=fun (_:t) -> true)
       ?(cookie_policy=default_cookie_policy)
+      ?(nosession=Exit)
       ?(error=(bad_request, [])) req =
   let session_life_time = cookie_policy.life in
   let cookies = Request.cookies req in
@@ -335,14 +336,14 @@ let start_check
       | Some session -> (session, false)
       | None when create ->
          start_session ~session_life_time addr client key
-      | _ -> raise Exit
+      | _ -> raise nosession
       | exception Bad_session_cookie when create ->
          start_session ~session_life_time addr client key
       | exception e ->
          Log.f (Exc 0)
            (fun k -> k "Bad session cookie and create session not allowed: %s"
                        (Printexc.to_string e));
-         raise Exit
+         raise nosession
     in
     let bad () = raise (Bad session) in
     if not (check session) then bad ();
