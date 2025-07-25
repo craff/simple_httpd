@@ -1,14 +1,15 @@
 <!DOCTYPE html>
-<?global let count_key : int Session.key = Session.new_key "count_key"?>
+<ml global>let count_key : int Session.key = Session.new_key "count_key"</ml>
 <html>
   <head>
-    <?prelude
+    <ml prelude>
          let cookies, session = Session.start_check request
          let count =
 	   match Session.get_session_data session count_key with
            | Some n -> n
            | None   -> 0
-         let _ = Session.set_session_data session count_key (count+1)?>
+         let _ = Session.set_session_data session count_key (count+1)
+    </ml>
   </head>
   <body>
     <h1>dynamic hello!</h1>
@@ -17,14 +18,14 @@
       <li>item 2%
       <li>item 3%
       <li>item 4%
-      <li>views: <?= string_of_int count ?>
-	         <?= if count mod 2 = 0 then
- 	               {html|<p>even (<?= string_of_int count ?>)</p>|html}
-                     else {html|<p>odd</p>|html} ?>
-	?>
+      <li>views: {`string_of_int count`}
+	         {`if count mod 2 = 0 then
+ 	               {html|<p>even ({`string_of_int count`})</p>|html}
+                     else {html|<p>odd</p>|html}
+	         `}
     </ul>
-    <a href="."> escape from this file </a>
+    <a href=".">escape from this file</a>
     <br/>
-    request: <?ml let _ = printf "%a" Request.pp request ?>
+    request: <ml>let _ = printf "%a" Request.pp request</ml>
   </body>
 </html>

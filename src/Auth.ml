@@ -72,7 +72,7 @@ module Make(Login:Login) = struct
         | None ->
            let css = match css with
              | None -> ""
-             | Some s -> {html|<link rel="stylesheet" href=<?=s?>>|html}
+             | Some s -> {html|<link rel="stylesheet" href={`s`}>|html}
            in
          {chaml|<!DOCTYPE html>
            <head>
@@ -81,18 +81,18 @@ module Make(Login:Login) = struct
               <script>
                   function subf() {window.history.replaceState( {} , '', "/");}
               </script>
-              <?=css?>
+              {`css`}
            </head>
            <body>
              <div class="login-container">
                <form class="login-form"
-                     action=<?=Login.login_url?>
+                     action={`Login.login_url`}
 		     onsubmit="subf();" method="post">
                  <table><tr><th><label for="login">Login</label></tr>
                         <tr><td><input type="text" name="login" value="" required on/></tr>
                         <tr><th><label for="password">Password</label></tr>
                         <tr><td><input type="password" name="password" required value="" on/></tr>
-                        <tr><td><input type="hidden" name="dest" value=<?=destination?> on/></tr>
+                        <tr><td><input type="hidden" name="dest" value={`destination`} on/></tr>
                         <tr><td><input type="submit" />
                  </table>
                </form>

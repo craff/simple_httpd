@@ -1,15 +1,16 @@
 <!DOCTYPE html>
-<?global let count_key = Session.new_key "counter" ?>
-<?prelude let cookies, session = Session.start_check request
+<ml global>let count_key = Session.new_key "counter"</ml>
+<ml prelude>let cookies, session = Session.start_check request
   let count =
     match Session.get_session_data session count_key with
     | None -> 0 | Some n -> n
-  let _ = Session.set_session_data session count_key (count+1) ?>
+  let _ = Session.set_session_data session count_key (count+1)
+</ml>
 <html>
   <body>
     <h1>A first web site</h1>
 
-    <p>A counter with session data on the server: <?=string_of_int count?>
+    <p>A counter with session data on the server: {`string_of_int count`}
       (reset when the session expires)
 
     <ul>

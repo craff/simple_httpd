@@ -119,7 +119,7 @@ module Common = struct
          <!DOCTYPE html>
          <h1>Template entry point</h1>
          <ul>
-           <?ml let hostname = match Request.get_header request Headers.Host with
+           <ml>let hostname = match Request.get_header request Headers.Host with
               | None -> Response.fail_raise ~code:Response_code.bad_request
                         "No Host field in your request"
               | Some h -> h
@@ -128,9 +128,9 @@ module Common = struct
                 !ssl_port else !port
               let url1 = Printf.sprintf "//%s:%d/" hostname (port + 1000)
               let url2 = Printf.sprintf "//%s:%d/" hostname (port + 2000)
-           ?>
-           <li> <a href=<?=url1?>>First site on <code><?=url1?></code></a>
-           <li> <a href=<?=url2?>>Second site on <code><?=url2?></code></a>
+           </ml>
+           <li> <a href={`url1`}>First site on <code>{`url1`}</code></a>
+           <li> <a href={`url2`}>Second site on <code>{`url2`}</code></a>
            <li> <a href="status?nb=15">Status of the server</a> This is a bit slow
                 (it reads the log files) and should be password protected on a
                 real site.

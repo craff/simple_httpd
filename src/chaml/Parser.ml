@@ -13,9 +13,9 @@ let blank = Blank.from_charset Charset.empty
 
 type mode = { cls : string option
               (** waiting for a closing tag |html} of |chaml} *)
-            ; top : bool (** allows for <?ml ... ?> and <?prelude ... ?>*)
-            ; str : bool (** allows for <?=  ... ?> *)
-            ; glb : bool (** allows for <?global ... ?> *)
+            ; top : bool (** allows for <ml> ... </ml> and <ml prelude> ... </ml>*)
+            ; str : bool (** allows for {`  ... `} *)
+            ; glb : bool (** allows for <ml global> ... </ml> *)
             }
 
 let mkMode =
@@ -32,7 +32,7 @@ let is_space code = (code = 0x0009 || code = 0x000A || code = 0x000C
                      || code = 0x000D || code = 0x0020)
 
 let missing_closing open_tag_pos =
-  let msg = Format.asprintf "Missing '?>', opening at %a"
+  let msg = Format.asprintf "Missing closing, opening at %a"
               (Pos.print_pos ()) open_tag_pos
   in
   Lex.give_up ~msg ()
@@ -180,9 +180,9 @@ let%parser comment =
 
 let%parser [@warning -39] rec value mode =
     (v :: attribute_value) => v
-  ; (mode.str = true) "<?=" (ocaml::ocaml false) "?>"
+  ; (mode.str = true) "{`" (ocaml::ocaml false) "`}"
       => (OCaml (ocaml_pos, ocaml) : value)
-  ; (mode.str = true) (open_tag::"<?=") (ocaml false)
+  ; (mode.str = true) (open_tag::"{`") (ocaml false)
       => missing_closing open_tag_pos
 
 and attributes mode =
@@ -190,12 +190,14 @@ and attributes mode =
   ; (attrs::attributes mode) one_spaces (ns:: ~? ((ns::name) ':' => ns)) (name::name)
       (value :: ~? [Empty] (spaces '=' spaces (v::value mode)=>v))
     => (ns, Html.attr_of_string name, value) :: attrs
-  ; (mode.str = true) (attrs::attributes mode) one_spaces "<?=" (ocaml::ocaml false) "?>"
+  ; (mode.str = true) (attrs::attributes mode) one_spaces "{`" (ocaml::ocaml false) "`}"
     => (None, Html.attr_of_string "",  (OptCaml (ocaml_pos, ocaml) : value)) :: attrs
-  ; (mode.str = true) (attributes mode) one_spaces (open_tag::"<?=")
+  ; (mode.str = true) (attributes mode) one_spaces (open_tag::"{`")
       (ocaml false) => missing_closing open_tag_pos
 
-and tag_name = (name::name) => Html.tag_of_string name
+and tag_name = (name::name) =>
+                 (if name = "ml" then Lex.give_up ();
+                  Html.tag_of_string name)
 
 and non_void_raw_name =
   (name::tag_name) =>
@@ -210,7 +212,7 @@ and closing name =
     "</" (__::RE re) ">" => ()
 
 and any_closing =
-    "</" (name::tag_name) ">" => name
+  "</" (name::tag_name) ">" => name
 
 and void_name =
   (name::tag_name) =>
@@ -233,19 +235,22 @@ and raw_tag mode =
      (name, (tag, List.rev attrs)))
 
 and raw_re tag =
-  let r = ref {|\([^<]\|\(<[^/?]\)|} in
+  let r = ref {|\([^<{]\|\({[^`<{]\)\|\(<[^/{<]\)|} in
   for i = 0 to String.length tag - 1 do
-    r := !r ^ Printf.sprintf {|\|\(</%s[^%c]\)|} (String.sub tag 0 i) tag.[i]
+    r := !r ^ Printf.sprintf {|\|\(</%s[^%c{<]\)|} (String.sub tag 0 i) tag.[i]
   done;
-  !r ^ Printf.sprintf {|\|\(</%s[^ \n\t\r\f/>]\)\)+|} tag
+  !r ^ Printf.sprintf {|\|\(</%s[^ \n\t\r\f/>{<]\)\)+|} tag
 
 and raw_content mode re =
     () => []
-  ; (c::raw_content mode re) (text::RE re) => Text(text)::c
+  ; (c::raw_content mode re) (text::RE re) =>
+      Text(text)::c
   ; (mode.str = true) (c::raw_content mode re)
-      "<?=" (ocaml:: ocaml false) "?>" => OCaml(ocaml_pos,Str,ocaml)::c
+      "{`" (ocaml:: ocaml false) "`}" =>
+      OCaml(ocaml_pos,Str,ocaml)::c
   ; (mode.str = true) (raw_content mode re)
-      (open_tag::"<?=") (ocaml false) => missing_closing open_tag_pos
+      (open_tag::"{`") (ocaml false) => missing_closing open_tag_pos
+
 
 and cdata_re = {|\([^]]\|\(\][^]\)\|\(\]\][^>]\)\)+|}
 
@@ -261,17 +266,17 @@ and doctype =
   (RE (re_from_string "<!DOCTYPE")) spaces (RE (re_from_string "html"))
      spaces (~? doctype_legacy_string) '>' => Doctype
 
-and inner_html tag = (* TODO: could allow frg parameter *)
-  let mode = mkMode ~cls:(Some tag) ~top:false ~str:true ~glb:false in
-  (lazy content :: content mode false) (__::STR("|"^tag^"}")) => content
+and inner_html = (* TODO: could allow frg parameter *)
+  let mode = mkMode ~cls:(Some "html") ~top:false ~str:true ~glb:false in
+  (lazy content :: content mode false) (__::"|html}") => content
 
-and inner_funml tag = (* TODO: could allow frg parameter *)
-  let mode = mkMode ~cls:(Some tag) ~top:true ~str:true ~glb:false in
-  (lazy content :: content mode false) (__::STR("|"^tag^"}")) => content
+and inner_funml = (* TODO: could allow frg parameter *)
+  let mode = mkMode ~cls:(Some "funml") ~top:true ~str:true ~glb:false in
+  (lazy content :: content mode false) (__::"|funml}") => content
 
-and inner_document tag =
-  let mode = mkMode ~cls:(Some tag) ~top:true ~str:true ~glb:false in
-  (lazy doc :: document mode) (__::STR("|"^tag^"}")) => doc
+and inner_document =
+  let mode = mkMode ~cls:(Some "chaml") ~top:true ~str:true ~glb:false in
+  (lazy doc :: document mode) (__::"|chaml}") => doc
 
 and ocaml_lexer top s n =
   (* empty terminals are not allowed by pacomb *)
@@ -288,9 +293,12 @@ and ocaml_lexer top s n =
     );
   in
   let position = ref (s, n) in
-  let prev = [|(s,n);(s,n)|] in
+  let prev = [|(s,n);(s,n);(s,n);(s,n);(s,n)|] in
   let next () =
     let (s, n) as p = !position in
+    prev.(4) <- prev.(3);
+    prev.(3) <- prev.(2);
+    prev.(2) <- prev.(1);
     prev.(1) <- prev.(0);
     prev.(0) <- p;
     let (c, s, n) = Input.read s n in
@@ -321,16 +329,16 @@ and ocaml_lexer top s n =
     | (`Str(_)   , _   , _       ) -> fn state stack
     (* Char litteral  *)
     | (`Ini      , _   , '\''    ) -> fn (`Chr1(pos ())) stack
-    | (`Chr2(_)   , _   , '\''   ) -> fn `Ini stack
-    | (`Chr1(p)   , _   , '\\'   ) -> fn (`EsC(p)) stack
+    | (`Chr2(_)  , _   , '\''   ) -> fn `Ini stack
+    | (`Chr1(p)  , _   , '\\'   ) -> fn (`EsC(p)) stack
     | (`EsC(p)   , _   , '0'..'9') -> fn (`EsD(p)) stack
     | (`EsC(p)   , _   , _       ) -> fn (`Chr2(p)) stack
     | (`EsD(p)   , _   , '0'..'9') -> fn (`EsD(p)) stack
     | (`EsD(p)   , _   , _       ) -> fn (`Chr2(p)) stack
     | (`Chr1(_)  , _   , '\255'  ) -> fn `Ini stack
     | (`Chr2(l,c), _   , '\255'  ) -> error "unclosed char" l c
-    | (`Chr1(p)   , _   , _      ) -> fn (`Chr2(p)) stack
-    | (`Chr2(_)   , _   , _      ) -> fn `Ini stack
+    | (`Chr1(p)  , _   , _      ) -> fn (`Chr2(p)) stack
+    | (`Chr2(_)  , _   , _      ) -> fn `Ini stack
     (* Delimited string litteral in a comment. *)
     | (`Ini      , _   , '{'     ) -> fn (`SOp([],pos ())) stack
     | (`SOp(l,p) , _   , 'a'..'z') -> fn (`SOp(c::l,p)) stack
@@ -349,7 +357,7 @@ and ocaml_lexer top s n =
          | "html" ->
             output stack 6;
             let (s,n) = !position in
-            let (e,s,n) = Grammar.partial_parse_buffer (inner_html tag) blank
+            let (e,s,n) = Grammar.partial_parse_buffer inner_html blank
                             s ~offset:n
             in
             position := (s,n);
@@ -364,7 +372,7 @@ and ocaml_lexer top s n =
          | "funml" ->
             output stack 7;
             let (s,n) = !position in
-            let (e,s,n) = Grammar.partial_parse_buffer (inner_funml tag) blank
+            let (e,s,n) = Grammar.partial_parse_buffer inner_funml blank
                             s ~offset:n in
             position := (s,n);
             let (ml, _, _) = top_to_string e in
@@ -376,7 +384,7 @@ and ocaml_lexer top s n =
             output stack 7;
             let (s,n) = !position in
             let ((ml,global,prelude),s,n) =
-              Grammar.partial_parse_buffer (inner_document tag) blank s
+              Grammar.partial_parse_buffer inner_document blank s
                 ~offset:n
             in
             position := (s,n);
@@ -423,8 +431,15 @@ and ocaml_lexer top s n =
     | (`Ini      ,(l,c)::_,'\255') -> error "unclosed comment" l c
     | (`Ini      , []   , '\255'  ) -> (1,prev.(0))
     (* End of ocaml *)
-    | (`Ini      , []  , '?'     ) -> fn `End stack
-    | (`End      , []  , '>'     ) -> (2,prev.(1))
+    | (`Ini      , []  , '<'     ) -> fn (`Tag 1) stack
+    | ((`Tag 1)  , []  , '/'     ) -> fn (`Tag 2) stack
+    | ((`Tag 2)  , []  , 'm'     ) -> fn (`Tag 3) stack
+    | ((`Tag 3)  , []  , 'l'     ) -> fn (`Tag 4) stack
+    | ((`Tag 4)  , []  , '>'     ) -> (5,prev.(4))
+    | ((`Tag _)  , []  , _       ) -> fn `Ini stack ~c
+    | ((`Tag _)  , _::_, _       ) -> assert false
+    | (`Ini      , []  , '`'     ) -> fn `End stack
+    | (`End      , []  , '}'     ) -> (2,prev.(1))
     | (`End      , []  , _       ) -> fn `Ini stack ~c
     | (`End      , _::_, _       ) -> assert false
     (* Other char *)
@@ -442,38 +457,38 @@ and ocaml top = (* ocaml definition *)
                                 ; f = (ocaml_lexer top) })) => ocaml
 
 and ocaml_elt mode =
-    (mode.top = true) "<?ml" (ocaml:: ocaml false) "?>" =>
+    (mode.top = true) "<ml>" (ocaml:: ocaml false) "</ml>" =>
       OCaml(ocaml_pos,Top,ocaml)
 
-  ; (mode.top = true) (open_tag::"<?ml") (ocaml false) =>
+  ; (mode.top = true) (open_tag::"<ml>") (ocaml false) =>
       missing_closing open_tag_pos
 
-  ; (mode.top = true) "<?prelude" (ocaml:: ocaml false) "?>" =>
+  ; (mode.top = true) "<ml" spaces "prelude>" (ocaml:: ocaml false) "</ml>" =>
       OCaml(ocaml_pos,Prelude,ocaml)
 
-  ; (mode.top = true) (open_tag::"<?prelude") (ocaml false) "?>" =>
+  ; (mode.top = true) (open_tag::"<ml") spaces "prelude>" (ocaml false) =>
       missing_closing open_tag_pos
 
-  ; (mode.glb = true) "<?global" (ocaml:: ocaml false) "?>" =>
+  ; (mode.glb = true) "<ml" spaces "global>" (ocaml:: ocaml false) "</ml>" =>
       OCaml(ocaml_pos,Global,ocaml)
 
-  ; (mode.glb = true) (open_tag::"<?global") (ocaml false) =>
+  ; (mode.glb = true) (open_tag::"<ml") spaces "global>" (ocaml false) =>
       missing_closing open_tag_pos
 
-  ; (mode.str = true) "<?=" (ocaml:: ocaml false) "?>" =>
+  ; (mode.str = true) "{`" (ocaml:: ocaml false) "`}" =>
       OCaml(ocaml_pos,Str,ocaml)
 
-  ; (mode.str = true) (open_tag::"<?=") (ocaml false) =>
+  ; (mode.str = true) (open_tag::"{`") (ocaml false) =>
       missing_closing open_tag_pos
 
 and text_elt mode =
-    (mode.cls = None) (text::RE{|[^<]+|}) => Text(text)
+    (mode.cls = None) (text::RE{|\([^<{]\|{[^`<{]\)+|}) => text
 
-  ; (mode.cls <> None) (text::RE{|\([^<|]\|\(\(|[a-z]+\)+[^}<]\)\)+|}) =>
-      Text(text)
+  ; (mode.cls <> None) (text::RE{|\([^<|{]\|{[^`<{]\|\(|[a-z]+[^<{}]\)\)+|}) =>
+      text
 
   ; (mode.cls <> None) '|' (text::RE"[a-z]+") "}" =>
-      (if mode.cls = Some text then Lex.give_up () else Text("|" ^ text ^ "}"))
+      (if mode.cls = Some text then Lex.give_up () else "|" ^ text ^ "}")
 
 and elements mode frg =
     () => [(Pos.no_pos, frg, root, [], [])]
@@ -506,11 +521,11 @@ and elements mode frg =
       push ~loc:ocaml_pos ocaml stack
 
   ; (stack::elements mode frg) (text:: text_elt mode) =>
-      push ~loc:text_pos text stack
+      push ~loc:text_pos (Text text) stack
 
   ; (stack::elements mode frg) (cdata:: cdata mode) =>
       (let frg = get_frg stack in
-       if not frg then Lex.give_up ~msg:"CDATA onlt allowed in foreign content" ();
+       if not frg then Lex.give_up ~msg:"CDATA only allowed in foreign content" ();
        push ~loc:cdata_pos cdata stack)
 
   ; (mode.str = true) (stack::elements mode frg) (d::include_ mode frg) =>
@@ -530,15 +545,14 @@ and document mode =
   ; spaces comment (d::document mode) => d
 
 and include_ mode frg = (* very important to cache here! *)
-  "<?include" spaces '"' (name::RE{|[^"]*"|}) spaces "?>" =>
-    let name = Scanf.unescaped (String.sub name 0 (String.length name - 1)) in
+  "<include" spaces '"' (name::RE{|[^"]+|}) '"' spaces ">" =>
     let name = Filename.concat !file_path name ^ ".htinc" in
     try
+      Printf.eprintf "include str: %b top: %b\n%!" mode.str mode.top;
       Lazy.force (do_with_filename name (fun () ->
                       Grammar.parse_file (content mode frg) blank name))
-    with e ->
-          let msg = Format.sprintf "Can not access file %S (%s)" name
-                      (Printexc.to_string e) in
+    with Unix.Unix_error _ ->
+          let msg = Format.sprintf "Can not access file %S" name in
           Lex.give_up ~msg ()
 
 let ocaml_parse ~filename ch =

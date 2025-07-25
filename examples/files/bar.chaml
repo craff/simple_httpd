@@ -1,12 +1,12 @@
 <!DOCTYPE html>
 <html>
   <head>
-    <?prelude
+    <ml prelude>
       let count = try Request.get_cookie_int request "count"
                   with Not_found -> 0
       let cookies = Cookies.(create ~max_age:3600L ~same_site:`Strict
                                ~name:"count"  (string_of_int (count+1)) empty)
-     ?>
+    </ml>
   </head>
   <body>
     <h1>dynamic hello!</h1>
@@ -15,18 +15,19 @@
       <li> item 2 </li>
       <li> item 3 </li>
       <li> item 4 </li>
-      <li> views: <?=string_of_int count?>
-	<?ml
+      <li> views: {`string_of_int count`}
+	<ml>
 	  let _ = echo (if count mod 2 = 0 then
- 	                  {html|<p>even (<?= string_of_int count ?>)</p>|html}
-	                else {html|<p>odd (<?= string_of_int count ?>)</p>|html})
-	?>
+ 	                  {html|<p>even ({`string_of_int count`})</p>|html}
+	                else {html|<p>odd ({`string_of_int count`})</p>|html})
+	</ml>
       </li>
     </ul>
     <a href="."> escape from this file </a>
     <br/>
-    request: <?ml
+    request:
+    <ml>
       let _ = printf "%a" Request.pp request
-    ?>
+    </ml>
   </body>
 </html>

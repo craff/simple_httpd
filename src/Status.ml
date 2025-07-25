@@ -6,7 +6,7 @@ let date time (module Out : Html.Output) =
   let frac_date = mod_float time 1.0 in
   let frac_date = Printf.sprintf "%0.5f" frac_date in
   let frac_date = String.sub frac_date 2 5 in
-  let frac_date = {html|<small><?=frac_date?></small>|html} in
+  let frac_date = {html|<small>{`frac_date`}</small>|html} in
   Out.printf "%02d-%02d-%d %02d:%02d:%02d.%s"
            (date.tm_year+1900) (date.tm_mon + 1) date.tm_mday
            date.tm_hour date.tm_min date.tm_sec frac_date
@@ -15,10 +15,10 @@ let log_line i (time, client, rest) output =
   {funml|
    <tr>
      <td class="scol">
-        <?ml date time output ?></td>
-        <td class="scol"><?= string_of_int i ?></td>
-        <td class="scol"><?= string_of_int client ?></td>
-        <td class="info"><?= (rest) ?></td>
+        <ml>date time output</ml></td>
+        <td class="scol">{`string_of_int i`}</td>
+        <td class="scol">{`string_of_int client`}</td>
+        <td class="info">{`(rest)`}</td>
       </tr>|funml} output
 
 let get_log client i nb_lines output =
@@ -118,7 +118,7 @@ let html ?log_size ?in_head ?css ?start_header ?end_header
   in
   let css = match css with
     | None -> ""
-    | Some s -> {html|<link rel="stylesheet" href=<?=s?>>|html}
+    | Some s -> {html|<link rel="stylesheet" href={`s`}>|html}
   in
   {chaml|
    <!DOCTYPE html>
@@ -164,36 +164,36 @@ let html ?log_size ?in_head ?css ?start_header ?end_header
                }
              };
           </script>
-          <?ml match in_head with None -> () | Some f -> f output ?>
-          <?=css?>
+          <ml>match in_head with None -> () | Some f -> f output</ml>
+          {`css`}
        </head>
        <body onload="sort('table',0,false,true);">
          <header>
-           <?ml match start_header with None -> () | Some f -> f output ?>
-           <h1><?ml printf "Server status %d+1 threads" num_threads?></h1>
-	   <?ml match end_header with None -> () | Some f -> f output ?>
+           <ml>match start_header with None -> () | Some f -> f output</ml>
+           <h1><ml>printf "Server status %d+1 threads" num_threads</ml></h1>
+	   <ml>match end_header with None -> () | Some f -> f output</ml>
          </header>
          <div class="contents">
-           <?ml match start_contents with None -> () | Some f -> f output ?>
+           <ml>match start_contents with None -> () | Some f -> f output</ml>
 	   <ul>
-             <li>Started at (<?ml date (started_time self) output ?>)
-             <li><?= ps ?>
-             <li><?= df ?>
-             <li><?= string_of_int nfd ?> opened file descriptors
-               <?ml
+             <li>Started at (<ml>date (started_time self) output</ml>)
+             <li>{`ps`}
+             <li>{`df`}
+             <li>{`string_of_int nfd`} opened file descriptors
+               <ml>
 		for i = 0 to num_threads - 1 do
 		let did = ((Server.domains self).(i) :> int) in
                 let dinfo = Async.all_domain_info.((did :> int)) in
                 let pps = dinfo.pendings in
-                echo {html|<li><?=
+                echo {html|<li>{`
                    Printf.sprintf "Thread %d: %d=%d connections" did
                                   (Util.LinkedList.size (dinfo.last_seen))
                                   (Atomic.get (dinfo.nb_connections))
-                               ?>|html};
+                               `}|html};
                done
-               ?>
+               </ml>
 	   </ul>
-	   <?ml
+	   <ml>
 	    if !Log.log_folder <> "" then
 	   {funml|
 	   <h2>Logs</h2>
@@ -211,15 +211,15 @@ let html ?log_size ?in_head ?css ?start_header ?end_header
                <button onclick="sort('table',2,true,true);">▲</button>
 		 <th>information
 		   <tbody id="table">
-		     <?ml
+		     <ml>
 		      let _ = for i = 0 to num_threads do
 		      get_log client i log_size output;
 		      done
-		      ?>
+		     </ml>
 	   </table>
 	   |funml} output
-	   ?>
-	   <?ml match end_contents with None -> () | Some f -> f output ?>
+	   </ml>
+	   <ml>match end_contents with None -> () | Some f -> f output</ml>
 	 </div>
       </body>
    </html>|chaml} req headers

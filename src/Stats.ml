@@ -136,15 +136,16 @@ let filter () =
   let stat output path r =
      let nb = Atomic.get r.nbreq in let n = float nb in
      let f x = Atomic.get x *. 1e3 /. n in
-     {funml|<tr><td><?= path?>
-                <td class="scol"><?= string_of_int nb?>
-		<td class="scol"><?= Printf.sprintf "%.3f" (f r.total)?>
-                <td class="scol"><?= Printf.sprintf "%.3f"
-                               (1e3 *. Atomic.get r.maxim)?>
-		<td class="scol"><?= Printf.sprintf "%.3f" (f r.parse)?>
-		<td class="scol"><?= Printf.sprintf "%.3f" (f r.build)?>
-		<td class="scol"><?= Printf.sprintf "%.3f" (f r.send)?>
-	     </tr>
+     {funml|
+     <tr>
+       <td>{`path`}
+       <td class="scol">{`string_of_int nb`}
+       <td class="scol">{`Printf.sprintf "%.3f" (f r.total)`}
+       <td class="scol">{`Printf.sprintf "%.3f" (1e3 *. Atomic.get r.maxim) `}
+       <td class="scol">{`Printf.sprintf "%.3f" (f r.parse)`}
+       <td class="scol">{`Printf.sprintf "%.3f" (f r.build)`}
+       <td class="scol">{`Printf.sprintf "%.3f" (f r.send)`}
+     </tr>
      |funml} output
   in
   let get_stat ?in_head ?css
@@ -153,7 +154,7 @@ let filter () =
         req headers =
     let css = match css with
       | None -> ""
-      | Some s -> {html|<link rel="stylesheet" href=<?=s?>>|html}
+      | Some s -> {html|<link rel="stylesheet" href={`s`}>|html}
     in
     {chaml|
     <!DOCTYPE html>
@@ -175,8 +176,8 @@ let filter () =
                    max-width: 75vw;
                    overflow: scroll; }
      </style>
-     <?ml draw_graph !graph_size output ?>
-     <?=css?>
+     <ml>draw_graph !graph_size output</ml>
+     {`css`}
      <script>
        function sort(tableId,index,num,desc) {
 	   var tbody = document.getElementById(tableId);
@@ -261,16 +262,16 @@ let filter () =
            document.getElementById('canvas').addEventListener("wheel", do_zoom);
        }
      </script>
-     <?ml match in_head with None -> () | Some f -> f output ?>
+     <ml>match in_head with None -> () | Some f -> f output</ml>
     </head>
      <body onload="onLoad();">
        <header>
-          <?ml match start_header with None -> () | Some f -> f output ?>
+          <ml>match start_header with None -> () | Some f -> f output</ml>
           <h1>Statistics of the server</h1>
-          <?ml match end_header with None -> () | Some f -> f output ?>
+          <ml>match end_header with None -> () | Some f -> f output</ml>
        </header>
        <div class="contents">
-          <?ml match start_contents with None -> () | Some f -> f output ?>
+          <ml>match start_contents with None -> () | Some f -> f output</ml>
 
 	 <canvas style="margin: 0 auto;" id='canvas'>
 	 </canvas>
@@ -311,13 +312,13 @@ let filter () =
 		 <button onclick="sort('table',6,true,false);">▼</button>
 		 <button onclick="sort('table',6,true,true);">▲</button>
 	     </tr>
-	     <?ml stat output "global" !global ?>
+	     <ml>stat output "global" !global</ml>
 	   </thead>
 	   <tbody id="table">
-	     <?ml Hashtbl.iter (stat output) !per_path ?>
+	     <ml>Hashtbl.iter (stat output) !per_path</ml>
 	   </tbody>
 	 </table>
-         <?ml match end_contents with None -> () | Some f -> f output ?>
+         <ml>match end_contents with None -> () | Some f -> f output</ml>
        </div>
      </body>|chaml} req headers
   in

@@ -173,7 +173,7 @@ let terminal_page ?in_head ?css ?start_header ?end_header
       ?start_contents ?end_contents req headers =
   let css = match css with
     | None -> ""
-    | Some s -> {html|<link rel="stylesheet" href=<?=s?>>|html}
+    | Some s -> {html|<link rel="stylesheet" href={`s`}>|html}
   in
   {chaml|
    <!DOCTYPE html>
@@ -183,17 +183,17 @@ let terminal_page ?in_head ?css ?start_header ?end_header
    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.min.css">
    <script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.min.js"></script>
    <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit/lib/xterm-addon-fit.min.js"></script>
-   <?ml match in_head with None -> () | Some f -> f output ?>
-   <?=css?>
+   <ml>match in_head with None -> () | Some f -> f output</ml>
+   {`css`}
   </head>
    <body>
    <header>
-     <?ml match start_header with None -> () | Some f -> f output ?>
+     <ml>match start_header with None -> () | Some f -> f output</ml>
      <h1>Terminal</h1>
-     <?ml match end_header with None -> () | Some f -> f output ?>
+     <ml>match end_header with None -> () | Some f -> f output</ml>
    </header>
    <div class = "contents">
-     <?ml match start_contents with None -> () | Some f -> f output ?>
+     <ml>match start_contents with None -> () | Some f -> f output</ml>
      <div id="terminal"></div>
      <script>
       const term = new Terminal({
@@ -274,7 +274,7 @@ let terminal_page ?in_head ?css ?start_header ?end_header
 	  });
       }
     </script>
-   <?ml match end_contents with None -> () | Some f -> f output ?>
+   <ml>match end_contents with None -> () | Some f -> f output</ml>
    </div>
   </body>
 </html>
