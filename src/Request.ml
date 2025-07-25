@@ -149,11 +149,11 @@ let parse_multipart_ ~bound req =
   let body = req.body in
   let buf = Buffer.create 1024 in
   let buf2 = Buffer.create 1024 in
-  Input.read_until ~buf ~target:bound body;
-  let _ = Input.read_line ~buf:buf2 body in
   let query = ref [] in
   let multipart_headers = ref [] in
-  let cont = ref true in
+  Input.read_until ~buf ~target:bound body;
+  let line = Input.read_line ~buf:buf2 body in
+  let cont = ref (String.trim line <> "--") in
   while !cont do
     let (header, _) = Headers.parse_ ~buf body in
     let cd = match Headers.get Content_Disposition header
