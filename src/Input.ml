@@ -130,7 +130,7 @@ let of_io ?(buf_size=64 * 1024) (sock:Io.t) : t =
     ~fill:(fun self ->
         if self.len <= 0 then (
           self.off <- 0;
-          self.len <- Io.read sock self.bs 0 (Bytes.length self.bs)
+          self.len <- Io.read sock self.bs 0 (Bytes.length self.bs);
         )
       )
     ()
@@ -614,6 +614,19 @@ let [@inline] exact_char : char -> 'a -> t -> 'a = fun c r self ->
   self.consume 1;
   r
 
+let [@inline] charset : (char -> bool) -> t -> char =
+  fun cs self ->
+  let c = peek_char self in
+  if cs c && c <> eof then
+    begin
+      self.consume 1;
+      c
+    end
+  else
+    fail_parse self
+
+
+
 let [@inline] exact_string : string -> 'a -> t -> 'a = fun s r self ->
   for i = 0 to String.length s - 1 do
     let c = read_char self in
@@ -621,22 +634,33 @@ let [@inline] exact_string : string -> 'a -> t -> 'a = fun s r self ->
   done;
   r
 
-let [@inline] star : (t -> unit) -> t -> unit = fun parse self ->
+let [@inline] star_fold : type a b.(t -> a) -> (a -> b -> b) -> b -> t -> b =
+  fun parse fn acc self ->
   let off = ref self.off in
+  let acc : b ref = ref acc in
   try
     while true do
-      parse self;
-      off := self.off
+      let r = parse self in
+      off := self.off;
+      acc := fn r !acc
     done
-  with FailParse n as e -> if n != self.off then raise e
+  with FailParse n as e -> if n != self.off then raise e else !acc
 
-let [@inline] plus : (t -> unit) -> t -> unit = fun parse self ->
-  parse self;
-  star parse self
+let [@inline] star parse self = star_fold parse (fun _ _ -> ()) () self
+
+let [@inline] plus_fold : (t -> 'a) -> ('a -> 'b -> 'b) -> 'b -> t -> 'b =
+  fun parse fn acc self ->
+  let r = parse self in
+  let acc = fn r acc in
+  star_fold parse fn acc self
+
+let [@inline] plus parse self = plus_fold parse (fun _ _ -> ()) () self
 
 let [@inline] blank self = plus (exact_char ' ' ()) self
 let [@inline] space self = star (exact_char ' ' ()) self
-
+let [@inline] blanks self =
+  star (charset (function ' ' | '\t' | '\r' | '\n' -> true
+                          | _ -> false)) self
 let [@inline] int self =
   let rec fn first r =
     let c = peek_char self in

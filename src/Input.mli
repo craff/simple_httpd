@@ -154,6 +154,12 @@ val exact_char : char -> 'a -> t -> 'a
 
 val exact_string : string -> 'a -> t -> 'a
 
+val charset : (char -> bool) -> t -> char
+
+val star_fold : (t -> 'a) -> ('a -> 'b -> 'b) -> 'b -> t -> 'b
+
+val plus_fold : (t -> 'a) -> ('a -> 'b -> 'b) -> 'b -> t -> 'b
+
 val star : (t -> unit) -> t -> unit
 
 val plus : (t -> unit) -> t -> unit
@@ -162,6 +168,10 @@ val blank : t -> unit
 
 val space : t -> unit
 
+val blanks : t -> unit
+
 val int : t -> int
+
+val peek_char : t -> char
 
 val current : t -> string

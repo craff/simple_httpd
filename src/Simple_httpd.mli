@@ -364,6 +364,13 @@ module Input : sig
   val exact_string : string -> 'a -> t -> 'a
   (** parse exactly the given string *)
 
+  val charset : (char -> bool) -> t -> char
+
+  val star_fold : (t -> 'a) -> ('a -> 'b -> 'b) -> 'b -> t -> 'b
+
+  val plus_fold : (t -> 'a) -> ('a -> 'b -> 'b) -> 'b -> t -> 'b
+
+
   val star : (t -> unit) -> t -> unit
   (** repeat parsing 0 or more time, fail if partial parsing of one more item
       is possible *)
@@ -378,8 +385,12 @@ module Input : sig
   val space : t -> unit
   (** parse spaces *)
 
+  val blanks : t -> unit
+
   val int : t -> int
   (** parse a positive integer in decimal *)
+
+  val peek_char : t -> char
 
   val current : t -> string
   (** return the current value of the buffer, usefull when capturing
