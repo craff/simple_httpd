@@ -615,6 +615,11 @@ let unregister_fd fd =
   info.pendings.(Util.file_descr_to_int fd) <- NoSocket;
   Polly.del info.poll_list fd
 
+let schedule_fd_once flags read sock =
+  register_fd sock flags;
+  perform (Io (sock, read));
+  unregister_fd sock
+
 module Io = struct
   include IoTmp
 

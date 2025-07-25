@@ -196,6 +196,7 @@ module Async : sig
   val register_fd : Unix.file_descr -> Polly.Events.t -> unit
   val unregister_fd : Unix.file_descr -> unit
   val schedule_fd : bool -> Unix.file_descr -> unit
+  val schedule_fd_once : Polly.Events.t -> bool -> Unix.file_descr -> unit
 
 end
 
