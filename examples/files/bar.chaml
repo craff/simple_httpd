@@ -29,5 +29,7 @@
     <ml>
       let _ = printf "%a" Request.pp request
     </ml>
+    <!-- test de cas problématiques < <! <!- - -- -->
+    <p>{</p>
   </body>
 </html>

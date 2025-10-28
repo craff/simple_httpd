@@ -170,7 +170,7 @@ let%parser attribute_value =
      Double str)
 
 let comment_re =
-  {|\([^-<]\|\(-[^-]\)\|\(--[^>!]\)\|\(--![^>]\)\|\(<[^!]\)\|\(<![^-]\)\|\(<!-[^-]\)\)+|}
+  {|\([^-<]\|\(-[!-]\)\|\(--[!>]\)\|\(<[!!]\)\|\(<![!-]\)\|\(<!-[!-]\)\)+|}
 
 let%parser comment =
   "<!--" (c:: RE comment_re) "-->" =>
@@ -235,11 +235,11 @@ and raw_tag mode =
      (name, (tag, List.rev attrs)))
 
 and raw_re tag =
-  let r = ref {|\([^<{]\|\({[^`<{]\)\|\(<[^/{<]\)|} in
+  let r = ref {|\([^<{]\|\({[!`]\)\|\(<[!/]\)|} in
   for i = 0 to String.length tag - 1 do
-    r := !r ^ Printf.sprintf {|\|\(</%s[^%c{<]\)|} (String.sub tag 0 i) tag.[i]
+    r := !r ^ Printf.sprintf {|\|\(</%s[!%c]\)|} (String.sub tag 0 i) tag.[i]
   done;
-  !r ^ Printf.sprintf {|\|\(</%s[^ \n\t\r\f/>{<]\)\)+|} tag
+  !r ^ Printf.sprintf {|\|\(</%s[ \n\t\r\f][!>]\)\)+|} tag
 
 and raw_content mode re =
     () => []
@@ -482,9 +482,9 @@ and ocaml_elt mode =
       missing_closing open_tag_pos
 
 and text_elt mode =
-    (mode.cls = None) (text::RE{|\([^<{]\|{[^`<{]\)+|}) => text
+    (mode.cls = None) (text::RE{|\([^<{]\|{[!`]\)+|}) => text
 
-  ; (mode.cls <> None) (text::RE{|\([^<|{]\|{[^`<{]\|\(|[a-z]+[^<{}]\)\)+|}) =>
+  ; (mode.cls <> None) (text::RE{|\([^<|{]\|{[!`]\|\(|[a-z]+[!}]\)\)+|}) =>
       text
 
   ; (mode.cls <> None) '|' (text::RE"[a-z]+") "}" =>
