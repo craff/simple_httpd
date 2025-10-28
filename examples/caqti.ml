@@ -1,6 +1,7 @@
 open Simple_httpd
 
-let db_config = Uri.of_string "postgresql://caqti:caqti@localhost"
+let db_config = Caqti_connect_config.default
+let uri = Uri.of_string "postgresql://caqti:caqti@localhost"
 
 let raise_error res =
   match res with
@@ -49,42 +50,32 @@ let ssl =
 let listens = [Address.make ~addr:!addr ~port:!port ?ssl ()]
 let server = Server.create parameters ~listens
 
-module Rapper_helper = Rapper.Make_helper (struct
-  type +'a t = 'a
-
-  let return x = x
-
-  let map x = x
-
-  module Stream = Simple_httpd_caqti.Stream
-end)
-
 let init () =
-  Simple_httpd_caqti.with_connection db_config (fun db ->
-  let query =
-    [%rapper execute
+  Caqti_blocking.with_connection ~config:db_config uri (fun (module Db) ->
+      let query =
+        Caqti_request.Infix.(Caqti_type.unit ->. Caqti_type.unit)
         {sql|
          CREATE TABLE IF NOT EXISTS tests (key BIGINT PRIMARY KEY, count BIGINT DEFAULT 0)
-         |sql}]
+         |sql}
   in
-  let _ = raise_error @@ query () db in
+  let _ = raise_error @@ Db.exec query () in
   Ok ())
 
 let incr req =
-  Simple_httpd_caqti.with_session ~db_config req (fun db ->
+  Simple_httpd_caqti.with_session ~config:db_config uri req (fun (module Db) ->
       let key = Random.int !nb_keys in
       let query =
-        [%rapper get_opt
+        Caqti_request.Infix.(Caqti_type.int ->! Caqti_type.int)
             {sql|
-             INSERT INTO tests (count, key) VALUES (1, %int{key})
+             INSERT INTO tests (count, key) VALUES (1, ?)
              ON CONFLICT (key)
              DO UPDATE
              SET count = tests.count + 1
-             RETURNING @int{count}
-             |sql}]
+             RETURNING count
+             |sql}
       in
-      let count = match query ~key db with
-        | Ok (Some count) -> count
+      let count = match Db.find query key with
+        | Ok count -> count
         | _ -> 1
       in
       Ok (key, count))
@@ -94,7 +85,8 @@ let _ =
     Route.(exact "incr" @/ return) (fun req ->
       let cookies, _ = Session.start_check ~create:true req in
       match incr req with
-      | Ok (k, c) -> Response.make_string ~cookies (Printf.sprintf "%d: %d" k c)
+      | Ok (k, c) -> Response.make_string ~cookies
+                       (Printf.sprintf "Key %d count is now %d" k c)
       | _    -> Response.fail ~code:internal_server_error "fail")
 
 (** Start the server *)

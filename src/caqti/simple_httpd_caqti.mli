@@ -20,7 +20,20 @@
     This module contains the signature and connect function specialized for use
     with Lwt. *)
 
-include Caqti_connect_sig.S with type 'a future := 'a
+module Stream : Caqti_stream_sig.S with type 'a fiber := 'a
+module Pool : Caqti_pool_sig.S with type 'a fiber := 'a
+
+module type CONNECTION = Caqti_connection_sig.S
+  with type 'a fiber := 'a
+   and type ('a, 'e) stream := ('a, 'e) Stream.t
+
+include Caqti_connect_sig.S
+  with type 'a fiber := 'a
+   and type 'a with_switch := 'a
+   and type 'a with_stdenv := 'a
+   and type ('a, 'e) stream := ('a, 'e) Stream.t
+   and type ('a, 'e) pool := ('a, 'e) Pool.t
+   and type connection = (module CONNECTION)
 
 (** [with_session] will attach a connection to the request's session, or reuse
     a previous connection. The data base handle will be closed when the client
@@ -30,7 +43,9 @@ include Caqti_connect_sig.S with type 'a future := 'a
     the user session (with permission adapted to the user).
 
     You can use
-      [with_connection : db_config:Uri.t -> (connection -> 'b) -> 'b]
+      [with_connection : config:Caqti_connect_config.t ->
+         Uri.t -> (connection -> 'b) -> 'b]
     if you want to connect and disconnect for that session or other feature
     proposed by caqti like pool of connection.  *)
-val with_session : db_config:Uri.t -> 'a Simple_httpd.Request.t -> (connection -> 'b) -> 'b
+val with_session : config:Caqti_connect_config.t -> Uri.t
+                   -> 'a Simple_httpd.Request.t -> (connection -> 'b) -> 'b

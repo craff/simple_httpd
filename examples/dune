@@ -21,10 +21,8 @@
 (executable
   (name caqti)
   (flags :standard -warn-error -a+8)
-  (preprocess (per_module ((pps ppx_rapper) caqti)))
   (modules caqti)
-  (libraries simple_httpd simple_httpd.caqti ppx_rapper.runtime
-             caqti-driver-postgresql))
+  (libraries caqti caqti.blocking simple_httpd simple_httpd.caqti caqti-driver-postgresql))
 
 (executable
   (name minimal)

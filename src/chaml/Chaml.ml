@@ -218,7 +218,10 @@ let re_from_string name =
     let c = name.[i] in
     let lc = Char.lowercase_ascii c and uc = Char.uppercase_ascii c in
     if lc = uc then
-      Printf.bprintf buf "[%c]" lc
+      if lc = '^' || lc = '!' || lc = '-' then
+        Printf.bprintf buf "%c" lc
+      else
+        Printf.bprintf buf "[%c]" lc
     else
       Printf.bprintf buf "[%c%c]" lc uc
     done;

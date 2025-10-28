@@ -102,6 +102,11 @@ val read_line : buf:Buffer.t -> t -> string
 (** Read a line from the stream.
     @param buf a buffer to (re)use. Its content will be cleared. *)
 
+val really_input : t -> Bytes.t -> int -> int -> unit
+(** really_input inp bytes off len
+    reads exactly len bytes from inp and write then to bytes from offset
+    may raise End_of_file of Invalid_argument if bytes is to small *)
+
 val read_all : buf:Buffer.t -> t -> string
 (** Read the whole stream into a string.
     @param buf a buffer to (re)use. Its content will be cleared. *)

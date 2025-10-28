@@ -280,6 +280,21 @@ let with_file ?buf_size file f =
     Unix.close ic;
     raise e
 
+let rec really_input (self:t) bytes offset len =
+  self.fill_buf();
+  if self.len <= 0 then raise End_of_file
+  else if len <= self.len then
+    begin
+      Bytes.blit self.bs self.off bytes offset len;
+      self.consume len
+    end
+  else
+    begin
+      Bytes.blit self.bs self.off bytes offset self.len;
+      self.consume self.len;
+      really_input self bytes (offset+self.len) len
+    end
+
 let read_all ~buf (self:t) : string =
   iter (Buffer.add_subbytes buf) self;
   let r = Buffer.contents buf in

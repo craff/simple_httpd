@@ -716,6 +716,7 @@ module Io = struct
         out_newline = (fun () -> out_string "\n" 0 1);
         out_spaces = (fun n -> out_string (String.make n ' ') 0 n);
         out_indent = (fun n -> out_string (String.make n ' ') 0 n);
+        out_width = utf_8_scalar_width;
       }
     in
     formatter_of_out_functions funs
