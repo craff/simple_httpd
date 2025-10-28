@@ -56,13 +56,19 @@ type 'a tree =
   { get : 'a otree
   ; put : 'a otree
   ; post : 'a otree
-  ; delete : 'a otree }
+  ; delete : 'a otree
+  ; options : 'a otree
+  ; connect : 'a otree
+  ; trace : 'a otree }
 
 let empty_tree () =
   { get = empty_otree ()
   ; put = empty_otree ()
   ; post = empty_otree ()
-  ; delete = empty_otree () }
+  ; delete = empty_otree ()
+  ; options = empty_otree ()
+  ; connect = empty_otree ()
+  ; trace = empty_otree () }
 
 let rec compare : type a1 a2 b1 b2.(a1,b1) t -> (a2,b2) t -> int = fun r1 r2 ->
   match (r1, r2) with
@@ -103,6 +109,9 @@ let insert : type a b c.Method.t -> (a,b) t -> c tree -> ((a,b) t -> c) -> unit 
     | POST -> t.post
     | HEAD -> t.get
     | DELETE -> t.delete
+    | OPTIONS -> t.options
+    | CONNECT -> t.connect
+    | TRACE -> t.trace
   in
   let rec fn : c otree -> (a,b) t -> unit =
     fun t -> function
@@ -129,6 +138,9 @@ let get : Method.t -> string list -> 'c tree -> string list * 'c cell list =
     | POST -> t.post
     | HEAD -> t.get
     | DELETE -> t.delete
+    | OPTIONS -> t.options
+    | CONNECT -> t.connect
+    | TRACE -> t.trace
   in
   let rec fn t = function
     | [] -> ([], t.others)

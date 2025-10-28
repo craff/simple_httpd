@@ -541,6 +541,9 @@ module Method : sig
     | POST
     | HEAD
     | DELETE
+    | OPTIONS
+    | CONNECT
+    | TRACE
   (** A HTTP method.
       For now we only handle a subset of these.
 
