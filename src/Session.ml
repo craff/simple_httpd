@@ -1,4 +1,5 @@
 open Response_code
+module Mutex = Async.Mutex
 
 type t = Async.session_info
 type data = Key.data
@@ -24,20 +25,18 @@ let mutex_list = Mutex.create ()
 let save_session ch session =
   let open Async in
   output_value ch true;
-  output_value ch session.addr;
   output_value ch session.key;
   output_value ch session.life_time;
   output_value ch session.last_refresh;
   Key.save ch (Atomic.get session.data)
 
 let load_session ch =
-  let addr = input_value ch in
   let key  = input_value ch in
   let life_time = input_value ch in
   let last_refresh = input_value ch in
   let data = Atomic.make (Key.load ch) in
   let session_info =
-    Async.({ addr; key; clients= Atomic.make []
+    Async.({ key; clients= Atomic.make []
              ; data; cell = LinkedList.fake_cell
              ; life_time; last_refresh})
   in
@@ -73,39 +72,30 @@ let load_sessions (name, version) ch =
   Mutex.unlock mutex_list
 
 let delete_session session =
-  Mutex.lock mutex_tbl;
-  Hashtbl.remove sessions_tbl session.Async.key;
-  Mutex.unlock mutex_tbl;
+  Async.Mutex.use mutex_tbl (fun () ->
+      Hashtbl.remove sessions_tbl session.Async.key);
   let fn clients =
     List.iter (fun cl -> Async.set_session cl) clients;
     []
   in
   let _ = Util.update_atomic session.clients fn in
-  Mutex.lock mutex_list;
-  (try LinkedList.remove_cell session.cell sessions_list;
-       Mutex.unlock mutex_list
-   with e ->
-     Mutex.unlock mutex_list; raise e);
+  Mutex.use mutex_list (fun () ->
+      LinkedList.remove_cell session.cell sessions_list);
   List.iter (fun cl -> Async.Client.close cl)
     (Atomic.get session.clients);
   Key.cleanup_delete (Atomic.get session.data)
 
 let refresh session =
   let now = Unix.gettimeofday () in
-  Mutex.lock mutex_list;
-  try
-    LinkedList.move_first session sessions_list;
-    (LinkedList.get session).last_refresh <- now;
-    while  let l = LinkedList.tail sessions_list in
-           let sess = LinkedList.get l in
-           LinkedList.is_cell l && now -. sess.last_refresh > sess.life_time do
-      let l = LinkedList.tail sessions_list in
-      LinkedList.remove_cell l sessions_list;
-    done;
-    Mutex.unlock mutex_list;
-  with e ->
-    Mutex.unlock mutex_list;
-    raise e
+  Mutex.use mutex_list (fun () ->
+      LinkedList.move_first session sessions_list;
+      (LinkedList.get session).last_refresh <- now;
+      while  let l = LinkedList.tail sessions_list in
+             let sess = LinkedList.get l in
+             LinkedList.is_cell l && now -. sess.last_refresh > sess.life_time do
+        let l = LinkedList.tail sessions_list in
+        LinkedList.remove_cell l sessions_list;
+      done)
 
 type cookie_policy =
   { path : string
@@ -123,8 +113,6 @@ let prefix_sec info =
   if info.path = "/" then "Host" else "Secure"
 let session_key info =
   Printf.sprintf "__%s-%s-Key" (prefix_sec info) info.base
-let session_adr info =
-  Printf.sprintf "__%s-%s-Adr" (prefix_sec info) info.base
 
 let get_client_session client key =
   match Async.(client.session) with
@@ -133,10 +121,7 @@ let get_client_session client key =
      match key with
      | None -> None
      | Some key ->
-        Mutex.lock mutex_tbl;
-        let r = Hashtbl.find_opt sessions_tbl key in
-        Mutex.unlock mutex_tbl;
-        r
+        Mutex.use mutex_tbl (fun () -> Hashtbl.find_opt sessions_tbl key)
 
 let get_session (type a) ?(cookie_policy=default_cookie_policy) (req : a Request.t) =
   let key = Option.map Http_cookie.value
@@ -157,74 +142,56 @@ let get_session (type a) ?(cookie_policy=default_cookie_policy) (req : a Request
      | _ ->
         None
 
-let get_addresses req client =
-  let addr = Util.addr_of_sock client.Async.sock in
-  let headers = Request.headers req in
-  let addr = match Headers.get Headers.Forwarded headers with
-    | None -> addr
-    | Some a -> addr ^ "F:" ^ a
-  in
-  let addr = match Headers.get Headers.X_Real_IP headers with
-    | None -> addr
-    | Some a -> addr ^ "XRI:" ^ a
-  in
-  let addr = match Headers.get Headers.X_Forwarded_For headers with
-    | None -> addr
-    | Some a -> addr ^ "XFF:" ^ a
-  in
-  addr
-
-let start_session ?(session_life_time=3600.0) addr client key =
-  try
-    match client.Async.session with
-    | Some s ->
-       refresh s;
-       (LinkedList.get s, true)
-    | None ->
-       Mutex.lock mutex_tbl;
-       let session = match key with
-         | None -> None
-         | Some key -> Hashtbl.find_opt sessions_tbl key
-       in
-       match session with
-       | Some session ->
-          Async.set_session ~session client;
-          Mutex.unlock mutex_tbl;
-          let session_info = LinkedList.get session in
-          let fn clients = client :: clients in
-          let _ = Util.update_atomic session_info.clients fn in
-          refresh session;
-          (session_info, true)
-       | None ->
-          Mutex.unlock mutex_tbl;
-          let key = Digest.to_hex
-                      (Digest.string (addr ^ string_of_int (Random.int 1_000_000_000))) in
-          let data = Atomic.make Key.empty in
-          let now = Unix.gettimeofday () in
-          let session_info =
-            Async.({ addr; key; clients= Atomic.make [client]
-                     ; data; cell = LinkedList.fake_cell
-                     ; life_time = session_life_time
-                     ; last_refresh = now })
-          in
-          Mutex.lock mutex_list;
-          let session = LinkedList.add_first session_info sessions_list in
-          Mutex.unlock mutex_list;
-          session_info.cell <- session;
-          Async.set_session ~session client;
-          Mutex.lock mutex_tbl;
-          Hashtbl.replace sessions_tbl key session;
-          Mutex.unlock mutex_tbl;
-          (session_info, false)
-  with e ->
-    Mutex.unlock mutex_tbl; raise e
+let start_session ?(session_life_time=3600.0) client key =
+  match client.Async.session with
+  | Some s ->
+     refresh s;
+     (LinkedList.get s, true)
+  | None ->
+     let session =
+       Mutex.use mutex_tbl (fun () ->
+           match key with
+           | None -> None
+           | Some key -> Hashtbl.find_opt sessions_tbl key)
+     in
+     match session with
+       Some session ->
+        Async.set_session ~session client;
+        let session_info = LinkedList.get session in
+        let fn clients = client :: clients in
+        let _ = Util.update_atomic session_info.clients fn in
+        refresh session;
+        (session_info, true)
+     | None ->
+        let key = Digest.to_hex
+                      (Digest.string
+                         ((string_of_int (Random.full_int 1_000_000_000)) ^
+                            (string_of_int (Random.full_int 1_000_000_000)) ^
+                              (string_of_int (Random.full_int 1_000_000_000)))
+                      ) in
+        let data = Atomic.make Key.empty in
+        let now = Unix.gettimeofday () in
+        let session_info =
+          Async.({ key; clients= Atomic.make [client]
+                   ; data; cell = LinkedList.fake_cell
+                   ; life_time = session_life_time
+                   ; last_refresh = now })
+        in
+        let session =
+          Mutex.use mutex_list (fun () ->
+            LinkedList.add_first session_info sessions_list)
+        in
+        session_info.cell <- session;
+        Async.set_session ~session client;
+        Mutex.use mutex_tbl (fun () ->
+            Hashtbl.replace sessions_tbl key session);
+        (session_info, false)
 
 let get_session_data (sess : t) key =
   let l = Atomic.get sess.data in
   try Some (Key.search key l) with Not_found -> None
 
 let get_session_key sess = sess.Async.key
-let get_session_addr sess = sess.Async.addr
 
 let do_session_data : t -> (data -> 'a * data) -> 'a =
   fun (sess : t) fn ->
@@ -239,23 +206,19 @@ let remove_session_data sess key =
 
 let mk_cookies (session : t)  cookie_policy cs =
   let session_key = session_key cookie_policy in
-  let session_adr = session_adr cookie_policy in
   let path = cookie_policy.path in
   let max_age = Int64.of_float cookie_policy.life in
   let cs = Cookies.create ~name:session_key ~max_age ~path ~secure:true
             ~same_site:`Strict session.key cs in
-  let cs = Cookies.create ~name:session_adr ~max_age ~path ~secure:true
-            ~same_site:`Strict session.addr cs in
   cs
 
 let select_cookies ?(delete=false) ?create cookie_policy cookies =
   let session_key = session_key cookie_policy in
-  let session_adr = session_adr cookie_policy in
   let cookies =
     List.filter_map
     (fun c ->
       let name = Http_cookie.name c in
-      if name = session_key || name = session_adr then
+      if name = session_key then
         begin
           let c = Http_cookie.update_path (Some cookie_policy.path) c in
           let c = try Result.get_ok c with Invalid_argument _ -> assert false in
@@ -289,27 +252,14 @@ let check_session_cookie ?(cookie_policy=default_cookie_policy) ?(create=false) 
   in
   let cookies = Request.cookies req in
   let session_key = session_key cookie_policy in
-  let session_adr = session_adr cookie_policy in
   let key = Option.map Http_cookie.value
               (Request.get_cookie req session_key)
   in
 
-  match (key, Request.get_cookie req session_adr) with
-  | (Some key, Some addr) when
-         key = session.key &&
-           Http_cookie.value addr = session.addr ->
-     let client = Request.client req in
-     let addr = get_addresses req client in
-     if addr <> session.addr then
-       begin
-         delete_session session;
-         raise Bad_session_cookie;
-       end;
+  match key with
+  | Some key when key = session.key ->
      Some session
-  | (Some _, None) ->
-     delete_session session;
-     raise Bad_session_cookie;
-  | (None, None) when cookies = [] && create ->
+  | None when cookies = [] && create ->
      None
   | _ -> raise Bad_session_cookie
   | exception _ -> raise Bad_session_cookie
@@ -327,7 +277,6 @@ let start_check
               (Request.get_cookie req session_key)
   in
   let client = Request.client req in
-  let addr = get_addresses req client in
 
   let exception Bad of t in
   try
@@ -335,10 +284,10 @@ let start_check
       match check_session_cookie ~cookie_policy ~create req with
       | Some session -> (session, false)
       | None when create ->
-         start_session ~session_life_time addr client key
+         start_session ~session_life_time client key
       | _ -> raise nosession
       | exception Bad_session_cookie when create ->
-         start_session ~session_life_time addr client key
+         start_session ~session_life_time client key
       | exception e ->
          Log.f (Exc 0)
            (fun k -> k "Bad session cookie and create session not allowed: %s"

@@ -61,8 +61,7 @@ and semaphore =
   }
 
 and session_info =
-  { addr : string
-  ; key : string
+  { key : string
   ; life_time : float
   ; clients : client list Atomic.t
   ; data : Key.data Atomic.t
@@ -371,6 +370,7 @@ module Mutex : sig
     val lock : t -> unit
     val delete : t -> unit
     val try_unlock : t -> unit
+    val use : t -> (unit -> 'a) -> 'a
   end = struct
   external raw_eventfd  : int -> int -> Unix.file_descr = "caml_eventfd"
   (*external raw_efd_cloexec   : unit -> int = "caml_efd_cloexec"*)
@@ -439,6 +439,13 @@ module Mutex : sig
 
   let rec lock : t -> unit = fun lk ->
     if not (try_lock lk) then (perform (Lock lk); lock lk)
+
+  let use m f =
+    lock m;
+    try
+      let r = f () in unlock m; r
+    with e ->
+      unlock m; raise e
 end
 
 module Semaphore : sig
@@ -914,6 +921,7 @@ let close ~dinfo ~client exn =
 exception Switch
 
 let loop listens pipe timeout handler () =
+  let _ = Printexc.record_backtrace true in
   let did = Domain.self () in
 
   let poll_list = Polly.create () in

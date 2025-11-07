@@ -31,7 +31,10 @@ let extra = [
   ["X-Forwarded-For"; "nonstandard"; "";
    "Added by Proxy, list of addresses"];
   ["X-Real-IP"; "nonstandard"; "";
-   "Added by Proxy, original addresses"]]
+   "Added by Proxy, original addresses"];
+  ["X-CSRF-Token"; "nonstandard"; "";
+   "Added by Proxy, list of addresses"]]
+
 
 let lines = List.rev (fn extra)
 

@@ -27,6 +27,7 @@ module Mutex : sig
   val unlock : t -> unit
   val try_unlock : t -> unit
   val delete : t -> unit
+  val use : t -> (unit -> 'a) -> 'a
 end
 
 module Semaphore : sig
@@ -71,8 +72,7 @@ type client = private {
   }
 
 and session_info =
-  { addr : string
-  ; key : string
+  { key : string
   ; life_time : float
   ; clients : client list Atomic.t
   ; data : Key.data Atomic.t

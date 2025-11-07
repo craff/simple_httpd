@@ -54,4 +54,3 @@ val save_sessions : out_channel -> unit
 val load_sessions : string * int -> in_channel -> unit
 
 val get_session_key : t -> string
-val get_session_addr : t -> string
