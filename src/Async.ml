@@ -37,7 +37,6 @@ type client =
   ; mutable read : Bytes.t -> int -> int -> int
   ; mutable write : Bytes.t -> int -> int -> int
   ; mutable sendfile : Unix.file_descr -> int -> int -> int
-  ; mutable flush : unit -> unit
   }
 
 and mutex_state =
@@ -89,7 +88,6 @@ let fake_client =
       read = (fun _ _ _ -> assert false);
       write = (fun _ _ _ -> assert false);
       sendfile = (fun _ _ _ -> assert false);
-      flush = (fun _ -> assert false);
     }
 
 let set_session ?session client =
@@ -548,45 +546,32 @@ let sendfile_unix fd =
       Util.sendfile fd in_fd in_off l
     with
     | Unix.(Unix_error((EAGAIN|EWOULDBLOCK),_,_)) ->
-      perform (Client fd);
-      fn in_fd in_off l
+       perform (Client fd);
+       fn in_fd in_off l
   in
   fn
 
-(* Note: sendfile together with SSL, not really efficient,
-   unless ktls is used *)
-let ssl_sendfile c fd o l =
-  let buf = Bytes.create 0x4000 in (* 16K: the default for SSL*)
-  let len = Bytes.length buf in
-  let _ = Unix.(lseek fd o SEEK_SET) in
-  let w = Unix.read fd buf 0 (min l len) in
+(* Note: sendfile together with SSL, not supported
+   unless ktls is used, in which case we use unix sendfile *)
+let ssl_sendfile buf len c fd o l =
+  let _ = Util.lseek_set fd o in
+  let w = Util.read fd buf 0 (min l len) in
   Ssl.write c buf 0 w
 
 let sendfile_ssl fd chan =
+  let len = 0x4000 in  (* 16K: the default for SSL*)
+  let buf = Bytes.create len in
   let rec fn in_fd in_off l =
     try
-      ssl_sendfile chan in_fd in_off l
+      ssl_sendfile buf len chan in_fd in_off l
     with
     | Ssl.(Write_error(Error_want_read|Error_want_write)) ->
        perform (Client fd);
        fn in_fd in_off l
   in
-
   fn
 
 let schedule_fd read sock = perform (Io (sock, read))
-
-let flush_unix fd () =
-  Util.flush_cork fd
-
-let flush_ssl fd chan =
-  let rec fn () =
-    try Ssl.flush chan
-    with Ssl.Flush_error(true) ->
-      schedule_fd false fd;
-      fn ()
-  in
-  fn
 
 let register_starttime cl =
   let r = now () in
@@ -710,9 +695,6 @@ module Io = struct
     with Unix.(Unix_error((EAGAIN|EWOULDBLOCK),_,_)) ->
       schedule_fd false io.sock;
       write io s o l
-
-  let flush (io:t) =
-    Util.flush_cork io.sock
 
   let formatter (io:t) =
     let open Format in
@@ -1035,9 +1017,6 @@ let loop listens pipe timeout handler () =
         in
         iter_pendings evt gn sock
       in
-      Log.f (Sch 0) (fun k -> k "entering poll with timeout: %d (%d conn.)"
-                                select_timeout
-                                (Atomic.get (dinfo.nb_connections)));
       ignore (Polly.wait poll_list 1000 select_timeout fn);
     with
     | Unix.(Unix_error(EINTR,_,_)) -> poll ()
@@ -1066,7 +1045,6 @@ let loop listens pipe timeout handler () =
                             ; read = read_unix sock
                             ; write = write_unix sock
                             ; sendfile = sendfile_unix sock
-                            ; flush = flush_unix sock
                           }
              in
              let info = { ty = Client; client; pd = NoWait } in
@@ -1088,6 +1066,7 @@ let loop listens pipe timeout handler () =
                Log.f (Req 0)
                  (fun k -> k "[%d] accepted connection from %s" client.id client.peer);
                Unix.set_nonblock sock;
+               Unix.(setsockopt sock TCP_NODELAY true);
                Polly.(add poll_list sock Events.(inp lor out lor et lor hup lor err));
                begin
                  match linfo.ssl with
@@ -1108,11 +1087,6 @@ let loop listens pipe timeout handler () =
                       begin
                         client.write <- write_ssl sock chan;
                         client.sendfile <- sendfile_ssl sock chan;
-                        client.flush <- flush_ssl sock chan;
-                      end
-                    else
-                      begin
-                        Util.setsockopt_cork sock true;
                       end;
                     if n land 0x2 = 0 then
                       begin
@@ -1136,9 +1110,7 @@ let loop listens pipe timeout handler () =
                         in
                         k "ssl connection established (%s, cipher: %s %s, ktls: %d)"
                           v cn cv n);
-                 | None ->
-                    Util.setsockopt_cork sock true
-
+                 | None -> ()
                end;
                handler client;
                close ~dinfo ~client EndHandling
@@ -1360,12 +1332,10 @@ module Client = struct
   let read c s o l = c.read s o l
   let write c s o l = c.write s o l
   let sendfile c s o l = c.sendfile s o l
-  let flush c = c.flush ()
 
   (* All close above where because of error or socket closed on client side.
-     close in Server may be because there is no keep alive and the server close,
-     so we flush before closing to handle the (very rare) ssl_flush exception
-     above. This is only possible to close the current client! *)
+     close in Server may be because there is no keep alive and the server close
+     This is only possible to close the current client! *)
   let immediate_close client =
     let dinfo = global_get_dinfo() in
     close ~dinfo ~client ClosedByHandler

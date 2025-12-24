@@ -36,11 +36,22 @@ external raw_read : (int [@untagged]) -> Bytes.t ->
 
 external read_error : unit -> 'a = "caml_read_error"
 
+external raw_lseek_set : (int [@untagged]) -> (int [@untagged]) -> (int [@untagged])
+  = "caml_byte_fast_lseek_set" "caml_fast_lseek_set" [@@noalloc]
+
+external lseek_error : unit -> 'a = "caml_lseek_error"
+
 let read fd buf ofs len =
   if ofs < 0 || len < 0 || ofs+len > Bytes.length buf then
     invalid_arg "read";
   let ret = raw_read (file_descr_to_int fd) buf ofs len in
   if ret == -1 then read_error();
+  ret
+
+let lseek_set fd ofs =
+  if ofs < 0 then invalid_arg "lseek_set";
+  let ret = raw_lseek_set (file_descr_to_int fd) ofs in
+  if ret == -1 then lseek_error();
   ret
 
 (* test utils *)

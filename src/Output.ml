@@ -24,8 +24,7 @@ let flush oc =
     let w = Async.Client.write oc.fd oc.b !n (oc.o - !n) in
     n := !n + w
   done;
-  oc.o <- 0;
-  Async.Client.flush oc.fd
+  oc.o <- 0
 
 let close oc =
   flush oc; Async.Client.close oc.fd
@@ -156,8 +155,15 @@ let output_str = add_string
 let output_bytes = add_bytes
 
 let sendfile oc n fd =
-  let r = ref 0 in
+  let r = ref n in
+  if oc.s > oc.o then
+    begin
+      let w = Util.read fd oc.b oc.o (min (oc.s - oc.o) !r) in
+      oc.o <- oc.o + w;
+      r := !r - w;
+    end;
   flush oc;
-  while !r < n  do
-    r := !r + Async.Client.sendfile oc.fd fd !r (n - !r);
-  done;
+  while !r > 0  do
+    let w = Async.Client.sendfile oc.fd fd (n - !r) !r in
+    r := !r - w
+  done

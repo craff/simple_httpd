@@ -139,9 +139,6 @@ module Client : sig
   (** remove a previously register at_close action *)
   val remove_at_close : t -> at_close -> unit
 
-  (** flush the ssl socket of the client if it has one *)
-  val flush : t -> unit
-
   val read  : t -> Bytes.t -> int -> int -> int
   val write : t -> Bytes.t -> int -> int -> int
   val sendfile : t -> Unix.file_descr -> int -> int -> int

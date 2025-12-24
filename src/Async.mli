@@ -68,7 +68,6 @@ type client = private {
     mutable read : bytes -> int -> int -> int;
     mutable write : bytes -> int -> int -> int;
     mutable sendfile : Unix.file_descr -> int -> int -> int;
-    mutable flush : unit -> unit;
   }
 
 and session_info =
@@ -100,7 +99,6 @@ module Client : sig
   val read  : t -> Bytes.t -> int -> int -> int
   val write : t -> Bytes.t -> int -> int -> int
   val sendfile : t -> Unix.file_descr -> int -> int -> int
-  val flush : t -> unit
 end
 
 (** only to please qtest *)
@@ -141,7 +139,6 @@ module Io : sig
   val close : t -> unit
   val read : t -> Bytes.t -> int -> int -> int
   val write : t -> Bytes.t -> int -> int -> int
-  val flush : t -> unit (* double cork *)
   val sock : t -> Unix.file_descr
   val formatter : t -> Format.formatter
   val schedule : bool -> t -> unit

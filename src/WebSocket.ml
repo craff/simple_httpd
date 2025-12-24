@@ -25,8 +25,7 @@ let ws_write ?(binary=true) (cl:Async.client) msg =
   let cur = ref 0 in
   while !cur < len do
     cur := !cur + cl.write buf !cur len
-  done;
-  cl.flush ()
+  done
 
 exception Closed
 

@@ -228,6 +228,22 @@ CAMLprim void caml_read_error() {
   CAMLreturn0;
 }
 
+long caml_fast_lseek_set(long fd, long ofs)
+{
+  return lseek(fd, ofs, SEEK_SET);
+}
+
+CAMLprim value caml_byte_fast_lseek_set(value fd, value vofs) {
+  CAMLparam0();
+  CAMLreturn(Val_int(caml_fast_lseek_set(fd,Int_val(vofs))));
+}
+
+CAMLprim void caml_lseek_error() {
+  CAMLparam0();
+  caml_uerror("lseek", Nothing);
+  CAMLreturn0;
+}
+
 CAMLprim value caml_rlimit_cur() {
   CAMLparam0();
   struct rlimit rl;
