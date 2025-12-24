@@ -1179,14 +1179,14 @@ let accept_loop (domains : Domain.id Array.t) listens pipes maxc =
   let tbl = Hashtbl.create (nb_listens * 4) in
   let pipes_tbl = Hashtbl.create (nb_pipes * 4) in
   let pipe_buf = Bytes.create 8 in
-  let pendings = Queue.create () in
-  let blocked = Array.make nb_pipes false in
+  let pendings = Array.make nb_pipes [] in
   let nbc i =  all_domain_info.((domains.(i) :> int)).nb_connections in
   Array.iteri (fun i (s,_) ->
       add_close s;
       Hashtbl.add tbl s i;
       Polly.(add poll_list s Events.(inp lor et))) listens;
   Array.iteri (fun i s ->
+      Polly.(add poll_list s Events.(out lor et));
       Hashtbl.add pipes_tbl s i) pipes;
 
   let get_best () =
@@ -1196,38 +1196,52 @@ let accept_loop (domains : Domain.id Array.t) listens pipes maxc =
     for i = 0 to nb_pipes - 1 do
       let c' = Atomic.get (nbc i) in
       t := !t + c';
-      if c' < !c && not blocked.(i) then (index := i; c := c')
+      if c' < !c then (index := i; c := c')
     done;
     if !t >= maxc || !c = max_int then raise Full;
     (!index, pipes.(!index))
   in
+  let exception Blocked of int in
   let send_socket sock lsock =
     let index = try Hashtbl.find tbl sock with Not_found -> assert false in
     try
-    let (pipe_index, pipe) = get_best () in
-    try
-      Bytes.set_int32_ne pipe_buf 0 (Int32.of_int (Util.file_descr_to_int lsock));
-      Bytes.set_int32_ne pipe_buf 4 (Int32.of_int index);
-      assert(Util.single_write pipe pipe_buf 0 8 = 8);
+      let (pipe_index, pipe) = get_best () in
       Atomic.incr (nbc pipe_index);
-    with
-    | Unix.(Unix_error ((EAGAIN |EWOULDBLOCK), _,_)) ->
-       blocked.(pipe_index) <- true;
-       Polly.(add poll_list pipe Events.(out lor oneshot));
-       Queue.add (sock, lsock) pendings
-    | exn ->
-       Log.f (Exc 0) (fun k -> k "unexpected exception in accept loop: %s" (printexn exn));
-       (try Unix.close lsock with Unix.Unix_error _ -> ())
+      try
+        Bytes.set_int32_ne pipe_buf 0 (Int32.of_int (Util.file_descr_to_int lsock));
+        Bytes.set_int32_ne pipe_buf 4 (Int32.of_int index);
+        assert(Util.single_write pipe pipe_buf 0 8 = 8);
+      with
+      | Unix.(Unix_error ((EAGAIN |EWOULDBLOCK), _,_)) ->
+         raise (Blocked pipe_index)
+      | e ->
+         Atomic.decr (nbc pipe_index);
+         raise e
     with
     | Full ->
        Log.f (Exc 0) (fun k -> k "handler: reject too many clients");
        (try Unix.close lsock with Unix.Unix_error _ -> ())
   in
+  let rec send_sockets = function
+      [] -> ()
+    | ((sock, lsock) :: rest) as all ->
+       (try
+         send_socket sock lsock;
+         fun () -> send_sockets rest
+        with
+        | Blocked pipe_index ->
+           pendings.(pipe_index) <- List.rev_append all pendings.(pipe_index);
+           fun () -> ()
+        | exn ->
+           Log.f (Exc 0) (fun k -> k "unexpected exception in accept loop: %s" (printexn exn));
+           (try Unix.close lsock with Unix.Unix_error _ -> ());
+           fun () -> ()) ()
+  in
   let treat _ sock evt =
-    try
-      while true do
-        if Polly.Events.(inp land evt <> empty) then
-          begin
+    if Polly.Events.(inp land evt <> empty) then
+      begin
+        try
+          while true do
             let lsock, _ =
               try Unix.accept ~cloexec:true sock with
               | Unix.(Unix_error ((EAGAIN |EWOULDBLOCK), _,_)) ->
@@ -1236,21 +1250,17 @@ let accept_loop (domains : Domain.id Array.t) listens pipes maxc =
                  Log.f (Exc 0) (fun k -> k "unexpected exception in Unix.accept: %s" (printexn exn));
                  raise FailHandling
             in
-            send_socket sock lsock;
-          end
-        else
-          begin
-            let pipe_index = try Hashtbl.find pipes_tbl sock with Not_found -> assert false in
-            if blocked.(pipe_index) then blocked.(pipe_index) <- false;
-            try
-              while not (Array.for_all (fun x -> x) blocked) do
-                let (sock, lsock) = Queue.pop pendings in
-                send_socket sock lsock;
-              done
-            with Queue.Empty -> ()
-          end
-      done
-    with Exit -> ()
+            send_sockets [sock, lsock];
+          done
+        with Exit -> ()
+      end
+    else
+      begin
+        let pipe_index = try Hashtbl.find pipes_tbl sock with Not_found -> assert false in
+        let waiting = List.rev pendings.(pipe_index) in
+        pendings.(pipe_index) <- [];
+        List.iter (fun (sock, lsock) -> send_socket sock lsock) waiting;
+      end
   in
   let nb_socks = Array.length listens in
   while true do
