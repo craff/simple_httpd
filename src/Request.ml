@@ -5,6 +5,7 @@ type 'body t = {
     host: string;
     client: Async.client;
     mutable headers: Headers.t;
+    origin: Headers.t;
     mutable cookies: Cookies.t;
     http_version: int;
     path: string;
@@ -34,6 +35,7 @@ let get_header ?f self h = Headers.get ?f h self.headers
 let get_header_int self h = match get_header self h with
   | Some x -> (try Some (int_of_string x) with _ -> None)
   | None -> None
+let get_origin r = r.origin
 let set_header k v self = {self with headers=Headers.set k v self.headers}
 let update_headers f self = {self with headers=f self.headers}
 let set_body b self = {self with body=b}
@@ -118,9 +120,7 @@ let parse_req_start ~client ~buf (bs:Input.t)
     let _ = Input.exact_char '\r' () bs in
     let _ = Input.exact_char '\n' () bs in
     if major != 1 || (minor != 0 && minor != 1) then Input.fail_parse bs;
-    log (Req 0) (fun k->k "From %s: %s, path %S" client.peer
-                          (Method.to_string meth) path);
-    let (headers, cookies) = Headers.parse_ ~buf bs in
+    let (headers, cookies, origin) = Headers.parse_ ~buf bs in
     let host =
       match Headers.get Headers.Host headers with
       | None -> fail_raise ~code:bad_request "No 'Host' header in request"
@@ -130,7 +130,8 @@ let parse_req_start ~client ~buf (bs:Input.t)
     let multipart_headers = [] (* initialized when parsing a multipart body *)
     in
     let req = {
-        meth; query; host; client; path; path_components; multipart_headers;
+        meth; query; host; origin; client; path; path_components;
+        multipart_headers;
         headers; cookies; http_version=minor; body=bs; start_time;
       } in
     Some req
@@ -155,7 +156,7 @@ let parse_multipart_ ~bound req =
   let line = Input.read_line ~buf:buf2 body in
   let cont = ref (String.trim line <> "--") in
   while !cont do
-    let (header, _) = Headers.parse_ ~buf body in
+    let (header, _, _) = Headers.parse_ ~buf body in
     let cd = match Headers.get Content_Disposition header
       with Some cd -> Scanf.Scanning.from_string cd
          | None -> raise Not_found
@@ -214,7 +215,7 @@ let parse_body_ ~tr_stream ~buf (req:Input.t t) : Input.t t =
       | exception _ -> fail_raise ~code:bad_request "invalid Content-Length"
     in
     let trailer bs =
-      let headers, cookies = Headers.parse_ ~buf bs in
+      let headers, cookies, _ = Headers.parse_ ~buf bs in
       req.headers <- req.headers @ headers;
       req.cookies <- req.cookies @ cookies;
     in

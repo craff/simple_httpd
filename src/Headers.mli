@@ -41,7 +41,7 @@ val contains : header -> t -> bool
 val pp : Format.formatter -> t -> unit
 (** Pretty print the headers. *)
 
-val parse_ : buf:Buffer.t -> Input.t -> t * Cookies.t
+val parse_ : buf:Buffer.t -> Input.t -> t * Cookies.t * t
 (** For internal use *)
 
 exception Bad_req of Response_code.t * string * t * Cookies.t

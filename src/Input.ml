@@ -424,9 +424,16 @@ let read_path ~buf (self:t) : (string * string list * (string * string) list) =
       self.consume r;
       let len = !pos - 1 - !start in
       (match nb with
-      | One -> last_key := get_buf len
-      | Two -> query := (!last_key, get_buf len) :: !query
-      | Three -> query := (!last_key, get_buf len) :: !query; cont_query := false);
+       | One ->
+          last_key := get_buf len
+       | Two when !last_key = "" ->
+          query := (get_buf len, "") :: !query;
+       | Two ->
+          query := (!last_key, get_buf len) :: !query; last_key := ""
+       | Three when !last_key = "" ->
+          query := (get_buf len, "") :: !query; cont_query := false;
+       | Three ->
+          query := (!last_key, get_buf len) :: !query; cont_query := false);
       start := !pos;
     with Not_found ->
       Buffer.add_subbytes buf self.bs self.off self.len;

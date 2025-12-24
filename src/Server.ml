@@ -283,8 +283,19 @@ let handle_client_ (self:t) (client:Async.client) : unit =
            if Headers.get Headers.Connection r.Response.headers = Some "close" then
              Async.stop_client client;
            Response.output_ (Request.meth req) oc r;
-           log (Req 0) (fun k -> k "response code %d sent after %fms" (r.code :> int)
-                                   (1e3 *. (Unix.gettimeofday () -. req.start_time)));
+           log (Req 0) (fun k ->
+               let rec pp fmt = function
+                 | [] -> ()
+                 | (_,ip)::rest ->
+                    Format.fprintf fmt ",%s" ip;
+                    pp fmt rest
+               in
+               k "%s %S from %s%a response %d after %fms"
+                 (Method.to_string (Request.meth req))
+                 req.path
+                 client.peer pp req.origin
+                 (r.code :> int)
+                 (1e3 *. (Unix.gettimeofday () -. req.start_time)));
            if r.code = Response_code.switching_protocols then raise Async.Switch
          in
          (* call handler *)

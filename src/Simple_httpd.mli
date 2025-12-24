@@ -643,18 +643,22 @@ module Request : sig
   val pp : Format.formatter -> string t -> unit
   (** Pretty print the request and its body *)
 
-  val headers : _ t -> Headers.t
+  val headers : 'a t -> Headers.t
   (** List of headers of the request, including ["Host"] *)
 
-  val get_header : ?f:(string->string) -> _ t -> Headers.header -> string option
+  val get_header : ?f:(string->string) -> 'a t -> Headers.header -> string option
 
-  val get_header_int : _ t -> Headers.header -> int option
+  val get_header_int : 'a t -> Headers.header -> int option
 
   val set_header : Headers.header -> string -> 'a t -> 'a t
   (** [set_header k v req] sets [k: v] in the request [req]'s headers. *)
 
   val update_headers : (Headers.t -> Headers.t) -> 'a t -> 'a t
   (** Modify headers *)
+
+  val get_origin: 'a t -> Headers.t
+  (** Get the headers indicating origin: currently
+        X-Forwarded-For X-Real-IP CF-Origin-IP *)
 
   val body : 'b t -> 'b
   (** Request body, possibly empty. *)

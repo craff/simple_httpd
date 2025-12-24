@@ -7,6 +7,7 @@ type 'body t = { meth: Method.t (** The method of this request *)
                ; client: Async.client
                (** information about the client used by the scheduler *)
                ; mutable headers: Headers.t (** Request headers *)
+               ; origin: Headers.t (** Request headers which indicate IP *)
                ; mutable cookies: Cookies.t (** Request cookies *)
                ; http_version: int (** minor version of protocol set in the request *)
                ; path: string (** full path of the request *)
@@ -30,12 +31,14 @@ val pp : Format.formatter -> string t -> unit
 val pp_ : Format.formatter -> _ t -> unit
 (** Pretty print the request without its body *)
 
-val headers : _ t -> Headers.t
+val headers : 'a t -> Headers.t
 (** List of headers of the request, including ["Host"] *)
 
-val get_header : ?f:(string->string) -> _ t -> Headers.header -> string option
+val get_header : ?f:(string->string) -> 'a t -> Headers.header -> string option
 
-val get_header_int : _ t -> Headers.header -> int option
+val get_header_int : 'a t -> Headers.header -> int option
+
+val get_origin : 'a t -> Headers.t
 
 val set_header : Headers.header -> string -> 'a t -> 'a t
 (** [set_header k v req] sets [k: v] in the request [req]'s headers. *)

@@ -26,14 +26,16 @@ let rec fn acc =
 let to_cstr = String.map (function '-' -> '_' | c -> c)
 
 let extra = [
+  ["CF-Connecting-IP"; "nonstandard"; "";
+   "Added by Proxy, list of addresses"];
   ["Filename-Multipart"; "nonstandard"; "";
    "Managment of filenames in multipart encoded data as a fake header"; ""];
+  ["X-CSRF-Token"; "nonstandard"; "";
+   "Added by Proxy, list of addresses"];
   ["X-Forwarded-For"; "nonstandard"; "";
    "Added by Proxy, list of addresses"];
   ["X-Real-IP"; "nonstandard"; "";
-   "Added by Proxy, original addresses"];
-  ["X-CSRF-Token"; "nonstandard"; "";
-   "Added by Proxy, list of addresses"]]
+   "Added by Proxy, original addresses"]]
 
 
 let lines = List.rev (fn extra)

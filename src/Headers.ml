@@ -29,8 +29,8 @@ let set_cookies cookies h =
     tchar = "!" / "#" / "$" / "%" / "&" / "'" / "*" / "+" / "-" / "." / "^" / "_"
     / "`" / "|" / "~" / DIGIT / ALPHA ; any VCHAR, except delimiters
     Reference: https://datatracker.ietf.org/doc/html/rfc7230#section-3.2 *)
-let parse_ ~buf (bs:Input.t) : t * Cookies.t =
-  let rec loop headers cookies =
+let parse_ ~buf (bs:Input.t) : t * Cookies.t * t =
+  let rec loop headers cookies origin =
     (try
        let k = parse bs in
        let v =
@@ -38,24 +38,26 @@ let parse_ ~buf (bs:Input.t) : t * Cookies.t =
            Input.read_line ~buf bs
          with _ -> fail_raise ~code:bad_request "invalid header line: %S" (to_string k)
        in
-       let headers, cookies =
+       let headers, cookies, origin =
          if k = Cookie then
            begin
              let new_cookies = Cookies.parse v in
              (headers, List.fold_left (fun acc c ->
-                           Cookies.add c acc) cookies new_cookies)
+                           Cookies.add c acc) cookies new_cookies, origin)
            end
+         else if k = CF_Connecting_IP || k = X_Forwarded_For
+                 || k = X_Real_IP then
+           (headers, cookies, (k,v)::origin)
          else
-           ((k,v)::headers, cookies)
+           ((k,v)::headers, cookies, origin)
        in
-       fun () -> loop headers cookies
+       fun () -> loop headers cookies origin
      with
      | End_of_headers ->
         assert (Input.read_char bs = '\n');
-        (fun () -> (headers,cookies))
-     | Invalid_header s ->
+        (fun () -> (headers,cookies, origin))
+     | Invalid_header _ ->
         let _ = Input.read_line ~buf bs in
-        Log.f (Req 3) (fun k -> k "ignoring unknown header starting with %s" s);
-        (fun () -> loop headers cookies)) ()
+        (fun () -> loop headers cookies origin)) ()
   in
-  loop [] []
+  loop [] [] []
