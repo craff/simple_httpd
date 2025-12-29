@@ -15,7 +15,7 @@ type cookie_policy =
   { path : string
   ; base : string
   ; life : float
-  ; filter : Http_cookie.t -> Http_cookie.t option }
+  ; filter : Cookies.cookie -> Cookies.cookie option }
 
 val default_cookie_policy : cookie_policy
 

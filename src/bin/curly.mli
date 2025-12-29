@@ -75,14 +75,14 @@ val run
   : ?exe:string
   -> ?args:string list
   -> Request.t
-  -> (Response.t, Error.t) Result.result
+  -> (Response.t, Error.t) Result.t
 
 val get
   : ?exe:string
   -> ?args:string list
   -> ?headers:Header.t
   -> string
-  -> (Response.t, Error.t) Result.result
+  -> (Response.t, Error.t) Result.t
 (** Specialized version of {!run} for method [`GET]
     @since 0.2.0 *)
 
@@ -91,7 +91,7 @@ val head
   -> ?args:string list
   -> ?headers:Header.t
   -> string
-  -> (Response.t, Error.t) Result.result
+  -> (Response.t, Error.t) Result.t
 (** Specialized version of {!run} for method [`HEAD]
     @since 0.2.0 *)
 
@@ -100,17 +100,17 @@ val delete
   -> ?args:string list
   -> ?headers:Header.t
   -> string
-  -> (Response.t, Error.t) Result.result
+  -> (Response.t, Error.t) Result.t
 (** Specialized version of {!run} for method [`DELETE]
     @since 0.2.0 *)
 
-val post 
+val post
   : ?exe:string
   -> ?args:string list
   -> ?headers:Header.t
   -> ?body:string
   -> string
-  -> (Response.t, Error.t) Result.result
+  -> (Response.t, Error.t) Result.t
 (** Specialized version of {!run} for method [`POST]
     @since 0.2.0 *)
 
@@ -120,6 +120,6 @@ val put
   -> ?headers:Header.t
   -> ?body:string
   -> string
-  -> (Response.t, Error.t) Result.result
+  -> (Response.t, Error.t) Result.t
 (** Specialized version of {!run} for method [`PUT]
     @since 0.2.0 *)

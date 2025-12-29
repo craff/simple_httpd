@@ -271,7 +271,7 @@ let parse_query s : _ list =
 *)
 
 (*$QR & ~long_factor:20 ~count:1_000
-    Q.(small_list (pair string string))
+    Q.(list_small (pair string string))
       (fun l ->
         List.iter (fun (a,b) ->
             Q.assume (a<>"" && b<>"" );

@@ -2,7 +2,7 @@
 (library
   (name simple_httpd)
   (public_name simple_httpd)
-  (libraries unix seq ssl http-cookie polly magic-mime camlzip threads base64 digestif)
+  (libraries unix ssl polly magic-mime camlzip threads base64 digestif)
   (flags :standard -safe-string -warn-error -a+8)
   (ocamlopt_flags -O3)
   (foreign_stubs (language c) (names stubs))

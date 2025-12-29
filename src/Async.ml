@@ -1216,11 +1216,12 @@ let accept_loop (domains : Domain.id Array.t) listens pipes maxc =
          raise (Blocked pipe_index)
       | e ->
          Atomic.decr (nbc pipe_index);
+         (try Unix.close lsock with Unix.Unix_error _ -> ());
          raise e
     with
     | Full ->
        Log.f (Exc 0) (fun k -> k "handler: reject too many clients");
-       (try Unix.close lsock with Unix.Unix_error _ -> ())
+
   in
   let rec send_sockets = function
       [] -> ()
@@ -1234,8 +1235,7 @@ let accept_loop (domains : Domain.id Array.t) listens pipes maxc =
            fun () -> ()
         | exn ->
            Log.f (Exc 0) (fun k -> k "unexpected exception in accept loop: %s" (printexn exn));
-           (try Unix.close lsock with Unix.Unix_error _ -> ());
-           fun () -> ()) ()
+           fun () -> send_sockets rest) ()
   in
   let treat _ sock evt =
     if Polly.Events.(inp land evt <> empty) then
@@ -1259,7 +1259,7 @@ let accept_loop (domains : Domain.id Array.t) listens pipes maxc =
         let pipe_index = try Hashtbl.find pipes_tbl sock with Not_found -> assert false in
         let waiting = List.rev pendings.(pipe_index) in
         pendings.(pipe_index) <- [];
-        List.iter (fun (sock, lsock) -> send_socket sock lsock) waiting;
+        send_sockets waiting;
       end
   in
   let nb_socks = Array.length listens in

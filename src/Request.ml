@@ -51,7 +51,7 @@ let set_cookie self c =
 
 let get_cookie_string self h =
   let c = Cookies.get h self.cookies in
-  Http_cookie.value c
+  c.value
 
 let get_cookie_int self h =
   int_of_string (get_cookie_string self h)

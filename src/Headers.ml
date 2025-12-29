@@ -23,7 +23,7 @@ let pp out l =
   Format.fprintf out "@[<v>%a@]" (Format.pp_print_list pp_pair) l
 let set_cookies cookies h =
   List.fold_left (fun h c ->
-      (Set_Cookie, Http_cookie.to_set_cookie c) :: h) h cookies
+      (Set_Cookie, Cookies.cookie_to_string c) :: h) h cookies
 
 (*  token = 1*tchar
     tchar = "!" / "#" / "$" / "%" / "&" / "'" / "*" / "+" / "-" / "." / "^" / "_"

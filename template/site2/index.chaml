@@ -4,7 +4,7 @@
     <ml prelude>
       let count = try Request.get_cookie_int request "count"
                   with Not_found -> 0
-      let cookies = Cookies.(create ~max_age:3600L ~same_site:`Strict
+      let cookies = Cookies.(create ~max_age:3600L ~same_site:Strict
                                ~name:"count"  (string_of_int (count+1)) empty)
      </ml>
   </head>

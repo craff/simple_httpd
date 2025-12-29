@@ -29,10 +29,11 @@ let () =
        EV.set_headers extra_headers;
        let tick = ref true in
        while true do
-         let now = Ptime_clock.now() in
-         Log.f (Req 0) (fun k->k"send clock ev %s" (Format.asprintf "%a" Ptime.pp now));
+         let now = Unix.(gmtime (gettimeofday())) in
+         let now_str = Util.pp_date now in
+         Log.f (Req 0) (fun k->k"send clock ev %s" (Format.asprintf "%s" now_str));
          EV.send_event ~event:(if !tick then "tick" else "tock")
-           ~data:(Ptime.to_rfc3339 now) ();
+           ~data:now_str ();
          tick := not !tick;
          Async.sleep 1.0;
        done;

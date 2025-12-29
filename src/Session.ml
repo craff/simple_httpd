@@ -101,7 +101,7 @@ type cookie_policy =
   { path : string
   ; base : string
   ; life : float
-  ; filter : Http_cookie.t -> Http_cookie.t option }
+  ; filter : Cookies.cookie -> Cookies.cookie option }
 
 let default_cookie_policy =
   { path = "/"
@@ -124,7 +124,7 @@ let get_client_session client key =
         Mutex.use mutex_tbl (fun () -> Hashtbl.find_opt sessions_tbl key)
 
 let get_session (type a) ?(cookie_policy=default_cookie_policy) (req : a Request.t) =
-  let key = Option.map Http_cookie.value
+  let key = Option.map Cookies.value
               (Request.get_cookie req (session_key cookie_policy))
   in
   let client = Request.client req in
@@ -208,34 +208,38 @@ let mk_cookies (session : t)  cookie_policy cs =
   let session_key = session_key cookie_policy in
   let path = cookie_policy.path in
   let max_age = Int64.of_float cookie_policy.life in
-  let cs = Cookies.create ~name:session_key ~max_age ~path ~secure:true
-            ~same_site:`Strict session.key cs in
+  let cs = Cookies.(create ~name:session_key ~max_age ~path ~secure:true
+            ~same_site:Strict session.key cs) in
   cs
 
 let select_cookies ?(delete=false) ?create cookie_policy cookies =
   let session_key = session_key cookie_policy in
   let cookies =
+    let open Cookies in
     List.filter_map
     (fun c ->
-      let name = Http_cookie.name c in
+      let name = c.name in
       if name = session_key then
         begin
-          let c = Http_cookie.update_path (Some cookie_policy.path) c in
-          let c = try Result.get_ok c with Invalid_argument _ -> assert false in
-          let c = Http_cookie.update_secure true c in
-          let c = Http_cookie.update_same_site (Some `Strict) c in
-          let c = Http_cookie.update_max_age (if delete then Some 0L else
-                                                let max_age =
-                                                  Int64.of_float cookie_policy.life in
-                                                Some max_age) c in
-          let c = try Result.get_ok c with Invalid_argument _ -> assert false in
-          let c = if delete then Http_cookie.update_value "" c  else Ok c in
-          let c = try Result.get_ok c with Invalid_argument _ -> assert false in
+          let max_age =
+            if delete then Some 0L else
+              let max_age = Int64.of_float cookie_policy.life in
+              Some max_age
+          in
+          let value = if delete then "" else c.value in
+          let c = { c with
+                    path = Some cookie_policy.path;
+                    secure = true ;
+                    same_site = Strict;
+                    max_age;
+                    value ;
+                  }
+          in
           Some c
         end
       else
         match cookie_policy.filter c with
-        | Some c when delete -> Some (Http_cookie.expire c)
+        | Some c when delete -> Some (expire c)
         | opt -> opt) cookies
   in
   match create with
@@ -252,7 +256,7 @@ let check_session_cookie ?(cookie_policy=default_cookie_policy) ?(create=false) 
   in
   let cookies = Request.cookies req in
   let session_key = session_key cookie_policy in
-  let key = Option.map Http_cookie.value
+  let key = Option.map Cookies.value
               (Request.get_cookie req session_key)
   in
 
@@ -273,7 +277,7 @@ let start_check
   let session_life_time = cookie_policy.life in
   let cookies = Request.cookies req in
   let session_key = session_key cookie_policy in
-  let key = Option.map Http_cookie.value
+  let key = Option.map Cookies.value
               (Request.get_cookie req session_key)
   in
   let client = Request.client req in

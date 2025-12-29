@@ -2,7 +2,7 @@
 (executable
   (name sse_server)
   (modules sse_server)
-  (libraries simple_httpd unix ptime ptime.clock.os))
+  (libraries simple_httpd unix))
 
 (executable
   (name sse_client)

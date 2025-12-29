@@ -607,23 +607,39 @@ module Cookies : sig
     Cookies are data that are maintend both on server and clients.
     This is a module to get and set cookies in the headers. *)
 
-  type t = Http_cookie.t list
+  type same_site = None | Lax | Strict
+  type cookie = {
+      name : string;
+      value : string;
+      path : string option;
+      domain : string option;
+      expires : Unix.tm option;
+      max_age : int64 option;
+      secure : bool;
+      http_only : bool;
+      same_site : same_site;
+      extension : string option;
+    }
+
+  type t = cookie list
 
   val empty : t
   val parse : string -> t
-  val add : Http_cookie.t -> t -> t
+  val add : cookie -> t -> t
   val create : ?path:string ->
                ?domain:string ->
-               ?expires:Http_cookie.date_time ->
+               ?expires:Unix.tm ->
                ?max_age:int64 ->
                ?secure:bool ->
                ?http_only:bool ->
-               ?same_site:Http_cookie.same_site ->
+               ?same_site:same_site ->
                ?extension:string ->
                name:string ->
                string -> t -> t
+  val value : cookie -> string
+  val name : cookie -> string
 
-  val get : string -> t -> Http_cookie.t
+  val get : string -> t -> Cookies.cookie
 end
 
 (** Module handling HTML requests *)
@@ -669,7 +685,7 @@ module Request : sig
   val cookies : _ t -> Cookies.t
   (** List of cookies of the request *)
 
-  val get_cookie : _ t -> string -> Http_cookie.t option
+  val get_cookie : _ t -> string -> Cookies.cookie option
   (** get a cookie *)
 
   val get_cookie_string : _ t -> string -> string
@@ -678,7 +694,7 @@ module Request : sig
   val get_cookie_int : _ t -> string -> int
   (** get a cookie value as int, may raise [Not_found] or [Failure "int_of_string"] *)
 
-  val set_cookie : 'a t -> Http_cookie.t -> 'a t
+  val set_cookie : 'a t -> Cookies.cookie -> 'a t
   (** set a cookie. Note: this could be useful in a filter.
 
       Beware that cookie in the request are not automatically refreshed and
@@ -1050,7 +1066,7 @@ module Session : sig
     ; base : string (** cookies base name, the cookie's name will be
                         "__Host-"^basename^suffix *)
     ; life : float  (** session life time in seconds *)
-    ; filter : Http_cookie.t -> Http_cookie.t option
+    ; filter : Cookies.cookie -> Cookies.cookie option
       (** tells which cookies should be deleted together with the session key
           and address *)}
 
