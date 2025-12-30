@@ -16,7 +16,7 @@ depends: [
   "magic-mime" { <= "1.3.0" }
   "ocaml" { >= "5.03.0" }
   "pacomb" { >= "1.4.0" }
-  "camlzip" { >= "1.12" }
+  "camlzip" { >= "1.11" }
   "odoc" {with-doc}
   "qtest" { >= "2.9" & with-test}
   "conf-libcurl" {with-test}
