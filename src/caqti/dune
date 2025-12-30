@@ -3,5 +3,4 @@
  (public_name simple_httpd.caqti)
  (libraries
     caqti caqti.platform caqti.platform.unix
-    domain-name ipaddr
-    logs unix simple_httpd))
+    domain-name ipaddr logs unix simple_httpd))

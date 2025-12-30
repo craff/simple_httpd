@@ -11,17 +11,16 @@ build: [
 ]
 depends: [
   "dune" { >= "2.0" }
-  "ssl"
-  "polly"
+  "ssl" { >= "0.7.0" }
+  "polly" { >= "0.4.0" }
   "magic-mime"
   "ocaml" { >= "5.03.0" }
-  "odoc" {with-doc}
   "pacomb" { >= "1.4.0" }
-  "camlzip"
+  "camlzip" { <= "1.12" }
+  "odoc" {with-doc}
   "qtest" { >= "2.9" & with-test}
   "conf-libcurl" {with-test}
   "qcheck" {with-test & >= "0.9" }
-  "ounit2" {with-test}
   "csv" {with-test}
 ]
 tags: [ "http" "domain" "server" "simple_httpd" "http_of_dir" "simplehttpserver" ]

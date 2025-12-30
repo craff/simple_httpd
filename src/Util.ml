@@ -56,6 +56,7 @@ let lseek_set fd ofs =
 
 (* test utils *)
 (*$inject
+  let _ = ( ==> )
   let is_ascii_char c = Char.code c < 128
 *)
 

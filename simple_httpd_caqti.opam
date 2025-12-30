@@ -13,6 +13,7 @@ depends: [
   "caqti" { >= "2.0.0" }
   "ipaddr"
   "simple_httpd" { = version }
+  "logs" { >= "0.10.0" }
   "caqti-driver-postgresql" {with-test}
 ]
 tags: [ "http" "domain" "server" "simple_httpd" "http_of_dir" "simplehttpserver" ]
