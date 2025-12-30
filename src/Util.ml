@@ -56,11 +56,6 @@ let lseek_set fd ofs =
 
 (* test utils *)
 (*$inject
-  let pp_res f = function Ok x -> f x | Error e -> e
-  let pp_res_query = (Q.Print.(pp_res (list (pair string string))))
-  let err_map f = function Ok x-> Ok (f x) | Error e -> Error e
-  let sort_l l = List.sort compare l
-  let eq_sorted a b = (=) (err_map sort_l a)(err_map sort_l b)
   let is_ascii_char c = Char.code c < 128
 *)
 

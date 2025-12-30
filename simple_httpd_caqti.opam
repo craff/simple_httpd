@@ -11,9 +11,9 @@ build: [
 ]
 depends: [
   "caqti" { >= "2.0.0" }
-  "caqti-eio"
   "ipaddr"
   "simple_httpd" { = version }
+  "caqti-driver-postgresql" {with-test}
 ]
 tags: [ "http" "domain" "server" "simple_httpd" "http_of_dir" "simplehttpserver" ]
 homepage: "https://github.com/craff/simple_httpd/"

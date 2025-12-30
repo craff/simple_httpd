@@ -17,11 +17,12 @@ depends: [
   "ocaml" { >= "5.03.0" }
   "odoc" {with-doc}
   "pacomb" { >= "1.4.0" }
+  "camlzip"
   "qtest" { >= "2.9" & with-test}
   "conf-libcurl" {with-test}
   "qcheck" {with-test & >= "0.9" }
   "ounit2" {with-test}
-  "camlzip"
+  "csv" {with-test}
 ]
 tags: [ "http" "domain" "server" "simple_httpd" "http_of_dir" "simplehttpserver" ]
 homepage: "https://github.com/craff/simple_httpd/"

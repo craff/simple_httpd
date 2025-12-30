@@ -73,7 +73,7 @@ let _ =
         Log.f (Req 0) (fun k->k "start upload %S, headers:\n%s\n\n%!" path
                      (Format.asprintf "%a" Headers.pp (Request.headers req)));
         try
-          let oc = open_out @@ "/home/raffalli/tmp/store/" ^ path in
+          let oc = open_out @@ "../examples/store/" ^ path in
           Input.to_chan oc (Request.body req);
           flush oc;
           Response.make_string "uploaded file"
@@ -105,7 +105,7 @@ let _ =
   Dir.add_dir_path server
     ~config:(Dir.config ~download:true
                ~dir_behavior:Dir.Index_or_lists ())
-    ~prefix:"dir" ~dir:"./files"
+    ~prefix:"dir" ~dir:"../examples/files"
 
 (** Run a shell command (VERY UNSAFE!) *)
 let _ =

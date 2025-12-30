@@ -2,8 +2,6 @@
 open Simple_httpd
 module H = Headers
 
-let now = Unix.gettimeofday
-
 (** default address, port and maximum number of connections *)
 let addr = ref "127.0.0.1"
 let port = ref 9080

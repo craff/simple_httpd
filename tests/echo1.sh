@@ -3,7 +3,7 @@
 ECHO=$1
 PORT=8085
 
-"$ECHO" -p $PORT --log-requests 0 --log-exceptions 0 &
+"$ECHO" -p $PORT --log-requests 0 --log-exceptions 0 --dir ../examples/store &
 PID=$!
 
 sleep 0.1

@@ -2,7 +2,7 @@
 
 (rule
   (targets echo1.out)
-  (deps (:bin ../examples/echo.exe) echo1.sh)
+  (deps (:bin ../examples/echo.exe) echo1.sh ../examples/store)
   (locks /port)
   (enabled_if (= %{system} "linux"))
   (package simple_httpd)
@@ -34,12 +34,12 @@
 
 (rule
   (targets chunked-out)
-  (deps (:bin ../src/bin/http_of_dir.exe) foo_50 chunked.sh)
+  (deps (:bin ../src/bin/http_of_dir.exe) ./store files/foo_50k chunked.sh)
   (locks /port)
   (package simple_httpd)
   (enabled_if (= %{system} "linux"))
   (action (with-stdout-to chunked-out
-                          (run ./chunked.sh %{bin}))))
+                          (run ./chunked.sh %{bin} HTTP))))
 
 (rule
   (alias runtest)
@@ -51,13 +51,13 @@
 
 (rule
   (targets chunked-ssl-out)
-  (deps (:bin ../src/bin/http_of_dir.exe) foo_50 domain.crt domain.key
-  	chunked_ssl.sh)
+  (deps (:bin ../src/bin/http_of_dir.exe) ./store files/foo_50k domain.crt domain.key
+  	chunked.sh)
   (locks /port)
   (package simple_httpd)
   (enabled_if (= %{system} "linux"))
   (action (with-stdout-to %{targets}
-                          (run ./chunked_ssl.sh %{bin}))))
+                          (run ./chunked.sh %{bin} SSL))))
 
 (rule
   (alias runtest)
@@ -69,13 +69,13 @@
 
 (rule
   (targets chunked-ktls-out)
-  (deps (:bin ../src/bin/http_of_dir.exe) foo_50 domain.crt domain.key
-  	chunked_ssl.sh)
+  (deps (:bin ../src/bin/http_of_dir.exe) ./store files/foo_50k domain.crt domain.key
+  	chunked.sh)
   (locks /port)
   (package simple_httpd)
   (enabled_if (= %{system} "linux"))
   (action (with-stdout-to %{targets}
-                          (run ./chunked_ktls.sh %{bin}))))
+                          (run ./chunked.sh %{bin} KTLS))))
 
 (rule
   (alias runtest)
@@ -86,12 +86,12 @@
 ;stress
 (rule
   (targets dl-stress)
-  (deps (:bin ../src/bin/http_of_dir.exe) foo_50 stress.sh)
+  (deps (:bin ../src/bin/http_of_dir.exe) ./store files/foo_50k stress.sh)
   (locks /port)
   (package simple_httpd)
   (enabled_if (= %{system} "linux"))
   (action (with-stdout-to %{targets}
-                          (run ./stress.sh %{bin} 15))))
+                          (run ./stress.sh %{bin} 15 HTTP))))
 
 (rule
   (alias runtest)
@@ -102,13 +102,13 @@
 ;ssl stress
 (rule
   (targets dl-stress-ssl)
-  (deps (:bin ../src/bin/http_of_dir.exe) foo_50 domain.crt domain.key
-  	stress-ssl.sh)
+  (deps (:bin ../src/bin/http_of_dir.exe) ./store files/foo_50k domain.crt domain.key
+  	stress.sh)
   (locks /port)
   (package simple_httpd)
   (enabled_if (= %{system} "linux"))
   (action (with-stdout-to %{targets}
-                          (run ./stress-ssl.sh %{bin} 15))))
+                          (run ./stress.sh %{bin} 15 SSL))))
 
 (rule
   (alias runtest)
@@ -120,25 +120,19 @@
 ;ktls stress
 (rule
   (targets dl-stress-ktls)
-  (deps (:bin ../src/bin/http_of_dir.exe) foo_50 domain.crt domain.key
-  	stress-ktls.sh)
+  (deps (:bin ../src/bin/http_of_dir.exe) ./store files/foo_50k domain.crt domain.key
+  	stress.sh)
   (locks /port)
   (package simple_httpd)
   (enabled_if (= %{system} "linux"))
   (action (with-stdout-to %{targets}
-                          (run ./stress-ktls.sh %{bin} 15))))
+                          (run ./stress.sh %{bin} 15 KTLS))))
 
 (rule
   (alias runtest)
   (package simple_httpd)
   (enabled_if (= %{system} "linux"))
   (action (diff dl-stress.expect dl-stress-ktls)))
-
-(rule
-  (targets foo_50)
-  (enabled_if (= %{system} "linux"))
-  (action
-    (bash "dd if=/dev/random of=%{targets} bs=1M count=50")))
 
 (rule
   (targets domain.crt domain.key)
@@ -148,14 +142,14 @@
 
 ; produce an embedded FS
 (rule
-  (targets vfs.ml)
+  (targets vfs.ml store)
   (deps files/foo_1k files/foo_5k files/foo_10k files/foo_50k
         files/foo_100k files/foo_500k files/foo_1M files/foo_5M
 	files/foo_10M files/foo_50M files/foo_100M)
   (enabled_if (= %{system} "linux"))
-  (action (run %{bin:vfs_pack} -o %{targets}
+  (action (run %{bin:vfs_pack} -o vfs.ml
   	       -v
-	       --destination=/tmp/bigs
+	       --destination=store/
                --mirror=files/
                )))
 
@@ -175,7 +169,7 @@
 ;process stress
 (rule
   (targets process-stress)
-  (deps (:bin ../examples/echo.exe) stress-prc.sh)
+  (deps (:bin ../examples/echo.exe) ./store stress-prc.sh ../examples/store)
   (package simple_httpd)
   (enabled_if (= %{system} "linux"))
   (action (with-stdout-to %{targets}

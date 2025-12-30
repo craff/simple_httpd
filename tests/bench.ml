@@ -22,8 +22,6 @@ let add_column csv title fn data =
   in
   fn [] csv data
 
-let err_regexp = Str.regexp "errors.*"
-
 let measure server cmd values =
   let s = match server with
     | Some server ->

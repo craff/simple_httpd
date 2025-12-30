@@ -48,22 +48,11 @@
 
 ; produce an embedded FS
 (rule
-  (targets vfs.ml)
-  (deps (source_tree store) (:out test_output.txt.expected))
+  (targets vfs.ml store)
+  (deps (source_tree files) (:out test_output.txt.expected))
   (enabled_if (= %{system} "linux"))
-  (action (run %{bin:vfs_pack} -o %{targets}
-	       --destination=/home/raffalli/tmp/store/
+  (action (run %{bin:vfs_pack} -o vfs.ml
+	       --destination=store/
                --mirror=files/
                --file=test_out.txt,%{out}
-               ; --url=example_dot_com,http://example.com ; this breaks tests in opam sandbox 😢
                )))
-
-(rule
-  (targets vfs.ml)
-  (enabled_if (<> %{system} "linux"))
-  (action
-    (with-stdout-to
-      %{targets}
-      (progn
-        (echo "let embedded_fs = Simple_httpd_dir.Embedded_fs.create ~mtime:0. ()")
-        (echo "let vfs = Simple_httpd_dir.Embedded_fs.to_vfs embedded_fs")))))

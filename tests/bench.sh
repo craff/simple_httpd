@@ -17,7 +17,8 @@ rsync ../examples/files/foo.html /var/www/nginx/
 
 duration=2s
 
-dune exec -- ../examples/echo.exe --port 8080 --log-requests 0 --log-exceptions 0 -c 2100 -j 8 &
+dune exec -- ../examples/echo.exe --dir ../examples/store --port 8080 \
+     --log-requests 0 --log-exceptions 0 -c 2100 -j 8 &
 PID=$!
 
 sleep 1
@@ -78,7 +79,7 @@ cat timings/res.bin | vegeta report > timings/nginx_report.txt
 cat timings/res.bin | vegeta report -type=hist[100us,200us,300us,400us,500us,750us,1ms,2ms,3ms,4ms,5ms,1s,5s,10s,1m] > timings/nginx.txt
 cat timings/res.bin | vegeta plot > timings/nginx.html
 
-dune exec -- ../examples/echo.exe -c 2100 --port 8443  --log-requests 0 --log-exceptions 0 --ssl ../_build/default/tests/domain.crt ../_build/default/tests/domain.key -j 8 &
+dune exec -- ../examples/echo.exe --dir ../examples/store -c 2100 --port 8443  --log-requests 0 --log-exceptions 0 --ssl ../_build/default/tests/domain.crt ../_build/default/tests/domain.key -j 8 &
 PID=$!
 
 sleep 1
@@ -99,7 +100,7 @@ echo 'GET https://localhost:8443/vfs/foo.html' \
 
 kill $PID
 
-dune exec -- ../examples/echo.exe -c 2100 --port 8443  --log-requests 0 --log-exceptions 0 --ssl ../_build/default/tests/domain.crt ../_build/default/tests/domain.key --ssl-ktls -j 8 &
+dune exec -- ../examples/echo.exe --dir ../examples/store -c 2100 --port 8443  --log-requests 0 --log-exceptions 0 --ssl ../_build/default/tests/domain.crt ../_build/default/tests/domain.key --ssl-ktls -j 8 &
 PID=$!
 
 sleep 1

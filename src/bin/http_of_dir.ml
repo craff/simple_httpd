@@ -58,7 +58,6 @@ open Host
 
 module Main = struct
   let addresses = [Address.make ~addr:!addr ~port:!port ?ssl ()]
-  let hostnames = []
 
   module Init(I:Init) = struct
     open I
