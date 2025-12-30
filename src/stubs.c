@@ -14,6 +14,8 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
+#include <assert.h>
+#include <errno.h>
 #include <fcntl.h>
 #include <netinet/tcp.h>
 #include <netinet/in.h>
@@ -76,7 +78,7 @@ CAMLprim void caml_splice_error() {
 #define SSL_val(v) (*((SSL **)Data_custom_val(v)))
 #define SSL_CTX_val(v) (*((SSL_CTX **)Data_custom_val(v)))
 
-CAMLprim value caml_byte_set_ktls(value v) {
+CAMLprim void caml_byte_set_ktls(value v) {
   SSL_CTX *ssl = SSL_CTX_val(v);
   SSL_CTX_set_options(ssl, SSL_OP_ENABLE_KTLS);
   fflush(stderr);
@@ -299,7 +301,7 @@ CAMLprim value caml_ptty_spawn(value executable, /* string */
   char ** envp;
   const char * path;
   pid_t pid;
-  int master_fd, slave_fd, control_fd, r;
+  int master_fd, slave_fd, control_fd;
   char *slave_name;
 
   caml_unix_check_path(executable, "create_process");
@@ -388,7 +390,8 @@ CAMLprim value caml_ptty_spawn(value executable, /* string */
  error:
   caml_unix_cstringvect_free(argv);
   if (Is_some(optenv)) caml_unix_cstringvect_free(envp);
-  caml_unix_error(r, "create_process", executable);
+  caml_unix_error(errno, "create_process", executable);
+  assert(0);
 }
 
 
