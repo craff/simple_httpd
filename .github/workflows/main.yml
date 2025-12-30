@@ -13,11 +13,11 @@ jobs:
       fail-fast: true
       matrix:
         os:
-          # - macos-latest
           - ubuntu-latest
           # - windows-latest not available yet ?
         ocaml-compiler:
-          - ocaml-base-compiler.5.0.0
+          - "5.3"
+          - "5.4"
 
     runs-on: ${{ matrix.os }}
 
@@ -25,19 +25,14 @@ jobs:
       - run: sudo apt-get update
         if: ${{ matrix.os == 'ubuntu-latest' }}
 
-      - run: brew install openssl@3
-        if: ${{ matrix.os == 'macos-latest' }}
-
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v5
 
       - name: Use OCaml ${{ matrix.ocaml-compiler }}
-        uses: ocaml/setup-ocaml@v2
+        uses: avsm/setup-ocaml@v3
         with:
           ocaml-compiler: ${{ matrix.ocaml-compiler }}
           opam-depext-flags: --with-test
-
-      - run: opam pin add https://github.com/savonet/ocaml-ssl#master -k git
 
       - run: opam install . --deps-only --with-test
 
@@ -45,4 +40,4 @@ jobs:
 
       - run: opam exec -- dune build @src/runtest @examples/runtest @tests/runtest
 
-      - run: opam install simple_httpd
+      - run: opam install simple_httpd simple_httpd_caqti simple_httpd_chaml
