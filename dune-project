@@ -34,6 +34,7 @@
   (synopsis "Chaml language for simple_httpd (like php but in OCaml)")
   (depends
     (pacomb (>= 1.4.0))
+    (ocaml (>= 5.3.0))
     (yojson :build)))
 
 (package
@@ -44,4 +45,5 @@
 	ipaddr
   	(simple_httpd (= :version))
   	(logs (>= 0.10.0))
+	(ocaml (>= 5.3.0))
         (caqti-driver-postgresql :with-test)))
