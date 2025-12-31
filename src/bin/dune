@@ -13,16 +13,16 @@
   (public_name vfs_pack)
   (package simple_httpd)
   (modules vfs_pack curly http)
-  (libraries unix simple_httpd simple_httpd.chaml)
+  (libraries unix simple_httpd simple_httpd_chaml)
   (flags :standard -warn-error -3)
   (ocamlopt_flags -O3))
 
 (executable
   (name chaml)
-  (public_name chaml)
+  (public_name simple_httpd_chaml.chaml)
   (package simple_httpd)
   (modules chaml)
-  (libraries simple_httpd.chaml)
+  (libraries simple_httpd_chaml)
   (flags :standard -warn-error -3)
   (ocamlopt_flags -O3))
 

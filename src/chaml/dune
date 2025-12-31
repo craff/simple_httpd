@@ -1,6 +1,6 @@
 (library
-  (name chaml_parser)
-  (public_name simple_httpd.chaml)
+  (name simple_httpd_chaml)
+  (public_name simple_httpd_chaml)
   (libraries unix pacomb)
   (flags :standard -safe-string -warn-error -a+8)
   (preprocess (per_module ((pps pacomb.ppx) Parser)))

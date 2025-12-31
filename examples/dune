@@ -22,7 +22,7 @@
   (name caqti)
   (flags :standard -warn-error -a+8)
   (modules caqti)
-  (libraries caqti caqti.blocking simple_httpd simple_httpd.caqti caqti-driver-postgresql))
+  (libraries caqti caqti.blocking simple_httpd simple_httpd_caqti caqti-driver-postgresql))
 
 (executable
   (name minimal)
