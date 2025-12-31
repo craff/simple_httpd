@@ -6,7 +6,6 @@ val read : Unix.file_descr -> Bytes.t -> int -> int -> int
 val lseek_set : Unix.file_descr -> int -> int
 val sendfile : Unix.file_descr -> Unix.file_descr -> int -> int -> int
 val splice : Unix.file_descr -> int -> Unix.file_descr -> int -> int -> int
-val ssl_sendfile : Ssl.socket -> Unix.file_descr -> int -> int -> int
 val ssl_nonblock : Ssl.context -> unit
 val set_ktls : Ssl.context -> unit
 val check_ktls : Ssl.socket -> int

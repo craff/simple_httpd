@@ -91,15 +91,8 @@ external set_ktls : Ssl.context -> unit
 external check_ktls : Ssl.socket -> int
   = "caml_byte_check_ktls" [@@noalloc]
 
-external raw_ssl_sendfile : Ssl.socket -> (int [@untagged])
-                            -> (int [@untagged]) -> (int [@untagged]) -> (int [@untagged])
-  = "caml_byte_ssl_sendfile" "caml_ssl_sendfile" [@@noalloc]
-
 external ssl_nonblock : Ssl.context -> unit
   = "caml_ssl_nonblock" [@@noalloc]
-
-external get_error : Ssl.socket -> int -> Ssl.ssl_error = "ocaml_ssl_get_error_code"
-    [@@noalloc]
 
 let get_socket_error : ?default:Unix.error -> Unix.file_descr -> Unix.error option =
   fun ?default sock ->
@@ -118,11 +111,6 @@ let splice in_fd in_offset out_fd out_offset count =
   let ret = raw_splice (file_descr_to_int in_fd) in_offset
               (file_descr_to_int out_fd) out_offset count in
   if ret == -1 then splice_error ();
-  ret
-
-let ssl_sendfile out in_ offset count =
-  let ret = raw_ssl_sendfile out (file_descr_to_int in_) offset count in
-  if ret <= 0 then raise Ssl.(Write_error (get_error out ret));
   ret
 
 let percent_encode ?(skip=fun _->false) s =

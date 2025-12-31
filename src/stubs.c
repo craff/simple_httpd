@@ -97,19 +97,6 @@ CAMLprim value caml_byte_check_ktls(value v) {
 #endif
 }
 
-CAMLprim value caml_byte_ssl_sendfile (value out_fd, value in_fd, value offset, value count) {
-  CAMLparam1(out_fd);
-  ERR_clear_error();
-  ssize_t w = SSL_sendfile(SSL_val(out_fd),Int_val(in_fd),
-			   Int_val(offset),Int_val(count), 0);
-  CAMLreturn(Val_int(w));
-}
-
-long caml_ssl_sendfile (value out_fd, long in_fd, long offset, long count) {
-  ERR_clear_error();
-  return(SSL_sendfile(SSL_val(out_fd),in_fd,offset,count, 0));
-}
-
 int alpn_select_cb(SSL *ssl, const unsigned char **out, unsigned char *outlen,
                    const unsigned char *in, unsigned int inlen, void *arg) {
     static const unsigned char alpn_protocols[] = "\x08http/1.1";
