@@ -1,7 +1,7 @@
 
 (executable
   (name qtest)
-  (modes native)
+;  (modes native)
   (flags :standard -warn-error -a+8 -w -33)
   (libraries qcheck-core qcheck simple_httpd camlzip))
 
