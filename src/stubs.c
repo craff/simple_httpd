@@ -197,7 +197,7 @@ long caml_fast_single_write(long fd, value buf, long ofs,
 CAMLprim value caml_byte_fast_single_write(value fd, value buf, value vofs,
 				   value vlen) {
   CAMLparam0();
-  CAMLreturn(Val_int(caml_fast_single_write(fd,buf,Int_val(vofs),Int_val(vlen))));
+  CAMLreturn(Val_int(caml_fast_single_write(Int_val(fd),buf,Int_val(vofs),Int_val(vlen))));
 }
 
 CAMLprim void caml_write_error() {
@@ -214,7 +214,7 @@ long caml_fast_read(long fd, value buf, long ofs, long len)
 CAMLprim value caml_byte_fast_read(value fd, value buf, value vofs,
 				   value vlen) {
   CAMLparam0();
-  CAMLreturn(Val_int(caml_fast_read(fd,buf,Int_val(vofs),Int_val(vlen))));
+  CAMLreturn(Val_int(caml_fast_read(Int_val(fd),buf,Int_val(vofs),Int_val(vlen))));
 }
 
 CAMLprim void caml_read_error() {
@@ -230,7 +230,7 @@ long caml_fast_lseek_set(long fd, long ofs)
 
 CAMLprim value caml_byte_fast_lseek_set(value fd, value vofs) {
   CAMLparam0();
-  CAMLreturn(Val_int(caml_fast_lseek_set(fd,Int_val(vofs))));
+  CAMLreturn(Val_int(lseek(Int_val(fd),Int_val(vofs), SEEK_SET)));
 }
 
 CAMLprim void caml_lseek_error() {
