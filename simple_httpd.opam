@@ -42,4 +42,4 @@ build: [
   ]
 ]
 dev-repo: "git+https://github.com/craff/simple_httpd.git"
-depexts: [ ["openssl"] {os-family="fedora"} ]
+depexts: [ ["openssl"] {os-family="fedora" & with-test} ]
