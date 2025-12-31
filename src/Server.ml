@@ -229,9 +229,8 @@ let create ?(listens = [Address.make ()]) (module Params : Parameters) =
   else
     Log.init_log_folder (num_threads + 1);
 
-  let max_connections = max 4 max_connections in
-  if num_threads <= 0 || max_connections < num_threads then
-    invalid_arg "bad number of threads or max connections";
+  let max_connections = max 4 (max max_connections num_threads) in
+  if num_threads <= 0 then invalid_arg "bad number of threads";
   let (listens, handlers) =
     Address.register Route.empty_handler listens
   in
