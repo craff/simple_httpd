@@ -42,7 +42,7 @@ let graph_interval = ref 60
 type graph =
   { tbl : int Atomic.t array
   ; cur : int Atomic.t
-  ; mutable tim : float Atomic.t }
+  ; tim : float Atomic.t }
 let graph =
   ref { tbl = Array.init !graph_size (fun _ -> Atomic.make 0)
   ; cur = Atomic.make 0

@@ -63,7 +63,7 @@ type client = private {
     buf : Buffer.t;                   (** used to parse headers *)
     mutable last_seen_cell : client Util.LinkedList.cell;
     (** pointer to the linked list used to detect timeout *)
-    mutable at_close : (unit -> unit) Util.LinkedList.t;
+    at_close : (unit -> unit) Util.LinkedList.t;
     (** linked list of ressources allocated to that client *)
     mutable read : bytes -> int -> int -> int;
     mutable write : bytes -> int -> int -> int;

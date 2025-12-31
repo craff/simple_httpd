@@ -33,7 +33,7 @@ type client =
   ; mutable timeout_ref : float
   ; buf : Buffer.t (* used to parse headers *)
   ; mutable last_seen_cell : client LL.cell
-  ; mutable at_close : (unit -> unit) LL.t
+  ; at_close : (unit -> unit) LL.t
   ; mutable read : Bytes.t -> int -> int -> int
   ; mutable write : Bytes.t -> int -> int -> int
   ; mutable sendfile : Unix.file_descr -> int -> int -> int
@@ -45,7 +45,7 @@ and mutex_state =
   | Deleted
 
 and mutex =
-  { mutable eventfd : Unix.file_descr
+  { eventfd : Unix.file_descr
   ; mutable owner   : mutex_state
   ; waiting : bool array (* which domain has added the mutex to epoll, the
                             first time it had a client blocked while trying to
@@ -53,7 +53,7 @@ and mutex =
   }
 
 and semaphore =
-  { mutable seventfd : Unix.file_descr
+  { seventfd : Unix.file_descr
   ; swaiting : bool array (* which domain has added the semaphore to epoll, the
                             first time it had a client blocked while trying to
                             lock *)

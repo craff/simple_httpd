@@ -71,10 +71,9 @@ let emit ~perm ?max_size ?destination oc (l:entry list) : unit =
     | None -> ""
   in
   fpf oc "open Simple_httpd
-          let make ?(top_dir=%S) () =
+          let make ?(top_dir=%S) () = ignore top_dir;
           let module M = struct
-          let embedded_fs = Dir.Embedded_fs.create
-                               ~top:top_dir ~mtime:%f ()\n" dest now_;
+          let embedded_fs = Dir.Embedded_fs.create ~mtime:%f ()\n" dest now_;
 
   let add_vfs vfs_path ~mtime ~mime content =
     fpf oc

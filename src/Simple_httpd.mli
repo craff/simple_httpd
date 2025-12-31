@@ -1600,7 +1600,7 @@ module Dir : sig
     type t
     (** The pseudo-filesystem *)
 
-    val create : ?top:string -> ?mtime:float -> unit -> t
+    val create : ?mtime:float -> unit -> t
     (** create a new pseudo file system. *)
 
     val add_file : t -> path:string -> ?mtime:float -> ?headers:Headers.t ->

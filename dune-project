@@ -4,7 +4,6 @@
 
 (authors Christophe Raffalli)
 (maintainers Christophe Raffalli)
-(version 1.0)
 (source (github craff/simple_httpd))
 (homepage https://raffalli.eu/simple_httpd/)
 (documentation https://raffalli.eu/simple_httpd/simple_httpd)

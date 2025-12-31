@@ -163,7 +163,7 @@ module Embedded_fs : sig
   type t
   (** The pseudo-filesystem *)
 
-  val create : ?top:string -> ?mtime:float -> unit -> t
+  val create : ?mtime:float -> unit -> t
 
   val add_file : t -> path:string -> ?mtime:float -> ?headers:Headers.t ->
                  string -> unit

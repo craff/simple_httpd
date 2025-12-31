@@ -14,8 +14,7 @@ type t =
   }
 
 type ssl =
-  { protocol : Ssl.protocol
-  ; cert  : string
+  { cert  : string
   ; priv : string
   ; mutable addr : t
   ; mutable mtime : float
@@ -99,7 +98,7 @@ let make ?(addr="0.0.0.0") ?(port=8080) ?(hosts=[]) ?ssl ?(reuse=true) () =
          let _ = Ssl.set_max_protocol_version ctx Ssl.TLSv1_3 in
          Ssl.use_certificate ctx cert priv;
          Util.ssl_nonblock ctx;
-         let ssl = { mtime; cert; priv; protocol; addr = dummy } in
+         let ssl = { mtime; cert; priv; addr = dummy } in
          add_ssl ssl;
          (Some ctx, fun addr -> ssl.addr <- addr)
        with e ->

@@ -449,22 +449,20 @@ module Embedded_fs = struct
   type t = {
     emtime: float;
     entries: (string,entry) Hashtbl.t;
-    top : string
   }
 
   and entry = {
       mtime : float option;
-      mutable size: int option;
+      size: int option;
       kind : kind;
       headers: Headers.t
     }
 
   and kind = t content
 
-  let create ?(top="") ?(mtime=Unix.gettimeofday()) () : t = {
+  let create ?(mtime=Unix.gettimeofday()) () : t = {
     emtime=mtime;
     entries=Hashtbl.create 128;
-    top;
     }
 
   let add_file_gen (self:t) ~path content : unit =
