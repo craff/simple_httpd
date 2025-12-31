@@ -40,4 +40,4 @@ jobs:
 
       - run: opam exec -- dune build @src/runtest @examples/runtest @tests/runtest
 
-      - run: opam install simple_httpd simple_httpd_caqti simple_httpd_chaml
+      - run: opam install simple_httpd simple_httpd_caqti

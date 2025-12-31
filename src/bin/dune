@@ -19,7 +19,7 @@
 
 (executable
   (name chaml)
-  (public_name simple_httpd_chaml.chaml)
+  (public_name chaml)
   (package simple_httpd)
   (modules chaml)
   (libraries simple_httpd_chaml)

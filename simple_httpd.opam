@@ -19,6 +19,7 @@ depends: [
   "digestif"
   "base64"
   "cppo" {build}
+  "yojson" {build}
   "odoc" {with-doc}
   "qtest" {>= "2.9" & with-test}
   "conf-libcurl" {with-test}

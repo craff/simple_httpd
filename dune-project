@@ -23,19 +23,12 @@
     (camlzip (>= 1.11))
     digestif base64
     (cppo :build)
+    (yojson :build)
     (odoc :with-doc)
     (qtest (and (>= 2.9) :with-test))
     (conf-libcurl :with-test)
     (qcheck (and :with-test (>= 0.9)))
     (csv :with-test)))
-
-(package
-  (name simple_httpd_chaml)
-  (synopsis "Chaml language for simple_httpd (like php but in OCaml)")
-  (depends
-    (pacomb (>= 1.4.0))
-    (ocaml (>= 5.3.0))
-    (yojson :build)))
 
 (package
   (name simple_httpd_caqti)

@@ -1,6 +1,6 @@
 (library
   (name simple_httpd_chaml)
-  (public_name simple_httpd_chaml)
+  (package simple_httpd)
   (enabled_if (= %{system} "linux"))
   (libraries unix pacomb)
   (flags :standard -safe-string -warn-error -a+8)
