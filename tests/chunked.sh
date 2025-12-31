@@ -22,7 +22,7 @@ esac
 
 
 "$SERVER" . -p $PORT --log-requests 0 --log-exceptions 0 --upload \
-	  --max-upload 100000000000 -j 1 --timeout 10 --dir ./store $OPTIONS &
+	  --max-upload 100M -j 1 --timeout 10 --dir ./store $OPTIONS &
 PID=$!
 
 sleep 0.1
