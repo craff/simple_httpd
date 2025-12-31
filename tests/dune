@@ -138,7 +138,9 @@
   (targets domain.crt domain.key)
   (enabled_if (= %{system} "linux"))
   (action
-    (bash "openssl req -newkey rsa:2048 -keyout domain.key -x509 -days 365 -out domain.crt -nodes -subj '/CN=localhost' 2> /dev/null")))
+    (bash "openssl req -newkey rsa:2048 -keyout domain.key -x509 -days 365 -out domain.crt \
+            -nodes -subj '/CN=localhost' -addext 'subjectAltName=DNS:localhost,IP:127.0.0.1' \
+	    2> /dev/null")))
 
 ; produce an embedded FS
 (rule
