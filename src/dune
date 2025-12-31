@@ -8,7 +8,8 @@
   (foreign_stubs (language c) (names stubs))
   (private_modules headers_)
   (preprocess (per_module
-    ((action (run %{bin:chaml} %{input-file})) Status Stats Dir Auth WebSocket)))
+    ((action (run %{bin:chaml} %{input-file})) Status Stats Dir Auth WebSocket)
+    ((action (run %{bin:cppo} -V OCAML:%{ocaml_version} %{input-file})) Async)))
   (wrapped true))
 
 (rule

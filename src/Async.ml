@@ -705,7 +705,9 @@ module Io = struct
         out_newline = (fun () -> out_string "\n" 0 1);
         out_spaces = (fun n -> out_string (String.make n ' ') 0 n);
         out_indent = (fun n -> out_string (String.make n ' ') 0 n);
+#if ((OCAML_MAJOR >= 5 && OCAML_MINOR >= 4) || OCAML_MAJOR > 5)
         out_width = utf_8_scalar_width;
+#endif
       }
     in
     formatter_of_out_functions funs
