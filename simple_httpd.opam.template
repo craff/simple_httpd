@@ -1,1 +1,1 @@
-depexts: [ "openssl" { with-test } ]
+depexts: [ ["openssl"] { with-test & os="linux"} ]
