@@ -21,7 +21,8 @@
     (magic-mime (<= 1.3.0))
     (ocaml (>= 5.3.0))
     (camlzip (>= 1.11))
-    digestif base64
+    digestif
+    (base64 (>= 3.5.0))
     (cppo :build)
     (yojson :build)
     (odoc :with-doc)
@@ -34,7 +35,7 @@
   (name simple_httpd_caqti)
   (synopsis "DB interface for simple_httpd using caqti")
   (depends
-	(caqti (>= 2.0.0))
+	(caqti (>= 2.1.0))
 	ipaddr
   	(simple_httpd (= :version))
   	(logs (>= 0.10.0))
