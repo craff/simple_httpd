@@ -9,7 +9,7 @@ build: [
   ["dune" "runtest" "-p" name "-j" jobs] {with-test}
 ]
 depends: [
-  "dune" { >= "3.0" & build }
+  "dune" { >= "3.0" }
   "pacomb" { >= "1.4.0" }
   "ssl" { >= "0.7.0" }
   "polly" { >= "0.4.0" }
