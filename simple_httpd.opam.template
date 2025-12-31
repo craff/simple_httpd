@@ -1,1 +1,1 @@
-depexts: [ ["openssl"] { with-test & os="linux"} ]
+depexts: [ ["openssl"] {os-family="fedora"} ]
