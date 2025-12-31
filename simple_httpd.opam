@@ -19,7 +19,6 @@ depends: [
   "digestif"
   "base64"
   "cppo" {build}
-  "simple_httpd_chaml" {build}
   "odoc" {with-doc}
   "qtest" {>= "2.9" & with-test}
   "conf-libcurl" {with-test}

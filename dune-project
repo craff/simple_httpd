@@ -23,7 +23,6 @@
     (camlzip (>= 1.11))
     digestif base64
     (cppo :build)
-    (simple_httpd_chaml :build)
     (odoc :with-doc)
     (qtest (and (>= 2.9) :with-test))
     (conf-libcurl :with-test)
@@ -35,8 +34,7 @@
   (synopsis "Chaml language for simple_httpd (like php but in OCaml)")
   (depends
     (pacomb (>= 1.4.0))
-    (yojson :build)
-    (simple_httpd (= :version))))
+    (yojson :build)))
 
 (package
   (name simple_httpd_caqti)
@@ -46,5 +44,4 @@
 	ipaddr
   	(simple_httpd (= :version))
   	(logs (>= 0.10.0))
-        (caqti-driver-postgresql :with-test)
-        (simple_httpd (= :version))))
+        (caqti-driver-postgresql :with-test)))

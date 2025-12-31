@@ -11,7 +11,6 @@ depends: [
   "dune" {>= "3.0"}
   "pacomb" {>= "1.4.0"}
   "yojson" {build}
-  "simple_httpd" {= version}
   "odoc" {with-doc}
 ]
 build: [

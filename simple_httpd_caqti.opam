@@ -14,7 +14,6 @@ depends: [
   "simple_httpd" {= version}
   "logs" {>= "0.10.0"}
   "caqti-driver-postgresql" {with-test}
-  "simple_httpd" {= version}
   "odoc" {with-doc}
 ]
 build: [
