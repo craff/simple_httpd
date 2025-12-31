@@ -17,6 +17,7 @@
   (depends
     (pacomb (>= 1.4.0))
     (ssl (>= 0.7.0))
+    conf-openssl
     (polly (>= 0.4.0))
     (magic-mime (<= 1.3.0))
     (ocaml (>= 5.3.0))
