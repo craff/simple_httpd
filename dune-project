@@ -17,7 +17,6 @@
   (depends
     (pacomb (>= 1.4.0))
     (ssl (>= 0.7.0))
-    conf-openssl
     (polly (>= 0.4.0))
     (magic-mime (<= 1.3.0))
     (ocaml (>= 5.3.0))
@@ -27,6 +26,7 @@
     (cppo :build)
     (yojson :build)
     (odoc :with-doc)
+    (conf-openssl :with-test)
     (qtest (and (>= 2.9) :with-test))
     (conf-libcurl :with-test)
     (qcheck (and :with-test (>= 0.9)))
