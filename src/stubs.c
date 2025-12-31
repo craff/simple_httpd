@@ -36,15 +36,14 @@
 
 CAMLprim value caml_byte_sendfile(value out_fd, value in_fd, value offset, value count) {
   CAMLparam0();
-  ssize_t off = Int_val(offset);
-  // printf("sendfile %d %d\n",off,Int_val(count)); fflush(stdout);
+  off_t off = Int_val(offset);
   ssize_t w = sendfile(Int_val(out_fd),Int_val(in_fd),&off,Int_val(count));
-  // printf("sendfile %d %d\n",off,w); fflush(stdout);
   CAMLreturn(Val_int(w));
 }
 
 long caml_sendfile(long out_fd, long in_fd, long off, long count) {
-  return(sendfile(out_fd,in_fd,&off,count));
+  off_t off64 = off; // needed on 32 bit
+  return(sendfile(out_fd,in_fd,&off64,count));
 }
 
 CAMLprim void caml_sendfile_error() {
@@ -56,8 +55,8 @@ CAMLprim void caml_sendfile_error() {
 CAMLprim value caml_byte_splice(value in_fd, value in_off, value out_fd,
 				value out_off, value count) {
   CAMLparam0();
-  ssize_t in_off_p = Int_val(in_off);
-  ssize_t out_off_p = Int_val(out_off);
+  off_t in_off_p = Int_val(in_off);
+  off_t out_off_p = Int_val(out_off);
   // printf("sendfile %d %d\n",off,Int_val(count)); fflush(stdout);
   ssize_t w = splice(Int_val(in_fd),&in_off_p,
 		     Int_val(in_fd),&out_off_p,Int_val(count),0);
@@ -66,7 +65,9 @@ CAMLprim value caml_byte_splice(value in_fd, value in_off, value out_fd,
 }
 
 long caml_splice(long in_fd, long in_off, long out_fd, long out_off, long count) {
-  return(splice(in_fd,&in_off,out_fd,&out_off,count,0));
+  off_t in_off64 = in_off; // needed on 32 bit
+  off_t out_off64 = out_off; // needed on 32 bit
+  return(splice(in_fd,&in_off64,out_fd,&out_off64,count,0));
 }
 
 CAMLprim void caml_splice_error() {
