@@ -8,7 +8,8 @@ let parse_size s : int =
   try Scanf.sscanf s "%dk" (fun n -> n * 1_024)
   with _ ->
   try int_of_string s
-  with _ -> raise (Arg.Bad "invalid size (expected <int>[kM]?)")
+  with _ ->
+    raise (Arg.Bad (Printf.sprintf "invalid size %S (expected <int>[kM]?)" s))
 
 let config =
   D.config ~dir_behavior:Index_or_lists ()
