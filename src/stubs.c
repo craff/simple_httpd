@@ -79,16 +79,21 @@ CAMLprim void caml_splice_error() {
 #define SSL_CTX_val(v) (*((SSL_CTX **)Data_custom_val(v)))
 
 CAMLprim void caml_byte_set_ktls(value v) {
+#ifdef SSL_OP_ENABLE_KTLS
   SSL_CTX *ssl = SSL_CTX_val(v);
   SSL_CTX_set_options(ssl, SSL_OP_ENABLE_KTLS);
-  fflush(stderr);
+#endif
 }
 
 CAMLprim value caml_byte_check_ktls(value v) {
+#ifdef SSL_OP_ENABLE_KTLS
   SSL *ssl = SSL_val(v);
   int s = BIO_get_ktls_send(SSL_get_wbio(ssl));
   int r = BIO_get_ktls_recv(SSL_get_rbio(ssl));
   return(Val_int(s + 2*r));
+#else
+  return(Val_int(0));
+#endif
 }
 
 CAMLprim value caml_byte_ssl_sendfile (value out_fd, value in_fd, value offset, value count) {
