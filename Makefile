@@ -7,7 +7,7 @@ all: build test
 
 .PHONY: build
 build: ./src/field-names.csv ./src/chaml/entities.json ${TAGTABLES}
-	@dune build
+	@dune build @install
 
 .PHONY: test
 test:

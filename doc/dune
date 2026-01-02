@@ -1,3 +1,13 @@
 (documentation
 	(package simple_httpd)
 	(mld_files index vfs_pack template))
+
+(rule
+  (targets index.mld)
+  (deps index.mld.template ../examples/echo.ml)
+  (action
+    (with-stdout-to %{targets}
+    (run sed
+       -e /@@ECHO@@/r../examples/echo.ml
+       -e /@@ECHO@@/d
+       index.mld.template))))

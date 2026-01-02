@@ -1070,9 +1070,11 @@ module Session : sig
       (** tells which cookies should be deleted together with the session key
           and address *)}
 
-  (**   { path = "/"
-        ; base = "Session"
-        ; filter = fun _ -> None } *)
+  (**  value is
+       [{ path = "/"
+       ; base = "Session";
+       ; life = 3600.0
+       ; filter = fun _ -> None }] *)
   val default_cookie_policy : cookie_policy
 
   val start_check: ?create:bool ->
@@ -1230,21 +1232,23 @@ module Server : sig
 
       The value of args corresponds to the following options:
       {[
-  --buf-size         set the size of the buffer used for input and output (one per client) (default 32ko)
-  --ktls             use ktls over ssl (default false)
-  --log-requests     log level for requests (default 1)
-  --log-exceptions   log level for exceptions (default 1)
-  --log-scheduler    log level for scheduler debug (default 0)
-  --log-folder       log folder (default none)
-  --log-basename     log basename (default basename of argv[0])
-  --log-perm         log permission (default 0o700)
-  --max-connections  maximum number of simultaneous connections (default 32)
-  -c                 maximum number of simultaneous connections (default 32)
-  --nb-threads       maximum number of threads (default
-  -j                 maximum number of threads
-  --timeout          timeout in seconds, connection is closed after timeout second of inactivity (default: 300)
-  -help              Display this list of options
-  --help             Display this list of options
+      --buf-size         set the size of the buffer used for input and output
+                         (one per client, default 32ko)
+      --ktls             use ktls over ssl (default false)
+      --log-requests     log level for requests (default 1)
+      --log-exceptions   log level for exceptions (default 1)
+      --log-scheduler    log level for scheduler debug (default 0)
+      --log-folder       log folder (default none)
+      --log-basename     log basename (default basename of argv[0])
+      --log-perm         log permission (default 0o700)
+      --max-connections  maximum number of simultaneous connections (default 32)
+      -c                 maximum number of simultaneous connections (default 32)
+      --nb-threads       maximum number of threads (default
+      -j                 maximum number of threads
+      --timeout          timeout in seconds, connection is closed after
+                         timeout second of inactivity (default: 300)
+      -help              Display this list of options
+      --help             Display this list of options
       ]}
    *)
 

@@ -52,4 +52,4 @@ let _ =
     Printf.printf "%s\n%!" (fn ch filename !mode)
   with
   | Failure s | Sys_error s -> Printf.eprintf "%s\n%!" s
-  | e -> Printf.eprintf "An error occurer: %s\n" (Printexc.to_string e)
+  | e -> Printf.eprintf "An error occured: %s\n" (Printexc.to_string e)

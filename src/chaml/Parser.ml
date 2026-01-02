@@ -12,9 +12,9 @@ let do_with_filename filename fn =
 let blank = Blank.from_charset Charset.empty
 
 type mode = { cls : string option
-              (** waiting for a closing tag |html} of |chaml} *)
+              (** waiting for a closing tag [|html}] or [|chaml}] *)
             ; top : bool (** allows for <ml> ... </ml> and <ml prelude> ... </ml>*)
-            ; str : bool (** allows for {`  ... `} *)
+            ; str : bool (** allows for {` ... `} *)
             ; glb : bool (** allows for <ml global> ... </ml> *)
             }
 
