@@ -872,10 +872,6 @@ let spawn dinfo client f =
               add_ready dinfo (Action(cont, info, e))
             end
      end
-  | exception e ->
-     Log.f (Exc 0) (fun k -> k "Exception in spawn %s"
-                               (Printexc.to_string e));
-     raise e
 
 let close ~dinfo ~client exn =
   if client.connected then begin
@@ -1121,6 +1117,8 @@ let loop listens pipe timeout handler () =
              | Switch ->
                 Log.f (Exc 1) (fun k -> k "Switching protocol");
              | e ->
+                Log.f (Exc 0) (fun k -> k "Exception in handler %s"
+                                          (Printexc.to_string e));
                 close ~dinfo ~client e)
       | Action (cont, p, e) ->
          let hup = Polly.Events.((hup land e) <> empty) in
