@@ -13,7 +13,8 @@ jobs:
       fail-fast: true
       matrix:
         os:
-          - ubuntu-latest
+          - ubuntu-24.04
+          - ubuntu-22.04
         ocaml-compiler:
           - "5.3"
           - "5.4"

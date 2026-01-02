@@ -874,7 +874,8 @@ let spawn dinfo client f =
      end
   | exception e ->
      Log.f (Exc 0) (fun k -> k "Exception in spawn %s"
-                               (Printexc.to_string e))
+                               (Printexc.to_string e));
+     raise e
 
 let close ~dinfo ~client exn =
   if client.connected then begin
