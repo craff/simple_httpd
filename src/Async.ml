@@ -879,7 +879,7 @@ let spawn dinfo client f =
 let close ~dinfo ~client exn =
   if client.connected then begin
     dinfo.cur_client <- client;
-    Log.f (Exc 0) (fun k -> k "Closing client on exception %s"
+    Log.f (Exc 1) (fun k -> k "Closing client on exception %s"
                               (Printexc.to_string exn));
     LL.iter (fun f -> f ()) client.at_close;
     LL.remove_cell client.last_seen_cell dinfo.last_seen;
@@ -1065,7 +1065,7 @@ let loop listens pipe timeout handler () =
          in
          spawn dinfo client (fun () ->
              try
-               Log.f (Req 0)
+               Log.f (Req 1)
                  (fun k -> k "[%d] accepted connection from %s" client.id client.peer);
                Unix.set_nonblock sock;
                Unix.(setsockopt sock TCP_NODELAY true);
@@ -1094,7 +1094,7 @@ let loop listens pipe timeout handler () =
                       begin
                         client.read <- read_ssl sock chan
                       end;
-                    Log.f (Req 0) (fun k ->
+                    Log.f (Req 1) (fun k ->
                         let open Ssl in
                         let [@ocaml.warning "-3"] v = match Ssl.version chan with
                           | SSLv23 -> "SSL 2.3"
@@ -1118,7 +1118,7 @@ let loop listens pipe timeout handler () =
                close ~dinfo ~client EndHandling
              with
              | Switch ->
-                Log.f (Exc 0) (fun k -> k "Switching protocol");
+                Log.f (Exc 1) (fun k -> k "Switching protocol");
              | e ->
                 close ~dinfo ~client e)
       | Action (cont, p, e) ->
