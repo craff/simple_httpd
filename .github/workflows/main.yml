@@ -14,9 +14,6 @@ jobs:
       matrix:
         os:
           - ubuntu-latest
-	  - fedora-43
-          - arm32
-	  - arm64
         ocaml-compiler:
           - "5.3"
           - "5.4"
