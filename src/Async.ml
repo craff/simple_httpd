@@ -819,6 +819,33 @@ let add_decr : domain_info -> Semaphore.t -> (unit, unit) continuation -> unit =
 
   en_queue dinfo lk.seventfd info
 
+let close ~dinfo ~client exn =
+  if client.connected then begin
+    dinfo.cur_client <- client;
+
+    Log.f (Exc 1) (fun k -> k "Closing client on exception %s"
+                              (Printexc.to_string exn));
+    LL.iter (fun f -> f ()) client.at_close;
+    LL.remove_cell client.last_seen_cell dinfo.last_seen;
+    Atomic.decr dinfo.nb_connections;
+    client.connected <- false;
+    dinfo.pendings.(Util.file_descr_to_int client.sock) <- NoSocket;
+    (try Unix.close client.sock with Unix.Unix_error _ -> ());
+
+    match client.session with
+    | None -> ()
+    | Some sess ->
+       let sess = LL.get sess in
+       let fn clients =
+         try Util.remove_first (fun c' -> client == c') clients
+         with Not_found -> assert false
+       in
+       let remain = Util.update_atomic sess.clients fn in
+       if remain = [] then
+         ignore (Util.update_atomic sess.data Key.cleanup_filter);
+       ()
+    end
+
 let spawn dinfo client f =
   match f () with
   | () -> ()
@@ -872,32 +899,6 @@ let spawn dinfo client f =
               add_ready dinfo (Action(cont, info, e))
             end
      end
-
-let close ~dinfo ~client exn =
-  if client.connected then begin
-    dinfo.cur_client <- client;
-    Log.f (Exc 1) (fun k -> k "Closing client on exception %s"
-                              (Printexc.to_string exn));
-    LL.iter (fun f -> f ()) client.at_close;
-    LL.remove_cell client.last_seen_cell dinfo.last_seen;
-    Atomic.decr dinfo.nb_connections;
-    client.connected <- false;
-    dinfo.pendings.(Util.file_descr_to_int client.sock) <- NoSocket;
-    (try Unix.close client.sock with Unix.Unix_error _ -> ());
-
-    match client.session with
-    | None -> ()
-    | Some sess ->
-       let sess = LL.get sess in
-       let fn clients =
-         try Util.remove_first (fun c' -> client == c') clients
-         with Not_found -> assert false
-       in
-       let remain = Util.update_atomic sess.clients fn in
-       if remain = [] then
-         ignore (Util.update_atomic sess.data Key.cleanup_filter);
-       ()
-    end
 
 exception Switch
 
@@ -1115,9 +1116,9 @@ let loop listens pipe timeout handler () =
                close ~dinfo ~client EndHandling
              with
              | Switch ->
-                Log.f (Exc 1) (fun k -> k "Switching protocol");
+                Log.f (Exc 1) (fun k -> k "Switching protocol")
              | e ->
-                Log.f (Exc 0) (fun k -> k "Exception in handler %s"
+                Log.f (Exc 0) (fun k -> k "Unexpected exception in handler %s"
                                           (Printexc.to_string e));
                 close ~dinfo ~client e)
       | Action (cont, p, e) ->

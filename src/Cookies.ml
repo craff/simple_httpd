@@ -74,36 +74,36 @@ let parse str =
   let i = ref 0 in
   while !i < len do
     let skip_space () =
-      while !i <= len && str.[!i] = ' ' do
+      while !i < len && str.[!i] = ' ' do
         incr i
       done
     in
     skip_space ();
     let bgn = !i in
-    while !i <= len && char_name str.[!i] do
+    while !i < len && char_name str.[!i] do
       incr i
     done;
     let name = String.sub str bgn (!i - bgn) in
     skip_space ();
-    if str.[!i] = '=' then
+    if !i < len && str.[!i] = '=' then
       begin
         incr i;
         skip_space ();
       end
     else
       raise (Invalid_cookie str);
-    let quote = if str.[!i] = '"' then (incr i; true) else false in
+    let quote = if !i < len && str.[!i] = '"' then (incr i; true) else false in
     let bgn = !i in
-    while !i <= len && char_value str.[!i] do
+    while !i < len && char_value str.[!i] do
       incr i
     done;
     let value = String.sub str bgn (!i - bgn) in
     if quote then
-      if str.[!i] = '"' then incr i
+      if !i < len && str.[!i] = '"' then incr i
       else raise (Invalid_cookie str);
     res := create ~name value !res;
     skip_space ();
-    if str.[!i] = ';' then (incr i; skip_space ())
+    if !i < len && str.[!i] = ';' then (incr i; skip_space ())
   done;
   !res
 
