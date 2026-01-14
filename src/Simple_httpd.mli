@@ -552,6 +552,48 @@ module Method : sig
   val of_string : string -> t
 end
 
+(** Module to handle cookies *)
+module Cookies : sig
+  (** {1 Cookies}
+
+    Cookies are data that are maintend both on server and clients.
+    This is a module to get and set cookies in the headers. *)
+
+  type same_site = None | Lax | Strict
+  type cookie = {
+      name : string;
+      value : string;
+      path : string option;
+      domain : string option;
+      expires : Unix.tm option;
+      max_age : int64 option;
+      secure : bool;
+      http_only : bool;
+      same_site : same_site;
+      extension : string option;
+    }
+
+  type t = cookie list
+
+  val empty : t
+  val parse : string -> t
+  val add : cookie -> t -> t
+  val create : ?path:string ->
+               ?domain:string ->
+               ?expires:Unix.tm ->
+               ?max_age:int64 ->
+               ?secure:bool ->
+               ?http_only:bool ->
+               ?same_site:same_site ->
+               ?extension:string ->
+               name:string ->
+               string -> t -> t
+  val value : cookie -> string
+  val name : cookie -> string
+
+  val get : string -> t -> Cookies.cookie
+end
+
 (** Module to handle request and response headers *)
 module Headers : sig
   (** {1 Headers}
@@ -598,48 +640,6 @@ module Headers : sig
 
   val pp : Format.formatter -> t -> unit
   (** Pretty print the headers. *)
-end
-
-(** Module to handle cookies *)
-module Cookies : sig
-  (** {1 Cookies}
-
-    Cookies are data that are maintend both on server and clients.
-    This is a module to get and set cookies in the headers. *)
-
-  type same_site = None | Lax | Strict
-  type cookie = {
-      name : string;
-      value : string;
-      path : string option;
-      domain : string option;
-      expires : Unix.tm option;
-      max_age : int64 option;
-      secure : bool;
-      http_only : bool;
-      same_site : same_site;
-      extension : string option;
-    }
-
-  type t = cookie list
-
-  val empty : t
-  val parse : string -> t
-  val add : cookie -> t -> t
-  val create : ?path:string ->
-               ?domain:string ->
-               ?expires:Unix.tm ->
-               ?max_age:int64 ->
-               ?secure:bool ->
-               ?http_only:bool ->
-               ?same_site:same_site ->
-               ?extension:string ->
-               name:string ->
-               string -> t -> t
-  val value : cookie -> string
-  val name : cookie -> string
-
-  val get : string -> t -> Cookies.cookie
 end
 
 (** Module handling HTML requests *)
