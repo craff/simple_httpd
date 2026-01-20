@@ -1222,6 +1222,7 @@ let accept_loop (domains : Domain.id Array.t) listens pipes maxc =
          raise e
     with
     | Full ->
+       (try Unix.close lsock with Unix.Unix_error _ -> ());
        Log.f (Exc 0) (fun k -> k "handler: reject too many clients");
 
   in
