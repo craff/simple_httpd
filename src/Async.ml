@@ -1206,25 +1206,15 @@ let accept_loop (domains : Domain.id Array.t) listens pipes maxc =
   let exception Blocked of int in
   let send_socket sock lsock =
     let index = try Hashtbl.find tbl sock with Not_found -> assert false in
+    let (pipe_index, pipe) = get_best () in
     try
-      let (pipe_index, pipe) = get_best () in
+      Bytes.set_int32_ne pipe_buf 0 (Int32.of_int (Util.file_descr_to_int lsock));
+      Bytes.set_int32_ne pipe_buf 4 (Int32.of_int index);
+      assert(Util.single_write pipe pipe_buf 0 8 = 8);
       Atomic.incr (nbc pipe_index);
-      try
-        Bytes.set_int32_ne pipe_buf 0 (Int32.of_int (Util.file_descr_to_int lsock));
-        Bytes.set_int32_ne pipe_buf 4 (Int32.of_int index);
-        assert(Util.single_write pipe pipe_buf 0 8 = 8);
-      with
-      | Unix.(Unix_error ((EAGAIN |EWOULDBLOCK), _,_)) ->
-         raise (Blocked pipe_index)
-      | e ->
-         Atomic.decr (nbc pipe_index);
-         (try Unix.close lsock with Unix.Unix_error _ -> ());
-         raise e
     with
-    | Full ->
-       (try Unix.close lsock with Unix.Unix_error _ -> ());
-       Log.f (Exc 0) (fun k -> k "handler: reject too many clients");
-
+    | Unix.(Unix_error ((EAGAIN |EWOULDBLOCK), _,_)) ->
+       raise (Blocked pipe_index)
   in
   let rec send_sockets = function
       [] -> ()
@@ -1236,24 +1226,33 @@ let accept_loop (domains : Domain.id Array.t) listens pipes maxc =
         | Blocked pipe_index ->
            pendings.(pipe_index) <- List.rev_append all pendings.(pipe_index);
            fun () -> ()
+        | Full ->
+           (try Unix.close lsock with Unix.Unix_error _ -> ());
+           Log.f (Exc 0) (fun k -> k "handler: reject too many clients");
+           fun () -> send_sockets rest
         | exn ->
-           Log.f (Exc 0) (fun k -> k "unexpected exception in accept loop: %s" (printexn exn));
+           (try Unix.close lsock with Unix.Unix_error _ -> ());
+           Log.f (Exc 0) (fun k -> k "unexpected exception in send_socket: %s" (printexn exn));
            fun () -> send_sockets rest) ()
   in
+  let exception Continue in
   let treat _ sock evt =
     if Polly.Events.(inp land evt <> empty) then
       begin
         try
           while true do
-            let lsock, _ =
-              try Unix.accept ~cloexec:true sock with
-              | Unix.(Unix_error ((EAGAIN |EWOULDBLOCK), _,_)) ->
-                 raise Exit
-              | Unix.Unix_error _ as exn ->
-                 Log.f (Exc 0) (fun k -> k "unexpected exception in Unix.accept: %s" (printexn exn));
-                 raise FailHandling
-            in
-            send_sockets [sock, lsock];
+            try
+              let lsock, _ =
+                try Unix.accept ~cloexec:true sock with
+                | Unix.(Unix_error(EINTR,_,_)) -> raise Continue
+                | Unix.(Unix_error ((EAGAIN |EWOULDBLOCK), _,_)) ->
+                   raise Exit
+                | Unix.Unix_error _ as exn ->
+                   Log.f (Exc 0) (fun k -> k "unexpected exception in Unix.accept: %s" (printexn exn));
+                   raise FailHandling
+              in
+              send_sockets [sock, lsock];
+            with Continue -> ()
           done
         with Exit -> ()
       end
