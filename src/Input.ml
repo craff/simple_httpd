@@ -137,9 +137,7 @@ let of_io ?(buf_size=64 * 1024) (sock:Io.t) : t =
 
 let rec iter f (self:t) : unit =
   self.fill_buf();
-  if self.len=0 then (
-    self.close();
-  ) else (
+  if self.len>0 then (
     f self.bs self.off self.len;
     self.consume self.len;
     (iter [@tailcall]) f self
@@ -345,6 +343,7 @@ let read_until ~buf ~target (self:t) : unit =
   let pos = ref 0 in
   while !pos < len do
     self.fill_buf();
+    if self.len = 0 then failwith "Unexpected end of input";
     try
       let i = index_rec self.bs (self.off+self.len) self.off c0 in
       let r = i - self.off + 1 in
@@ -364,9 +363,10 @@ let read_until ~buf ~target (self:t) : unit =
           end
         else incr pos
       done
-    with Not_found ->
-      Buffer.add_subbytes buf self.bs self.off self.len;
-      self.consume self.len
+    with
+    | Not_found ->
+       Buffer.add_subbytes buf self.bs self.off self.len;
+       self.consume self.len
   done
 
 (*$= & ~printer:Q.(Print.string)
@@ -394,6 +394,7 @@ let read_path ~buf (self:t) : (string * string list * (string * string) list) =
   in
   while !cont do
     self.fill_buf();
+    if self.len = 0 then raise (failwith "Unexpected end of input");
     try
       let (i,nb) = index_rec3 enc self.bs (self.off+self.len) self.off '/' '?' ' ' in
       let r = i - self.off + 1 in
@@ -416,6 +417,7 @@ let read_path ~buf (self:t) : (string * string list * (string * string) list) =
   let last_key = ref "" in
   while !cont_query do
     self.fill_buf();
+    if self.len = 0 then raise (failwith "Unexpected end of input");
     try
       let (i,nb) = index_rec3 enc self.bs (self.off+self.len) self.off '=' '&' ' ' in
       let r = i - self.off + 1 in
@@ -465,9 +467,7 @@ let read_line_into (self:t) ~buf : unit =
   let continue = ref true in
   while !continue do
     self.fill_buf();
-    if self.len=0 then (
-      continue := false;
-    ) else
+    if self.len=0 then failwith "Unexpected end of input" else
     try
       let j, nb = index_rec2 self.bs (self.off + self.len) self.off '\r' 2 '\n' 1 in
       Buffer.add_subbytes buf self.bs self.off (j - self.off); (* without \r\n *)
@@ -480,6 +480,7 @@ let read_line_into (self:t) ~buf : unit =
           self.off <- self.off + self.len;
           self.len <- 0;
           self.fill_buf();
+          if self.len = 0 then raise Not_found;
           self.consume to_eat
         end
     with Not_found ->
