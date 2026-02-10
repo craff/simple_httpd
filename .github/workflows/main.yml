@@ -3,9 +3,10 @@ name: build
 on:
   pull_request:
   push:
+    branches: [master]
   schedule:
     # Prime the caches every Monday
-    - cron: 0 1 * * MON
+    - cron: '0 1 * * MON'
 
 jobs:
   build:
@@ -32,7 +33,6 @@ jobs:
         uses: avsm/setup-ocaml@v3
         with:
           ocaml-compiler: ${{ matrix.ocaml-compiler }}
-          opam-depext-flags: --with-test
 
       - run: opam install . --deps-only --with-test
 
