@@ -162,12 +162,14 @@ val max_domain : int
     threading. Typical use is a function that communicated with the main
     thread using socket wrapped using the Io module. Race condition are
     very likely, use with caution. *)
-val spawn : (unit -> 'a) -> (unit -> ('a, exn) Result.t)
+val spawn : ?detached:bool -> ?name:string ->
+            (unit -> 'a) -> (unit -> ('a, exn) Result.t)
 
 exception Switch
 
 val run : nb_threads:int -> listens:Address.t array -> maxc:int ->
           timeout:float -> set_domains:(Domain.id array -> unit) ->
+          ?start_functions:(unit->unit) list ->
             (client -> unit) -> unit Domain.t array
 
 val printexn : exn -> string

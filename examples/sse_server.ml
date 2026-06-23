@@ -17,16 +17,18 @@ let () =
   let listens = [Address.make ~addr:!addr ~port:!port ()] in
   let server = Server.create parameters ~listens in
 
-  let extra_headers = [
-    H.Access_Control_Allow_Origin, "*";
-    H.Access_Control_Allow_Methods, "POST, GET, OPTIONS";
-  ] in
-
   (* tick/tock goes the clock *)
-  Server.add_route_server_sent_handler server Route.(exact "clock" @/ return)
+  let params =
+    Server.{
+        timeout = 30.0;
+        ping_period = 0.0;
+        extra_headers = [];
+    }
+  in
+
+  Server.add_route_server_sent_handler ~params server Route.(exact "clock" @/ return)
     (fun _req (module EV : Server.SERVER_SENT_GENERATOR) ->
        Log.f (Req 0) (fun k->k "new connection");
-       EV.set_headers extra_headers;
        let tick = ref true in
        while true do
          let now = Unix.(gmtime (gettimeofday())) in
@@ -40,7 +42,7 @@ let () =
     );
 
   (* just count *)
-  Server.add_route_server_sent_handler server Route.(exact "count" @/ return)
+  Server.add_route_server_sent_handler ~params server Route.(exact "count" @/ return)
     (fun _req (module EV : Server.SERVER_SENT_GENERATOR)  ->
        let n = ref 0 in
        while true do
@@ -49,7 +51,7 @@ let () =
          Async.sleep 0.1;
        done;
     );
-  Server.add_route_server_sent_handler server Route.(exact "count" @/ int @/ return)
+  Server.add_route_server_sent_handler ~params server Route.(exact "count" @/ int @/ return)
     (fun n _req (module EV : Server.SERVER_SENT_GENERATOR)  ->
        for i=0 to n do
          EV.send_event ~data:(string_of_int i) ();

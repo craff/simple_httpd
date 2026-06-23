@@ -4,12 +4,12 @@ type buf = Buffer.t
 let log = Log.f
 
 module type SERVER_SENT_GENERATOR = sig
-  val set_headers : Headers.t -> unit
   val send_event :
     ?event:string ->
     ?id:string ->
     ?retry:string ->
-    data:string ->
+    ?data:string ->
+    ?comment:string ->
     unit -> unit
   val close : unit -> unit
 end
@@ -86,47 +86,61 @@ let redirect_https ?addresses ?filter self =
       with
         _ -> Response.fail_raise ~code:Response_code.not_found "Not_found")
 
-let[@inline] _opt_iter ~f o = match o with
-  | None -> ()
-  | Some x -> f x
+let[@inline] empt_iter ~f o = match o with
+  | "" -> ()
+  | x -> f x
 
-let add_route_server_sent_handler ?addresses ?filter self route f =
+type sse_params =
+  { timeout : float
+  ; ping_period : float
+  ; extra_headers : (Headers.header * string) list; }
+
+let add_route_server_sent_handler ?addresses ?filter ~params self route f =
   let tr_req oc req ~resp f =
     let buf = (Request.client req).buf in
     let req = Request.read_body_full ~buf req in
-    let headers = ref Headers.(empty |> set Content_Type "text/event-stream") in
+    let headers = Headers.(empty |> set Content_Type "text/event-stream") in
+    let headers = List.rev_append headers params.extra_headers in
+    let continue = ref true in
+    let client = Request.client req in
 
-    (* send response once *)
-    let resp_sent = ref false in
-    let send_response_idempotent_ () =
-      if not !resp_sent then (
-        resp_sent := true;
-        (* send 200 response now *)
-        let initial_resp = Response.make_void ~headers:!headers ~code:ok () in
-        resp initial_resp;
-      )
-    in
+    let module SSG =
+      struct
+        let send_response () =
+          begin
+            let initial_resp = Response.make_void ~headers ~code:ok () in
+            resp initial_resp;
+            if params.timeout > 0.0 then
+              Async.Client.set_timeout client params.timeout;
+          end
 
-    let send_event ?event ?id ?retry ~data () : unit =
-      send_response_idempotent_();
-      _opt_iter event ~f:(fun e -> Output.printf oc "event: %s\n" e);
-      _opt_iter id ~f:(fun e -> Output.printf oc "id: %s\n" e);
-      _opt_iter retry ~f:(fun e -> Output.printf oc "retry: %s\n" e);
-      let l = String.split_on_char '\n' data in
-      List.iter (fun s -> Output.printf oc "data: %s\n" s) l;
-      Output.add_char oc '\n'; (* finish group *)
-      Output.flush oc;
+        let send_event ?(event="") ?(id="") ?(retry="") ?(data="")
+              ?(comment="") () : unit =
+          empt_iter comment ~f:(fun e -> Output.printf oc ": %s\n" e);
+          empt_iter event ~f:(fun e -> Output.printf oc "event: %s\n" e);
+          empt_iter id ~f:(fun e -> Output.printf oc "id: %s\n" e);
+          empt_iter retry ~f:(fun e -> Output.printf oc "retry: %s\n" e);
+          empt_iter data ~f:(fun e ->
+              let l = String.split_on_char '\n' e in
+              List.iter (fun s -> Output.printf oc "data: %s\n" s) l);
+          Output.add_char oc '\n'; (* finish group *)
+          Output.flush oc
+
+        let start_ping_loop () =
+          if params.ping_period > 0.0 then
+            while !continue do
+              send_event ~comment:"ping" ();
+              Async.Client.reset_timeout client;
+              Async.sleep params.ping_period;
+            done
+
+        let close () = continue := false; raise Exit
+      end
     in
-    let module SSG = struct
-      let set_headers h =
-        if not !resp_sent then (
-          headers := List.rev_append h !headers;
-          send_response_idempotent_()
-        )
-      let send_event = send_event
-      let close () = raise Exit
-    end in
-    try f req (module SSG : SERVER_SENT_GENERATOR);
+    try
+      SSG.send_response ();
+      f req (module SSG : SERVER_SENT_GENERATOR);
+      SSG.start_ping_loop ();
     with Exit -> Output.close oc
   in
   Route.add_route_handler ?filter ?addresses
@@ -238,7 +252,7 @@ let create ?(listens = [Address.make ()]) (module Params : Parameters) =
   let restart_file = !restart_file in
   let domains = [||] in (* set when running the server *)
   let self = { listens; buf_size; max_connections; started_time
-             ; handlers; timeout; num_threads; restart_file; domains }
+               ; handlers; timeout; num_threads; restart_file; domains }
   in
   self
 
@@ -374,13 +388,14 @@ let save_load (self:t) =
   set_signal sigterm quit;
   set_signal sigabrt quit
 
-let run (self:t) =
+let run ?(start_functions=[]) (self:t) =
   save_load self ;
   let handler client_sock = handle_client_ self client_sock in
   let maxc = self.max_connections in
   let set_domains ds = self.domains <- ds in
   let a = Async.run ~nb_threads:self.num_threads ~listens:self.listens
-        ~maxc ~timeout:self.timeout ~set_domains
-        handler
+            ~maxc ~timeout:self.timeout ~set_domains
+            ~start_functions
+            handler
   in
   Array.iter (fun d -> Domain.join d) a

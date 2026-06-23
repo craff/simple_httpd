@@ -19,6 +19,11 @@ module type Init = sig
     ?filter:Input.t Route.Filter.t ->
     ('a, Html.chaml) Route.t -> 'a -> unit
 
+  val add_route_server_sent_handler :
+    ?filter:Input.t Route.Filter.t -> params:sse_params ->
+    ('a, string Request.t -> server_sent_generator -> unit) Route.t -> 'a ->
+    unit
+
   val redirect_https : ?filter:Input.t Route.Filter.t -> unit -> unit
 
   val add_dir_path :
@@ -40,4 +45,6 @@ module type Host = sig
   module Init(_:Init) : sig end
 end
 
-val start_server : (module Server.Parameters) -> (module Host) list -> unit
+val start_server : ?start_functions:(unit -> unit) list ->
+                   (module Server.Parameters) ->
+                   (module Host) list -> unit

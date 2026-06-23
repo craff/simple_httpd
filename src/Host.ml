@@ -19,6 +19,11 @@ module type Init = sig
     ?filter:Input.t Route.Filter.t ->
     ('a, Html.chaml) Route.t -> 'a -> unit
 
+  val add_route_server_sent_handler :
+    ?filter:Input.t Route.Filter.t -> params:sse_params ->
+    ('a, string Request.t -> server_sent_generator -> unit) Route.t -> 'a ->
+    unit
+
   val redirect_https : ?filter:Input.t Route.Filter.t -> unit -> unit
 
   val add_dir_path :
@@ -64,7 +69,7 @@ let collect_addresses (hosts : (module Host) list) : Address.t list =
   List.iter (fun (module Host:Host) -> List.iter add Host.addresses) hosts;
   !res
 
-let start_server parameters
+let start_server ?(start_functions=[]) parameters
       (hosts : (module Host) list) =
   let addresses = collect_addresses hosts in
   let server = create parameters ~listens:addresses in
@@ -80,6 +85,9 @@ let start_server parameters
 
           let add_route_handler_chaml  ?meth ?filter route =
             add_route_handler_chaml ~addresses ?meth ?filter server route
+
+          let add_route_server_sent_handler ?filter ~params route =
+            add_route_server_sent_handler ~addresses ?filter ~params server route
 
           let redirect_https ?filter () =
             redirect_https ~addresses ?filter server
@@ -98,4 +106,4 @@ let start_server parameters
       Log.f (Req 0) (fun k -> k "listening on http://%s:%d" l.addr l.port))
     (listens server);
 
-  run server
+  run ~start_functions server

@@ -70,26 +70,6 @@ and session_info =
 
 and session = session_info LL.cell
 
-let fake_client =
-    { sock = Unix.stdout;
-      ssl = None;
-      peer = "";
-      connected = false;
-      session = None;
-      cont = true;
-      id = -1;
-      buf = Buffer.create 16;
-      start_time = 0.0;
-      timeout = 0.0;
-      timeout_ref = 0.0;
-      accept_by = 0;
-      last_seen_cell = LL.fake_cell;
-      at_close = LL.create ();
-      read = (fun _ _ _ -> assert false);
-      write = (fun _ _ _ -> assert false);
-      sendfile = (fun _ _ _ -> assert false);
-    }
-
 let set_session ?session client =
   client.session <- session
 
@@ -171,6 +151,7 @@ type pollResult =
   | Action : pending * socket_info * Polly.Events.t -> pollResult
   | Yield of ((unit,unit) continuation * client * float)
   | Poll
+  | Spawn of (unit -> unit) * client
 
 type domain_info =
   { mutable cur_client : client (* the client currently running *)
@@ -193,6 +174,28 @@ type domain_info =
   ; nb_connections : int Atomic.t (* -1 for the accepting domain, -2 for unused domain *)
   }
 
+let make_fake_client ?connected ?(peer="fake_client") () =
+  let now = now () in
+  { sock = Unix.stdout;
+    ssl = None;
+    peer;
+    connected=connected <> None;
+    session = None;
+    cont = true;
+    id = -1;
+    buf = Buffer.create 16;
+    start_time = now;
+    timeout = infinity;
+    timeout_ref = now;
+    accept_by = 0;
+    last_seen_cell = LL.fake_cell;
+    at_close = LL.create ();
+    read = (fun _ _ _ -> assert false);
+    write = (fun _ _ _ -> assert false);
+    sendfile = (fun _ _ _ -> assert false);
+  }
+
+let fake_client = make_fake_client ()
 
 let fake_domain_info =
   { cur_client = fake_client
@@ -742,6 +745,7 @@ let _print_pollResult ch r = match r with
   | Accept _ -> Format.fprintf ch "Accept"
   | Action _ -> Format.fprintf ch "Action"
   | Poll -> Format.fprintf ch "Poll"
+  | Spawn _ -> Format.fprintf ch "Spawn"
 
 exception FailHandling
 
@@ -819,16 +823,27 @@ let add_decr : domain_info -> Semaphore.t -> (unit, unit) continuation -> unit =
 
   en_queue dinfo lk.seventfd info
 
+let with_client dinfo client f =
+  let save_client = dinfo.cur_client in
+  dinfo.cur_client <- client;
+  try
+    f ();
+    dinfo.cur_client <- save_client ;
+  with e ->
+    dinfo.cur_client <- save_client;
+    raise e
+
 let close ~dinfo ~client exn =
   if client.connected then begin
-    dinfo.cur_client <- client;
-
     Log.f (Exc 1) (fun k -> k "Closing client on exception %s"
                               (Printexc.to_string exn));
-    LL.iter (fun f -> f ()) client.at_close;
-    LL.remove_cell client.last_seen_cell dinfo.last_seen;
-    Atomic.decr dinfo.nb_connections;
     client.connected <- false;
+    with_client dinfo client (fun () -> LL.iter (fun f -> f ()) client.at_close);
+    if client.id >= 0 then
+      begin
+        LL.remove_cell client.last_seen_cell dinfo.last_seen;
+        Atomic.decr dinfo.nb_connections;
+      end;
     dinfo.pendings.(Util.file_descr_to_int client.sock) <- NoSocket;
     (try Unix.close client.sock with Unix.Unix_error _ -> ());
 
@@ -902,7 +917,7 @@ let spawn dinfo client f =
 
 exception Switch
 
-let loop listens pipe timeout handler () =
+let loop start_processes listens pipe timeout handler () =
   let _ = Printexc.record_backtrace true in
   let did = Domain.self () in
 
@@ -926,6 +941,7 @@ let loop listens pipe timeout handler () =
 
 
   (* Queue for ready sockets *)
+  List.iter (fun f -> f()) start_processes (* will spawn processes *);
   add_ready dinfo Poll; (* Invariant: queue as always exactly one Poll
                            and is never empty, except during poll. *)
 
@@ -1024,7 +1040,11 @@ let loop listens pipe timeout handler () =
              poll ()
   in
   let step () =
-      match Queue.take ready with
+    match Queue.take ready with
+      | Spawn(fn, client) ->
+         dinfo.cur_client <- client;
+         spawn dinfo client fn
+
       | Poll ->
          poll ();
          add_ready dinfo Poll
@@ -1116,7 +1136,7 @@ let loop listens pipe timeout handler () =
                close ~dinfo ~client EndHandling
              with
              | Switch ->
-                Log.f (Exc 1) (fun k -> k "Switching protocol")
+                Log.f (Exc 0) (fun k -> k "Switching protocol")
              | e ->
                 Log.f (Exc 0) (fun k -> k "Unexpected exception in handler %s"
                                           (Printexc.to_string e));
@@ -1146,7 +1166,6 @@ let loop listens pipe timeout handler () =
              dinfo.cur_client <- cl;
              continue cont ();
            end
-
 
   in
   let rec inner_loop () =
@@ -1276,9 +1295,14 @@ let accept_loop (domains : Domain.id Array.t) listens pipes maxc =
 
 type 'a result = NoResult | Ok of 'a | Exn of exn
 
-let spawn f =
+let spawn ?(detached=false) ?(name="detached_client") f =
   let dinfo = global_get_dinfo () in
-  let client = dinfo.cur_client in
+  let client=
+    if detached then
+      make_fake_client ~connected:dinfo ~peer:name ()
+    else
+      dinfo.cur_client
+  in
   let result = ref NoResult in
   let m = Mutex.create () in
   let cell = at_close client (fun () -> Mutex.delete m) in
@@ -1301,11 +1325,11 @@ let spawn f =
     | Ok v -> Result.Ok v
     | Exn e -> Result.Error e
   in
-  spawn dinfo (dinfo.cur_client) f;
+  add_ready dinfo (Spawn(f, client));
   wait
 
-
-let run ~nb_threads ~listens ~maxc ~timeout ~set_domains handler =
+let run ~nb_threads ~listens ~maxc ~timeout ~set_domains
+      ?(start_functions=[]) handler =
   let open Address in
   let listens =
     Array.map (fun l ->
@@ -1314,10 +1338,15 @@ let run ~nb_threads ~listens ~maxc ~timeout ~set_domains handler =
   in
   let pipes = Array.init nb_threads (fun _ -> Unix.pipe ()) in
   let listens_r = Array.map snd listens in
+  let start_array = Array.make nb_threads [] in
+  let _ = List.fold_left (fun i c ->
+              start_array.(i) <- c :: start_array.(i); i+1) 0 start_functions
+  in
   let fn id =
     let (r, _) = pipes.(id) in
     Unix.set_nonblock r;
-    Domain.spawn (loop listens_r r timeout handler)
+    Domain.spawn (fun () ->
+        loop start_array.(id) listens_r r timeout handler ())
   in
   let pipes = Array.map snd pipes in
   let _ = Array.iter Unix.set_nonblock pipes in
@@ -1348,11 +1377,17 @@ module Client = struct
   (* All close above where because of error or socket closed on client side.
      close in Server may be because there is no keep alive and the server close
      This is only possible to close the current client! *)
+
+  (** Only callable from the domain managing the client !*)
   let immediate_close client =
     let dinfo = global_get_dinfo() in
     close ~dinfo ~client ClosedByHandler
 
-  let close cl = cl.timeout_ref <- 0.0
+  (** Should be safe *)
+  let close cl =
+    (try Unix.(shutdown cl.sock SHUTDOWN_ALL)
+     with Unix.(Unix_error(ENOTCONN, _, _)) -> ());
+    cl.timeout_ref <- -. infinity
 
   type at_close = (unit -> unit) LL.cell
   let at_close = at_close

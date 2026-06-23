@@ -30,7 +30,7 @@ end
 
 val args : unit -> (Arg.key * Arg.spec * Arg.doc) list * (module Parameters)
 
-val create :  ?listens:Address.t list -> (module Parameters) -> t
+val create : ?listens:Address.t list -> (module Parameters) -> t
 
 (** Create a new webserver.
 
@@ -142,17 +142,12 @@ val add_route_handler_chaml :
     this blog post}.
  *)
 module type SERVER_SENT_GENERATOR = sig
-  val set_headers : Headers.t -> unit
-  (** Set headers of the response.
-      This is not mandatory but if used at all, it must be called before
-      any call to {!send_event} (once events are sent the response is
-      already sent too). *)
-
   val send_event :
     ?event:string ->
     ?id:string ->
     ?retry:string ->
-    data:string ->
+    ?data:string ->
+    ?comment:string ->
     unit -> unit
   (** Send an event from the server.
       If data is a multiline string, it will be sent on separate "data:" lines. *)
@@ -161,12 +156,22 @@ module type SERVER_SENT_GENERATOR = sig
   (** Close connection. *)
 end
 
+type sse_params =
+  { timeout : float (** if negative or zero, timeout is unchanged *)
+  ; ping_period : float (** if negative or zero, sending initial response
+                             will exit the normal handling loop. And no ping will
+                             be send, otherwise, a periodic
+                             send_event ~comment:"ping" () is performed.
+                          *)
+  ; extra_headers : (Headers.header * string) list; }
+
 type server_sent_generator = (module SERVER_SENT_GENERATOR)
 (** Server-sent event generator *)
 
 val add_route_server_sent_handler :
   ?addresses:Address.t list ->
   ?filter:Input.t Route.Filter.t ->
+  params : sse_params ->
   t ->
   ('a, string Request.t -> server_sent_generator -> unit) Route.t -> 'a ->
   unit
@@ -183,6 +188,6 @@ val add_route_server_sent_handler :
 
 (** {1 Run the server} *)
 
-val run : t -> unit
+val run : ?start_functions:(unit -> unit) list -> t -> unit
 (** Run the main loop of the server, listening on a socket
     described at the server's creation time. *)

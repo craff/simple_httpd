@@ -1,3 +1,4 @@
+
 (** {1 Static directory serving and page generation} *)
 
 (** Some tools, like url encoding *)
@@ -175,6 +176,11 @@ module Async : sig
       be identified as one session using session cookies.
    *)
 
+  (** Quit the handle loop without closing the client socket.
+      Usefull in conjonction with Server Send Event, automatically done
+      for WebSockets *)
+  exception Switch
+
   val yield : unit -> unit
   (** let other threads run. Should be called for treatment that take time
       before sending results or reading data and when the other primitives
@@ -186,8 +192,13 @@ module Async : sig
 
   (** Run the given function concurrently. Beware that this is cooperative
       threading. Typical use is a data base request that write to one end
-      of a fifo, while the web server reads the other end. *)
-  val spawn : (unit -> 'a) -> (unit -> ('a, exn) Result.t)
+      of a fifo, while the web server reads the other end.
+
+      By default the function is attached at the current client. You can
+      set detached to true for globally running function.
+   *)
+  val spawn : ?detached:bool -> ?name:string ->
+              (unit -> 'a) -> (unit -> ('a, exn) Result.t)
 
   (** Low level polling*)
   val register_fd : Unix.file_descr -> Polly.Events.t -> unit
@@ -1252,7 +1263,7 @@ module Server : sig
       ]}
    *)
 
-  val create :  ?listens:Address.t list -> (module Parameters) -> t
+  val create : ?listens:Address.t list -> (module Parameters) -> t
   (** Create a new webserver.
 
       The server will not do anything until {!run} is called on it. Before starting the server, one can use {!add_route_handler} to specify how to handle incoming requests.
@@ -1360,17 +1371,12 @@ module Server : sig
       this blog post}.
    *)
   module type SERVER_SENT_GENERATOR = sig
-    val set_headers : Headers.t -> unit
-    (** Set headers of the response.
-        This is not mandatory but if used at all, it must be called before
-        any call to {!send_event} (once events are sent the response is
-        already sent too). *)
-
     val send_event :
       ?event:string ->
       ?id:string ->
       ?retry:string ->
-      data:string ->
+      ?data:string ->
+      ?comment:string ->
       unit -> unit
     (** Send an event from the server.
         If data is a multiline string, it will be sent on separate "data:" lines. *)
@@ -1382,26 +1388,44 @@ module Server : sig
   type server_sent_generator = (module SERVER_SENT_GENERATOR)
   (** Server-sent event generator *)
 
+  type sse_params =
+    { timeout : float (** if negative or zero, timeout is unchanged *)
+    ; ping_period : float (** if negative or zero, sending initial response
+                              will exit the normal handling loop. And no ping will
+                              be send, otherwise, a periodic
+                              send_event ~comment:"ping" () is performed.
+                           *)
+    ; extra_headers : (Headers.header * string) list; }
+
   val add_route_server_sent_handler :
     ?addresses:Address.t list ->
     ?filter:Input.t Filter.t ->
+    params:sse_params ->
     t ->
     ('a, string Request.t -> server_sent_generator -> unit) Route.t -> 'a ->
     unit
   (** Add a handler on an endpoint, that serves server-sent events.
 
-      The callback is given a generator that can be used to send events
-      as it pleases. The connection is always closed by the client,
-      and the accepted method is always [GET].
-      This will set the header "content-type" to "text/event-stream" automatically
-      and reply with a 200 immediately.
+      The callback is given a generator that can be used to send events as it
+      pleases. The connection is always closed by the client, and the accepted
+      method is always [GET].  This will set the header "content-type" to
+      "text/event-stream" automatically and reply with a 200 immediately.
+
       See {!server_sent_generator} for more details.
 
-      This handler stays on the original thread (it is synchronous). *)
+      The are two use cases:
+
+      - The provided handler stays on the original thread (it is synchronous)
+      and loop forever. In this case better use ping_period <= 0.0
+
+      - Or the provided handled install so mechanism that will send event from
+      another thread, and then a ping loop will be automaticall started if
+      ping_period > 0.0.
+   *)
 
   (** {1 Run the server} *)
 
-  val run : t -> unit
+  val run : ?start_functions:(unit -> unit) list -> t -> unit
   (** Run the main loop of the server, listening on a socket
       described at the server's creation time. *)
 
@@ -1796,6 +1820,11 @@ module Host : sig
       ?filter:Input.t Filter.t ->
       ('a, Html.chaml) Route.t -> 'a -> unit
 
+    val add_route_server_sent_handler :
+      ?filter:Input.t Filter.t -> params:sse_params ->
+      ('a, string Request.t -> server_sent_generator -> unit) Route.t -> 'a ->
+      unit
+
     val redirect_https : ?filter:Input.t Filter.t -> unit -> unit
     (** Same as Server.redirect_https but the server is provided when
         the host is attached to it by {!start_server}. *)
@@ -1824,9 +1853,11 @@ module Host : sig
         empty *)
 
     module Init(_:Init) : sig end
-    (** This function must initialize all the route of your server.*)
+                            (** This function must initialize all the route of your server.*)
+
   end
 
-  val start_server : (module Server.Parameters) -> (module Host) list -> unit
+  val start_server : ?start_functions:(unit -> unit) list ->
+                     (module Server.Parameters) -> (module Host) list -> unit
   (** start a server with the given list of Host *)
 end
