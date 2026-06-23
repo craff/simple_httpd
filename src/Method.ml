@@ -33,6 +33,8 @@ let of_string = function
   | "TRACE" -> TRACE
   | s -> Headers.fail_raise ~code:bad_request "unknown method %S" s
 
+exception End
+
 let parse input =
   let open Input in
   branch_char (function
@@ -46,4 +48,8 @@ let parse input =
       | 'O' -> exact_string "PTIONS" OPTIONS
       | 'C' -> exact_string "ONNECT" CONNECT
       | 'T' -> exact_string "RACE" TRACE
-      | _   -> fail_parse input) input
+      | c   ->
+         if c = eof then
+           raise End
+         else
+           fail_parse input) input

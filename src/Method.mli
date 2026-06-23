@@ -20,4 +20,5 @@ type t =
 val pp : Format.formatter -> t -> unit
 val to_string : t -> string
 val of_string : string -> t
+exception End
 val parse : Input.t -> t

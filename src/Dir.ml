@@ -346,7 +346,8 @@ let add_vfs_ ?addresses ?(filter=(fun x -> (x, fun r -> r)))
                Log.f (Exc 0) (fun k -> k "exception in search index %s"
                                          (Printexc.to_string e))
           end;
-        let FI info = try VFS.read_file path with Not_found -> assert false
+        let FI info =
+          try VFS.read_file path with Not_found -> assert false
         in
         let mtime, may_cache =
            match info.mtime with
