@@ -36,7 +36,7 @@
   (name simple_httpd_caqti)
   (synopsis "DB interface for simple_httpd using caqti")
   (depends
-	(caqti (>= 2.2.3))
+	(caqti (and (>= 2.2.3) (< "3.0.0")))
 	ipaddr
   	(simple_httpd (= :version))
   	(logs (>= 0.10.0))
