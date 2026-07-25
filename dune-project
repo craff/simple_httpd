@@ -1,5 +1,5 @@
 (lang dune 3.0)
-(name tiny_httpd)
+(name simple_httpd)
 (generate_opam_files true)
 
 (authors Christophe Raffalli)
