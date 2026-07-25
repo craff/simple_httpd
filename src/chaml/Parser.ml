@@ -392,16 +392,16 @@ and ocaml_lexer top s n =
             Printf.bprintf out
               "(fun [@warning \"-27\"] request headers ->
                 let [@warning \"-26..27\"] cookies = [] in
-                let module M = struct
+                let [@warning \"-60\"] module M1 = struct
                   %s
                 end in
-                let open [@warning \"-33-60\"] M in
+                let open [@warning \"-33-60\"] M1 in
                 let headers = (Headers.Content_Type, \"text/html\")::headers in
                 let input =
                   Input.of_output (fun [@warning \"-26..27\"]
                     ((module Out) as output) ->
                       let open [@warning \"-33\"] Out in
-                      let module M = struct %s end in
+                      let [@warning \"-60\"] module M2 = struct %s end in
                       ())
                 in
                 ( headers, cookies, input ))"
