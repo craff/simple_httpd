@@ -2,8 +2,8 @@
 (name simple_httpd)
 (generate_opam_files true)
 
-(authors Christophe Raffalli)
-(maintainers Christophe Raffalli)
+(authors "Christophe Raffalli")
+(maintainers "Christophe Raffalli")
 (source (github craff/simple_httpd))
 (homepage https://raffalli.eu/simple_httpd/)
 (documentation https://raffalli.eu/simple_httpd/simple_httpd)
